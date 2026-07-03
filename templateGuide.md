@@ -16,7 +16,7 @@
 
 ## 새 프로젝트 시작 시 변경할 것
 
-1. 패키지명 `com.api.template`을 새 프로젝트 패키지명으로 변경합니다.
+1. 패키지명 `com.api.trekkey`을 새 프로젝트 패키지명으로 변경합니다.
 2. `settings.gradle`의 `rootProject.name`을 새 프로젝트명으로 변경합니다.
 3. `build.gradle`의 `description`을 새 프로젝트명으로 변경합니다.
 4. `application.properties`의 DB URL, username, password를 실제 MySQL 환경에 맞게 변경합니다.

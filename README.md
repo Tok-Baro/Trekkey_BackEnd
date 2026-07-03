@@ -1,6 +1,6 @@
-# Spring Boot API Template
+# Trekkey API
 
-Spring Boot REST API 프로젝트를 빠르게 시작하기 위한 기본 템플릿입니다.
+Trekkey 백엔드 Spring Boot REST API입니다.
 
 ## Included
 
