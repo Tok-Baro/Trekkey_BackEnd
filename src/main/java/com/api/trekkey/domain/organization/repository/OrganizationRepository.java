@@ -5,6 +5,7 @@ import com.api.trekkey.domain.organization.entity.OrganizationStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface OrganizationRepository extends JpaRepository<Organization, Long> {
 
@@ -15,4 +16,6 @@ public interface OrganizationRepository extends JpaRepository<Organization, Long
     List<Organization> findAllByStatusAndNameContainingIgnoreCase(OrganizationStatus status, String keyword);
 
     boolean existsByName(String name);
+
+    Optional<Organization> findByIdAndStatus(Long id, OrganizationStatus status);
 }
