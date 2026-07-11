@@ -12,6 +12,7 @@ import io.jsonwebtoken.security.Keys;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import javax.crypto.SecretKey;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +29,9 @@ public class JwtTokenProvider implements InitializingBean {
 
     private static final String AUTHORITIES_KEY = "auth";
     private static final String ID_KEY = "id";
+    private static final String TYPE_KEY = "type";
+    private static final String ACCESS_TOKEN_TYPE = "access";
+    private static final String REFRESH_TOKEN_TYPE = "refresh";
 
     private final JwtProperties jwtProperties;
     private SecretKey key;
@@ -60,6 +64,8 @@ public class JwtTokenProvider implements InitializingBean {
                 .subject(authentication.getName())
                 .claim(ID_KEY, principal.getId())
                 .claim(AUTHORITIES_KEY, authorities)
+                .claim(TYPE_KEY, ACCESS_TOKEN_TYPE)
+                .issuedAt(new Date())
                 .expiration(validity)
                 .signWith(key, Jwts.SIG.HS512)
                 .compact();
@@ -72,6 +78,9 @@ public class JwtTokenProvider implements InitializingBean {
         return Jwts.builder()
                 .subject(authentication.getName())
                 .claim(ID_KEY, principal.getId())
+                .claim(TYPE_KEY, REFRESH_TOKEN_TYPE)
+                .issuedAt(new Date())
+                .id(UUID.randomUUID().toString())
                 .expiration(validity)
                 .signWith(key, Jwts.SIG.HS512)
                 .compact();
@@ -109,8 +118,22 @@ public class JwtTokenProvider implements InitializingBean {
         return false;
     }
 
+    public boolean validateAccessToken(String token) {
+        try {
+            validateTokenTypeOrThrow(token, ACCESS_TOKEN_TYPE);
+            return true;
+        } catch (JwtException | IllegalArgumentException e) {
+            log.warn("Invalid access token.");
+            return false;
+        }
+    }
+
     public void validateTokenOrThrow(String token) throws JwtException {
         parseClaims(token);
+    }
+
+    public void validateRefreshTokenOrThrow(String token) throws JwtException {
+        validateTokenTypeOrThrow(token, REFRESH_TOKEN_TYPE);
     }
 
     public Long getExpiration(String token) {
@@ -120,6 +143,15 @@ public class JwtTokenProvider implements InitializingBean {
 
     public Long getUserIdFromToken(String token) {
         return parseClaims(token).get(ID_KEY, Long.class);
+    }
+
+    private void validateTokenTypeOrThrow(String token, String expectedType) {
+        Claims claims = parseClaims(token);
+        String tokenType = claims.get(TYPE_KEY, String.class);
+
+        if (!expectedType.equals(tokenType)) {
+            throw new JwtException("Invalid token type.");
+        }
     }
 
     private Claims parseClaims(String token) {
