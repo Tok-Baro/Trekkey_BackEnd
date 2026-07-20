@@ -12,4 +12,7 @@ public class JwtProperties {
     private String secretKey;
     private Long accessExpiration;
     private Long refreshExpiration;
+    private String refreshCookieName;
+    private boolean refreshCookieSecure;
+    private String refreshCookieSameSite;
 }
