@@ -21,3 +21,9 @@ Trekkey 백엔드 Spring Boot REST API입니다.
 ```
 
 Swagger UI is available at `/swagger-ui.html`.
+
+## Design Docs
+
+- [공모전·Credential 최종 ERD](./docs/erd.md)
+- [Credential 및 Kaia 앵커링 설계](./docs/blockchain-anchoring-architecture.md)
+- [설계 문서 인덱스](./docs/README.md)

@@ -1,56 +1,69 @@
-# Trekkey ERD Draft
+# Trekkey 공모전·Credential 최종 ERD
 
-프론트의 현재 기능과 대회별 단계 구성이 달라질 수 있다는 요구사항을 반영한 백엔드 ERD 초안입니다.
+- 기준일: 2026-07-20
+- 상태: MVP 구현 기준
+- 상세 설계: [블록체인 앵커링 설계](./blockchain-anchoring-architecture.md)
 
-핵심 방향은 다음과 같습니다.
+## 1. 범위
 
-- 학교/기관은 `ORGANIZATION`으로 관리하고, `USER`는 현재 소속 학교를 `organizationId`로 직접 참조합니다.
-- 한 사용자는 현재 하나의 학교에 소속된다는 전제로 설계합니다.
-- 사용자 역할은 서비스 권한인 `role`과 학교 구성원 유형인 `memberType`으로 분리합니다.
-- 심사위원은 정식 사용자 역할이 아니라 대회별 초대 대상이므로 `CONTEST_JUDGE`에서 관리합니다.
-- 대회 단계는 `CONTEST_STAGE` 테이블로 관리합니다.
-- `CONTEST_STAGE.stageType`은 enum으로 두고, 실제 단계명/순서/기간은 테이블 데이터로 관리합니다.
-- 단일 단계 대회도 `CONTEST_STAGE`를 1개 이상 생성해서 같은 구조로 처리합니다.
-- JPA 매핑은 기본적으로 자식 엔티티의 단방향 `ManyToOne(fetch = FetchType.LAZY)`를 우선합니다.
-- `@ManyToMany`는 사용하지 않고, 필요한 경우 연결 엔티티를 둡니다.
+현재 ERD는 다음 기능을 구현 범위로 고정한다.
+
+- 학교/기관별 사용자와 대회 관리
+- 팀 및 확정 팀원 명단 관리
+- 팀당 최종 제출물 한 건 관리
+- 다단계 심사와 라운드별 공식 결과 관리
+- 팀 단위 수상 확정
+- 참여, 작품, 수상 Credential 발급
+- Credential Merkle 배치와 Kaia 앵커링
+- Credential 폐기 및 대체 발급
+
+아래 기능은 현재 ERD에 넣지 않는다.
+
+- 학적 이력과 졸업요건 판정
+- 공모전과 무관한 독립 작품 관리
+- 제출물 버전 이력
+- 라운드별 블록체인 앵커링
+- 라운드 상태 변경 전체 감사 이벤트
+
+졸업 Credential은 졸업요건 업무 원장이 확정된 뒤 같은 `ANC_*` 파이프라인에 source type만 확장한다.
+
+## 2. 업무 SQL ERD
 
 ```mermaid
 erDiagram
-    USER }o--|| ORGANIZATION : belongs_to
-    CONTEST }o--|| ORGANIZATION : hosted_by
-    CONTEST }o--|| USER : owned_by
-    CONTEST_STAGE }o--|| CONTEST : belongs_to
-    TEAM }o--|| CONTEST : applies_to
-    TEAM }o--o| USER : led_by
-    TEAM_MEMBER }o--|| TEAM : belongs_to
-    TEAM_MEMBER }o--|| USER : linked_user
-    TEAM_STAGE_RESULT }o--|| TEAM : records
-    TEAM_STAGE_RESULT }o--|| CONTEST_STAGE : for_stage
-    SUBMISSION }o--|| CONTEST_STAGE : submitted_for
-    SUBMISSION }o--|| TEAM : submitted_by
-    SUBMISSION_FILE }o--|| SUBMISSION : attached_to
-    SUBMISSION_FILE }o--|| USER : uploaded_by
-    SUBMISSION_FILE }o--o| SUBMISSION_FILE : replaced_by
-    SUBMISSION_VERIFICATION }o--|| SUBMISSION : verifies
-    REVIEW_CRITERION }o--|| CONTEST_STAGE : belongs_to
-    CONTEST_JUDGE }o--|| CONTEST : assigned_to
-    CONTEST_JUDGE }o--o| USER : linked_user
-    REVIEW_ASSIGNMENT }o--|| CONTEST_STAGE : in_stage
-    REVIEW_ASSIGNMENT }o--|| CONTEST_JUDGE : assigned_to
-    REVIEW_ASSIGNMENT }o--|| SUBMISSION : targets
-    REVIEW }o--|| REVIEW_ASSIGNMENT : completes
-    REVIEW_SCORE_ITEM }o--|| REVIEW : belongs_to
-    REVIEW_SCORE_ITEM }o--|| REVIEW_CRITERION : uses
-    AWARD }o--|| CONTEST : belongs_to
-    AWARD }o--|| CONTEST_STAGE : decided_at
-    AWARD }o--|| TEAM : awarded_to
-    AWARD }o--o| SUBMISSION : based_on
+    ORGANIZATION ||--o{ USER : has
+    ORGANIZATION ||--o{ CONTEST : hosts
+    USER ||--o{ CONTEST : owns
+    CONTEST ||--o{ CONTEST_LIKE : receives
+    USER ||--o{ CONTEST_LIKE : likes
+    CONTEST ||--|{ CONTEST_STAGE : has_stages
+    CONTEST ||--o{ TEAM : accepts
+    USER ||--o{ TEAM : leads
+    TEAM ||--|{ TEAM_MEMBER : has_members
+    USER ||--o{ TEAM_MEMBER : joins
+    TEAM ||--o| SUBMISSION : submits
+    SUBMISSION ||--o{ SUBMISSION_FILE : contains
+    USER ||--o{ SUBMISSION_FILE : uploads
+    CONTEST_STAGE ||--o{ CONTEST_STAGE_ENTRY : records
+    SUBMISSION ||--o{ CONTEST_STAGE_ENTRY : enters
+    USER o|--o{ CONTEST_STAGE_ENTRY : decides
+    CONTEST_STAGE ||--o{ REVIEW_CRITERION : defines
+    CONTEST ||--o{ CONTEST_JUDGE : assigns
+    USER o|--o{ CONTEST_JUDGE : links
+    CONTEST_JUDGE ||--o{ REVIEW_ASSIGNMENT : receives
+    CONTEST_STAGE_ENTRY ||--o{ REVIEW_ASSIGNMENT : is_reviewed
+    REVIEW_ASSIGNMENT ||--o| REVIEW : completes
+    REVIEW ||--|{ REVIEW_SCORE_ITEM : contains
+    REVIEW_CRITERION ||--o{ REVIEW_SCORE_ITEM : scores
+    CONTEST_STAGE_ENTRY ||--o| AWARD : supports
+    TEAM ||--o| AWARD : receives
 
     ORGANIZATION {
         bigint id PK "학교/기관 PK"
+        string publicId UK "외부 issuer ID"
         string name "학교/기관명"
         string domain UK "학교 이메일 도메인"
-        string status "기관 상태: ACTIVE/INACTIVE"
+        string status "ACTIVE/INACTIVE"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -58,14 +71,14 @@ erDiagram
     USER {
         bigint id PK "사용자 PK"
         bigint organizationId FK "현재 소속 학교"
-        string role "서비스 권한: ADMIN/PARTICIPANT"
-        string memberType "구성원 유형: STUDENT/STAFF/FACULTY"
-        string memberStatus "소속 상태: ACTIVE/GRADUATED/WITHDRAWN/TRANSFERRED/INACTIVE"
+        string role "ADMIN/PARTICIPANT"
+        string memberType "STUDENT/STAFF/FACULTY"
+        string memberStatus "ACTIVE/GRADUATED/WITHDRAWN/TRANSFERRED/INACTIVE"
         string name "사용자 이름"
-        string email UK "로그인/연락 이메일"
+        string email UK "로그인 이메일"
         string passwordHash "비밀번호 해시"
         string studentId "학교 내 학번"
-        string major "학과/소속"
+        string major "학과/전공"
         string department "교직원 부서"
         string position "교직원 직책"
         datetime createdAt "생성 시각"
@@ -74,158 +87,169 @@ erDiagram
 
     CONTEST {
         bigint id PK "대회 PK"
+        string publicId UK "대회 공개 ID"
         bigint organizationId FK "운영 학교"
         bigint ownerUserId FK "담당 관리자"
         string title "대회명"
-        string department "주관 부서"
-        string status "전체 상태: DRAFT/OPEN/IN_PROGRESS/COMPLETED/CANCELED"
-        string type "참가 방식: TEAM/INDIVIDUAL/MIXED"
+        string department "주관 부서 스냅샷"
+        string status "DRAFT/OPEN/IN_PROGRESS/COMPLETED/CANCELED"
+        string participationType "TEAM/INDIVIDUAL/MIXED"
         int awardCount "예정 시상 수"
+        datetime applicationStartsAt "신청 시작"
+        datetime applicationEndsAt "신청 마감"
+        datetime submissionDueAt "제출 마감"
         string posterUrl "대표 포스터 URL"
         string summary "공개 한 줄 소개"
         string target "참가 대상"
         string applicationMethod "접수 방법"
         string benefits "시상 및 혜택"
-        string tags "검색/노출 태그"
+        string tags "검색 태그"
         text detailHtml "공고 상세 HTML"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
+    }
+
+    CONTEST_LIKE {
+        bigint id PK "좋아요 PK"
+        bigint contestId FK "대회 FK"
+        bigint userId FK "사용자 FK"
+        datetime createdAt "좋아요 시각"
     }
 
     CONTEST_STAGE {
         bigint id PK "대회 단계 PK"
         bigint contestId FK "소속 대회"
         string name "단계명"
-        string stageType "단계 유형: APPLY/SUBMISSION/REVIEW/PRESENTATION/AWARD/CUSTOM"
+        string stageType "APPLY/SUBMISSION/REVIEW/PRESENTATION/AWARD/CUSTOM"
         int sequenceNo "대회 내 순서"
-        string status "단계 상태: WAITING/OPEN/CLOSED/COMPLETED"
+        string status "WAITING/OPEN/IN_REVIEW/FINALIZED"
+        string targetType "ALL_SUBMISSIONS/PREVIOUS_PASSED/MANUAL"
+        string passRule "TOP_N/MIN_SCORE/MANUAL/FINAL"
+        int passCount "통과 팀 수"
+        decimal minScore "최소 통과 점수"
         datetime startAt "단계 시작"
         datetime endAt "단계 종료"
         datetime dueAt "단계 마감"
-        int maxPassedTeams "다음 단계 진출 팀 수"
         text description "단계 설명"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
 
     TEAM {
-        bigint id PK "팀/참가 신청 PK"
-        bigint contestId FK "신청한 대회"
-        bigint leaderUserId FK "대표 참가자 사용자"
-        string name "팀명"
+        bigint id PK "팀 겸 참가 신청 PK"
+        string publicId UK "팀 공개 ID"
+        bigint contestId FK "신청 대회"
+        bigint leaderUserId FK "대표 참가자"
+        string name "팀명 또는 개인 참가자명"
         string leaderName "대표자 이름 스냅샷"
-        string major "대표 소속"
-        int memberCount "참가 인원 수"
-        string status "신청 상태: PENDING/APPROVED/REVISION_REQUESTED/REJECTED"
-        string applicantEmail "신청자 이메일"
-        string phone "신청자 연락처"
+        string major "대표 소속 스냅샷"
+        int memberCount "현재 팀원 수 캐시"
+        string status "PENDING/APPROVED/REVISION_REQUESTED/REJECTED"
+        string contactEmail "신청 연락 이메일"
+        string phone "신청 연락처"
         text motivation "지원 동기"
+        bigint sourceVersion "Credential source 버전"
+        datetime participationFinalizedAt "명단 확정 및 잠금 시각"
         datetime createdAt "신청 생성 시각"
-        datetime updatedAt "신청 수정 시각"
+        datetime updatedAt "수정 시각"
     }
 
     TEAM_MEMBER {
-        bigint id PK "팀원 PK"
+        bigint id PK "팀 구성원 PK"
         bigint teamId FK "소속 팀"
-        bigint userId FK "팀원 사용자"
-        string name "팀원 이름"
-        string email "팀원 이메일"
-        string studentId "팀원 학번"
-        string major "팀원 학과/소속"
-        string role "팀 내 역할: LEADER/MEMBER"
-        bool privacyAgreed "개인정보 동의 여부"
-        datetime createdAt "생성 시각"
-    }
-
-    TEAM_STAGE_RESULT {
-        bigint id PK "단계별 팀 결과 PK"
-        bigint teamId FK "대상 팀"
-        bigint contestStageId FK "대상 단계"
-        string status "단계 결과: PENDING/SUBMITTED/PASSED/FAILED/WITHDRAWN"
-        decimal totalScore "단계 최종 점수"
-        int rankNo "단계 순위"
-        datetime decidedAt "결과 확정 시각"
+        bigint userId FK "구성 사용자"
+        string roleCode "LEADER/MEMBER"
+        datetime joinedAt "팀 참가 시각"
+        datetime leftAt "이탈 시각, 현재 구성원은 null"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
 
     SUBMISSION {
-        bigint id PK "제출물 PK"
-        bigint contestStageId FK "제출 대상 단계"
-        bigint teamId FK "제출한 팀"
-        string title "제출물명"
-        string submissionStatus "제출 상태: DRAFT/SUBMITTED/UPDATED/WITHDRAWN"
-        string reviewStatus "심사 상태: RECEIVED/UNASSIGNED/ASSIGNED/REVIEWED/AWARD_CANDIDATE"
-        datetime submittedAt "제출 접수 시각"
-        datetime createdAt "생성 시각"
+        bigint id PK "최종 제출물 PK"
+        string publicId UK "제출물 공개 ID"
+        bigint teamId FK "제출 팀, 팀당 한 건"
+        string title "작품명"
+        string status "DRAFT/SUBMITTED/WITHDRAWN"
+        bigint sourceVersion "Credential source 버전"
+        string integrityStatus "NOT_REQUESTED/QUEUED/PROCESSING/READY/STALE/FAILED"
+        datetime finalizedAt "제출 잠금 시각"
+        datetime submittedAt "최근 제출 시각"
+        datetime createdAt "최초 제출 시각"
         datetime updatedAt "수정 시각"
     }
 
     SUBMISSION_FILE {
         bigint id PK "제출 파일 PK"
         bigint submissionId FK "소속 제출물"
-        bigint uploadedByUserId FK "업로드한 사용자"
-        bigint replacedByFileId FK "교체된 새 파일"
+        bigint uploadedByUserId FK "업로드 사용자"
         string originalName "원본 파일명"
         string contentType "MIME 타입"
-        string extension "파일 확장자"
         bigint sizeBytes "파일 크기"
-        string storageKey "S3 object key"
-        string checksum "파일 체크섬"
-        string status "파일 상태: ACTIVE/DELETED/REPLACED/FAILED"
-        datetime deletedAt "삭제 시각"
+        string storageKey UK "객체 저장소 키"
+        binary sha256 "서버 계산 SHA-256"
         datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
     }
 
-    SUBMISSION_VERIFICATION {
-        bigint id PK "검증 기록 PK"
-        bigint submissionId FK "검증 대상 제출물"
-        string hashAlgorithm "해시 알고리즘"
-        string hashValue "제출물 해시값"
-        string chainTxHash "블록체인 트랜잭션 해시"
-        string status "검증 상태: PENDING/HASHED/REGISTERED/FAILED"
-        datetime generatedAt "해시 생성 시각"
-        datetime registeredAt "온체인 등록 시각"
+    CONTEST_STAGE_ENTRY {
+        bigint id PK "라운드 참가 및 공식 판정 PK"
+        bigint contestStageId FK "평가 라운드"
+        bigint submissionId FK "대상 제출물"
+        string status "ELIGIBLE/IN_REVIEW/PASSED/FAILED/WITHDRAWN/DISQUALIFIED"
+        decimal finalScore "확정 합산 점수"
+        int rankNo "라운드 확정 순위"
+        string decisionType "RULE/MANUAL"
+        bigint decidedByUserId FK "수동 판정 관리자"
+        text decisionReason "수동 판정 및 정정 사유"
+        datetime finalizedAt "판정 확정 시각"
+        datetime createdAt "라운드 진입 시각"
+        datetime updatedAt "수정 시각"
     }
 
     REVIEW_CRITERION {
         bigint id PK "평가 기준 PK"
-        bigint contestStageId FK "적용 단계"
-        string code "내부 기준 코드"
+        bigint contestStageId FK "적용 라운드"
+        string code "라운드 내 기준 코드"
         string label "화면 표시명"
         int maxScore "최대 점수"
         int sortOrder "표시 순서"
         bool active "사용 여부"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
     }
 
     CONTEST_JUDGE {
         bigint id PK "대회 심사위원 PK"
-        bigint contestId FK "배정된 대회"
-        bigint userId FK "연결 사용자(선택)"
+        bigint contestId FK "배정 대회"
+        bigint userId FK "연결 사용자, 외부 심사위원은 null"
         string name "심사위원 이름 스냅샷"
         string roleLabel "심사위원 역할명"
-        string reviewToken UK "심사 링크 접근 토큰"
+        string reviewTokenHash UK "심사 링크 토큰 해시"
+        datetime tokenExpiresAt "심사 링크 만료"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
 
     REVIEW_ASSIGNMENT {
         bigint id PK "심사 배정 PK"
-        bigint contestStageId FK "심사 단계"
         bigint contestJudgeId FK "배정 심사위원"
-        bigint submissionId FK "심사 대상 제출물"
-        string status "배정 상태: ASSIGNED/COMPLETED/CANCELED"
+        bigint contestStageEntryId FK "라운드별 심사 대상"
+        string status "ASSIGNED/COMPLETED/CANCELED"
         datetime assignedAt "배정 시각"
         datetime dueAt "심사 마감"
-        datetime completedAt "심사 완료 시각"
+        datetime completedAt "완료 시각"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
     }
 
     REVIEW {
         bigint id PK "심사 결과 PK"
-        bigint assignmentId FK "대상 심사 배정"
+        bigint assignmentId FK "심사 배정"
         decimal totalScore "총점"
         text comment "심사 의견"
         datetime submittedAt "심사 제출 시각"
+        datetime createdAt "생성 시각"
     }
 
     REVIEW_SCORE_ITEM {
@@ -237,320 +261,327 @@ erDiagram
 
     AWARD {
         bigint id PK "수상 결과 PK"
-        bigint contestId FK "소속 대회"
-        bigint contestStageId FK "수상 산출 단계"
-        bigint teamId FK "수상 팀"
-        bigint submissionId FK "수상 기준 제출물"
-        int rankNo "순위"
+        string publicId UK "수상 공개 ID"
+        bigint contestStageEntryId FK "수상 근거 공식 결과"
+        bigint teamId FK "수상 팀 및 조회용 FK"
+        int awardRankNo "수상 순위"
         string prize "상격"
-        decimal score "수상 산출 점수"
-        string status "수상 상태: PENDING/REVIEWING/CONFIRMED/HELD"
+        string status "CANDIDATE/CONFIRMED/HELD"
         string certificateNo UK "팀 단위 상장 번호"
+        bigint sourceVersion "Credential source 버전"
         datetime confirmedAt "수상 확정 시각"
         datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
     }
 ```
 
-## 테이블 역할
+## 3. Credential 및 앵커링 SQL ERD
 
-| 테이블 | 역할 |
+온체인 mapping은 SQL 테이블이 아니다. 아래 `ANC_*` 테이블은 Credential 스냅샷, Merkle proof, 학교 승인 서명, Kaia 트랜잭션 영수증을 저장하는 off-chain 원장이다.
+
+```mermaid
+erDiagram
+    ORGANIZATION ||--o{ ANC_ISSUER_KEY : owns
+    ORGANIZATION ||--o{ ANC_CREDENTIAL : issues
+    ORGANIZATION ||--o{ ANC_BATCH : creates
+    ANC_ISSUER_KEY ||--o{ ANC_BATCH : approves
+    ANC_CREDENTIAL ||--|| ANC_CREDENTIAL_SOURCE : derives_from
+    TEAM o|--o{ ANC_CREDENTIAL_SOURCE : sources
+    SUBMISSION o|--o{ ANC_CREDENTIAL_SOURCE : sources
+    AWARD o|--o{ ANC_CREDENTIAL_SOURCE : sources
+    ANC_CREDENTIAL ||--|{ ANC_CREDENTIAL_SUBJECT : snapshots
+    USER o|--o{ ANC_CREDENTIAL_SUBJECT : identifies
+    TEAM o|--o{ ANC_CREDENTIAL_SUBJECT : represents
+    ANC_CREDENTIAL ||--o{ ANC_CREDENTIAL_STATUS_EVENT : changes
+    ANC_CREDENTIAL o|--o{ ANC_CREDENTIAL_STATUS_EVENT : supersedes_with
+    USER o|--o{ ANC_CREDENTIAL_STATUS_EVENT : acts
+    ANC_ISSUER_KEY ||--o{ ANC_CREDENTIAL_STATUS_EVENT : approves
+    ANC_BATCH ||--|{ ANC_BATCH_ITEM : contains
+    ANC_CREDENTIAL ||--o| ANC_BATCH_ITEM : included_in
+    ANC_BATCH o|--o{ ANC_CHAIN_TRANSACTION : targets
+    ANC_CREDENTIAL_STATUS_EVENT o|--o{ ANC_CHAIN_TRANSACTION : targets
+    ANC_ISSUER_KEY o|--o{ ANC_CHAIN_TRANSACTION : targets
+
+    ORGANIZATION {
+        bigint id PK
+        string publicId UK
+        string name
+    }
+
+    USER {
+        bigint id PK
+        bigint organizationId FK
+        string studentId
+    }
+
+    TEAM {
+        bigint id PK
+        string publicId UK
+    }
+
+    SUBMISSION {
+        bigint id PK
+        string publicId UK
+    }
+
+    AWARD {
+        bigint id PK
+        string publicId UK
+    }
+
+    ANC_ISSUER_KEY {
+        bigint id PK "Issuer key PK"
+        bigint organizationId FK "발급 기관"
+        int keyVersion "기관 내 키 버전"
+        binary signerAddress "Kaia 주소 BINARY(20)"
+        string signerRef "KMS 또는 signer 참조"
+        string status "ACTIVE/RETIRED/COMPROMISED"
+        datetime validFrom "사용 시작"
+        datetime validUntil "사용 종료"
+        datetime compromisedAt "키 침해 시각"
+        datetime createdAt "생성 시각"
+    }
+
+    ANC_CREDENTIAL {
+        bigint id PK "Credential PK"
+        bigint issuerOrganizationId FK "발급 기관"
+        string publicId UK "무작위 공개 Credential ID"
+        binary credentialIdHash UK "온체인 식별 해시 BINARY(32)"
+        string credentialNo "기관 내 발급 번호"
+        string credentialType "PARTICIPATION/WORK/AWARD"
+        string schemaProfileId "payload와 정규화 규칙 식별자"
+        binary schemaVersionHash "프로필 Keccak-256 BINARY(32)"
+        text payloadJson "구조 조회용 payload"
+        blob canonicalBytes "해시에 사용한 불변 바이트"
+        blob fileManifestCanonicalBytes "파일 manifest 불변 바이트"
+        binary contentHash "SHA-256 BINARY(32)"
+        binary fileManifestHash "SHA-256 BINARY(32)"
+        string status "READY/BATCHED/ANCHORED/REVOKED/SUPERSEDED"
+        datetime issuedAt "발급 시각"
+        datetime expiresAt "만료 시각"
+        datetime createdAt "생성 시각"
+    }
+
+    ANC_CREDENTIAL_SOURCE {
+        bigint credentialId PK "Credential PK 겸 FK"
+        string sourceType "TEAM/SUBMISSION/AWARD"
+        bigint teamId FK "참여 원천"
+        bigint submissionId FK "작품 원천"
+        bigint awardId FK "수상 원천"
+        string sourcePublicId "원천 공개 ID 스냅샷"
+        bigint sourceVersion "발급에 사용한 원천 버전"
+        binary sourceFingerprint UK "의미 기반 멱등 해시"
+        datetime sourceFinalizedAt "원천 확정 시각"
+    }
+
+    ANC_CREDENTIAL_SUBJECT {
+        bigint id PK "Credential subject PK"
+        bigint credentialId FK "Credential FK"
+        bigint userId FK "개인 subject"
+        bigint teamId FK "팀 subject"
+        string subjectRef "Credential 내 비식별 참조"
+        string subjectType "USER/TEAM"
+        string displayNameSnapshot "이름 스냅샷"
+        string majorSnapshot "학과 스냅샷"
+        string roleCode "TEAM/REPRESENTATIVE/PARTICIPANT/AWARDEE"
+        string disclosureClass "PUBLIC/PRIVATE/HASH_ONLY"
+        int subjectOrder "Credential 내 정렬 순서"
+        datetime createdAt "생성 시각"
+    }
+
+    ANC_CREDENTIAL_STATUS_EVENT {
+        bigint id PK "상태 변경 PK"
+        bigint credentialId FK "대상 Credential"
+        bigint issuerKeyId FK "승인에 사용한 학교 키"
+        string previousStatus "변경 전 상태"
+        string nextStatus "REVOKED/SUPERSEDED"
+        string reasonCode "표준 사유 코드"
+        text reasonDetail "내부 상세 사유"
+        bigint actorUserId FK "처리 관리자"
+        bigint supersedingCredentialId FK "대체 Credential"
+        bigint approvalNonce "학교별 승인 nonce"
+        datetime approvalDeadline "서명 만료 시각"
+        text approvalPayloadJson "EIP-712 typed data"
+        binary approvalDigest UK "EIP-712 digest BINARY(32)"
+        binary issuerSignature "학교 서명 VARBINARY(65)"
+        string idempotencyKey UK "중복 처리 방지 키"
+        datetime effectiveAt "효력 시각"
+        datetime createdAt "생성 시각"
+    }
+
+    ANC_BATCH {
+        bigint id PK "Merkle batch PK"
+        bigint issuerOrganizationId FK "발급 기관"
+        bigint issuerKeyId FK "승인 학교 키"
+        string publicId UK "무작위 공개 batch ID"
+        binary batchIdHash UK "온체인 batch 식별 해시"
+        binary schemaVersionHash "배치 Credential 프로필 해시"
+        int treeVersion "Merkle 규칙 버전"
+        int leafCount "leaf 수"
+        binary merkleRoot "Merkle root BINARY(32)"
+        bigint approvalNonce "학교별 승인 nonce"
+        datetime approvalDeadline "서명 만료 시각"
+        text approvalPayloadJson "EIP-712 typed data"
+        binary approvalDigest UK "EIP-712 digest BINARY(32)"
+        binary issuerSignature "학교 서명 VARBINARY(65)"
+        string status "SEALED/SIGNED/ANCHORING/ANCHORED/FAILED"
+        datetime sealedAt "배치 고정 시각"
+        datetime signedAt "서명 시각"
+        datetime createdAt "생성 시각"
+    }
+
+    ANC_BATCH_ITEM {
+        bigint id PK "Batch item PK"
+        bigint batchId FK "Batch FK"
+        bigint credentialId FK "Credential FK"
+        int leafIndex "Merkle leaf 인덱스"
+        binary credentialIdHash "Credential ID 해시"
+        binary leafHash "Merkle leaf 해시 BINARY(32)"
+        text merkleProofJson "Merkle proof"
+        datetime createdAt "생성 시각"
+    }
+
+    ANC_CHAIN_TRANSACTION {
+        bigint id PK "Kaia 트랜잭션 PK"
+        bigint batchId FK "배치 앵커 대상"
+        bigint credentialStatusEventId FK "폐기 및 대체 대상"
+        bigint issuerKeyId FK "키 등록 및 교체 대상"
+        string operationType "REGISTER_KEY/RETIRE_KEY/COMPROMISE_KEY/ANCHOR_BATCH/REVOKE/SUPERSEDE"
+        string idempotencyKey UK "재시도 멱등 키"
+        bigint chainId "Kaia chain ID"
+        binary contractAddress "계약 주소 BINARY(20)"
+        string contractVersion "계약 버전"
+        binary txHash "트랜잭션 해시 BINARY(32)"
+        bigint txNonce "relayer nonce"
+        bigint blockNumber "확정 블록 번호"
+        binary blockHash "확정 블록 해시 BINARY(32)"
+        int eventLogIndex "계약 이벤트 log index"
+        string status "PENDING/SUBMITTED/CONFIRMED/UNKNOWN/FAILED"
+        string lastErrorCode "마지막 오류 코드"
+        datetime submittedAt "전송 시각"
+        datetime confirmedAt "확정 시각"
+        datetime nextAttemptAt "다음 재시도 시각"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    ANC_OUTBOX_EVENT {
+        bigint id PK "Outbox event PK"
+        string aggregateType "Credential/Batch/StatusEvent/IssuerKey"
+        bigint aggregateId "대상 aggregate PK"
+        string eventType "처리할 도메인 이벤트"
+        string idempotencyKey UK "중복 발행 방지 키"
+        text payloadJson "Worker 메시지"
+        string status "PENDING/PROCESSING/PROCESSED/DEAD"
+        int attemptCount "처리 시도 횟수"
+        datetime availableAt "처리 가능 시각"
+        datetime lockedAt "Worker lock 시각"
+        string lockedBy "Worker ID"
+        datetime processedAt "처리 완료 시각"
+        string lastErrorCode "마지막 오류 코드"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+```
+
+## 4. 업무 원장 규칙
+
+### 사용자 조회
+
+- 학번은 학교 안에서만 유일하다: `UNIQUE (organizationId, studentId)`.
+- 학교별 서버에서는 학번만 받을 수 있지만, 중앙형 배포에서는 로그인 tenant가 `organizationId`를 함께 제공한다.
+- 학번 검색 API는 본인 또는 학교 관리자에게만 허용하고 공개 검증 API와 분리한다.
+
+### 팀과 팀원
+
+- `UNIQUE TEAM_MEMBER (teamId, userId)`.
+- `TEAM.leaderUserId`는 현재 팀원이며 `roleCode = LEADER`여야 한다.
+- `participationFinalizedAt` 이후 팀원 추가, 삭제, 역할 변경을 거부한다.
+- `TEAM.memberCount`는 조회용 캐시이고 원장은 `TEAM_MEMBER`다.
+- 상장은 팀 단위 `AWARD` 및 Credential 한 건으로 발급하고, 모든 구성원은 같은 수상을 참조한다.
+- 발급 당시 팀과 구성원 정보는 `ANC_CREDENTIAL_SUBJECT`에 다시 스냅샷한다.
+
+### 제출물
+
+- `UNIQUE SUBMISSION (teamId)`. 제출 버전 테이블은 만들지 않는다.
+- 마감 전 재제출은 같은 `SUBMISSION`을 논리적으로 덮어쓴다.
+- 재제출은 row lock 또는 optimistic version 확인, `sourceVersion` 증가, 파일 목록 교체, `integrityStatus = STALE` 변경을 한 트랜잭션 경계에서 처리한다.
+- 해시 worker는 작업 시작 시 읽은 `sourceVersion`이 여전히 같을 때만 `READY`를 반영한다.
+- 객체 저장소에는 새 고유 `storageKey`로 먼저 업로드하고 DB 교체 성공 후 이전 객체를 정리한다.
+- `finalizedAt` 이후 또는 첫 심사 시작 이후 제목과 파일을 수정할 수 없다.
+
+### 라운드와 심사
+
+- `UNIQUE CONTEST_STAGE (contestId, sequenceNo)`.
+- `UNIQUE CONTEST_STAGE_ENTRY (contestStageId, submissionId)`.
+- `PREVIOUS_PASSED`는 같은 대회의 직전 `sequenceNo`에서 동일 제출물이 `PASSED`인지 검사한다.
+- `PASSED`, `FAILED`, `WITHDRAWN`, `DISQUALIFIED`는 `finalizedAt`이 필수다.
+- `decisionType = MANUAL`이면 `decidedByUserId`와 `decisionReason`이 필수다.
+- `FINALIZED` 라운드의 ENTRY, 평가 기준, 심사 배정, 제출된 심사 결과는 수정 및 삭제할 수 없다.
+- `UNIQUE REVIEW_ASSIGNMENT (contestJudgeId, contestStageEntryId)`.
+- 심사 배정 생성 시 judge의 대회와 ENTRY 라운드의 대회가 같은지 트랜잭션 안에서 검사한다.
+- `UNIQUE REVIEW (assignmentId)`.
+- `UNIQUE REVIEW_SCORE_ITEM (reviewId, criterionId)`.
+- 점수는 `0 <= score <= criterion.maxScore`이고 criterion의 라운드는 ENTRY의 라운드와 같아야 한다.
+- 제출 완료된 `REVIEW`는 수정하지 않는다.
+
+### 수상
+
+- `UNIQUE AWARD (contestStageEntryId)`.
+- `CONTEST_STAGE_ENTRY`가 수상의 공식 원천이다.
+- `AWARD.teamId`는 조회용 비정규화 FK이며 `ENTRY -> SUBMISSION -> TEAM`과 항상 같아야 한다.
+- `AWARD.awardRankNo`는 라운드 순위가 아니라 상장에 표시할 수상 순위다.
+- 확정된 ENTRY와 `FINALIZED` 라운드에서만 수상을 `CONFIRMED`로 바꿀 수 있다.
+- `WITHDRAWN` 또는 `DISQUALIFIED` ENTRY에는 수상을 확정할 수 없다.
+
+## 5. Credential 및 앵커 원장 규칙
+
+### 다형성 FK
+
+- `ANC_CREDENTIAL_SOURCE`는 `sourceType`에 맞는 FK 하나만 non-null이어야 한다.
+- `ANC_CREDENTIAL_SUBJECT`는 `subjectType`에 맞춰 `userId`, `teamId` 중 하나만 non-null이어야 한다.
+- `ANC_CHAIN_TRANSACTION`은 `operationType`에 맞는 target FK 하나만 non-null이어야 한다.
+- 위 규칙은 application validation만이 아니라 DB `CHECK` 제약으로도 적용한다.
+
+### 필수 UNIQUE
+
+- `UNIQUE ANC_ISSUER_KEY (organizationId, keyVersion)`.
+- `UNIQUE ANC_CREDENTIAL (issuerOrganizationId, credentialNo)`.
+- `UNIQUE ANC_CREDENTIAL_SOURCE (sourceFingerprint)`.
+- `UNIQUE ANC_CREDENTIAL_SUBJECT (credentialId, subjectOrder)`.
+- `UNIQUE ANC_BATCH_ITEM (credentialId)`. 한 Credential은 하나의 sealed batch에만 들어간다.
+- `UNIQUE ANC_BATCH_ITEM (batchId, leafIndex)`.
+- `UNIQUE ANC_CHAIN_TRANSACTION (chainId, txHash)`는 `txHash IS NOT NULL`일 때 적용한다.
+- `UNIQUE ANC_CHAIN_TRANSACTION (chainId, txHash, eventLogIndex)`는 event가 확인된 경우 적용한다.
+
+### 상태와 불변성
+
+- Credential 발급 트랜잭션은 source, subject, canonical bytes를 모두 저장한 뒤 바로 `READY`로 생성한다. 별도 `DRAFT` 상태는 사용하지 않는다.
+- `READY` 이후 payload, canonical bytes, hash, source, subject는 수정하지 않는다.
+- sealed batch의 item, 순서, root, 서명 payload는 수정하지 않는다.
+- RPC timeout은 `FAILED`가 아니라 `UNKNOWN`이다. 재전송 전 온체인 batch/status를 조회한다.
+- V1은 batch 전체 revoke를 지원하지 않고 개별 Credential `REVOKED`와 `SUPERSEDED`만 지원한다.
+- 대체 발급은 새 Credential 앵커 확인 후 기존 Credential을 `SUPERSEDED` 처리한다.
+
+## 6. JPA 및 구현 기준
+
+- 자식 엔티티의 단방향 `ManyToOne(fetch = FetchType.LAZY)`를 우선한다.
+- 초기 구현에서는 `@ManyToMany`와 부모 컬렉션 양방향 매핑을 사용하지 않는다.
+- 목록 조회는 DTO projection, fetch join, `@EntityGraph`, batch size를 목적에 맞게 사용한다.
+- FK와 위 UNIQUE 선두 컬럼에는 인덱스를 둔다.
+- 업무 상태 변경과 domain outbox 저장은 한 DB 트랜잭션으로 처리한다.
+- batch seal과 anchor outbox 저장도 한 DB 트랜잭션으로 처리한다.
+- private key는 DB, 소스, 일반 환경변수에 저장하지 않고 KMS/HSM 또는 격리 signer를 사용한다.
+
+## 7. 후속 확장
+
+| 요구사항 | 확장 시 추가할 모델 |
 | --- | --- |
-| `ORGANIZATION` | 서비스를 사용하는 학교/기관 |
-| `USER` | 특정 학교에 소속된 관리자 또는 참가자 계정 |
-| `CONTEST` | 특정 학교가 운영하는 대회 기본 정보와 공개 공고 정보 |
-| `CONTEST_STAGE` | 대회별 진행 단계. 예: 참가 신청, 1차 제출, 예선 심사, 최종 PT, 수상 확정 |
-| `TEAM` | 대회 참가 신청 단위. 개인전도 1인 팀으로 처리 |
-| `TEAM_MEMBER` | 팀 구성원 정보와 팀 내 역할. 팀원 개인의 수상내역 조회 기준 |
-| `TEAM_STAGE_RESULT` | 특정 팀이 특정 단계에서 제출/통과/탈락했는지 기록 |
-| `SUBMISSION` | 특정 단계에 제출된 작품 접수 건 |
-| `SUBMISSION_FILE` | 제출물에 첨부된 실제 파일 메타데이터 |
-| `SUBMISSION_VERIFICATION` | 제출물 해시, 무결성 검증, 온체인 등록 기록 |
-| `REVIEW_CRITERION` | 특정 단계의 평가 기준과 배점 |
-| `CONTEST_JUDGE` | 특정 대회에 배정된 심사위원 |
-| `REVIEW_ASSIGNMENT` | 특정 심사위원에게 특정 제출물을 배정한 기록 |
-| `REVIEW` | 심사위원이 제출한 평가 결과 1건 |
-| `REVIEW_SCORE_ITEM` | 평가 결과의 기준별 점수 |
-| `AWARD` | 팀 단위 수상 후보와 수상 확정 결과 |
+| 졸업요건 증빙 | `GRADUATION_RULE`, `GRADUATION_ACHIEVEMENT`, Credential source type |
+| 복수 학교 및 학적 이력 | `AFFILIATION`, `ORG_UNIT` |
+| 공모전 외 독립 작품 | `WORK`와 `SUBMISSION` 관계 |
+| 라운드별 수정 제출 | `SUBMISSION_VERSION`과 ENTRY의 version FK |
+| 분기형 대회 | `sourceStageEntryId` 또는 별도 진출 관계 |
+| 배치 전체 폐기 | 서명된 `BATCH_STATUS_EVENT`와 온체인 batch revoke |
 
-## 필드 설명
-
-### ORGANIZATION
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 학교/기관 PK |
-| `name` | 학교/기관명 |
-| `domain` | 학교 이메일 도메인. 예: `example.ac.kr` |
-| `status` | 기관 사용 상태. 활성/비활성 |
-| `createdAt` | 생성 시각 |
-| `updatedAt` | 수정 시각 |
-
-### USER
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 사용자 PK |
-| `organizationId` | 현재 소속 학교/기관 FK |
-| `role` | 서비스 권한. 관리자 또는 참가자 |
-| `memberType` | 학교 구성원 유형. 학생, 직원, 교원 |
-| `memberStatus` | 현재 소속 상태. 재학/재직, 졸업, 자퇴, 편입, 비활성 등 |
-| `name` | 사용자 이름 |
-| `email` | 로그인/연락용 이메일. 중복 불가 |
-| `passwordHash` | 비밀번호 해시 |
-| `studentId` | 참가자 학번. 해당 없으면 nullable. `organizationId + studentId` 복합 유니크 권장 |
-| `major` | 학생 학과/전공. 해당 없으면 nullable |
-| `department` | 교직원 부서. 해당 없으면 nullable |
-| `position` | 교직원 직책. 해당 없으면 nullable |
-| `createdAt` | 생성 시각 |
-| `updatedAt` | 수정 시각 |
-
-### CONTEST
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 대회 PK |
-| `organizationId` | 대회를 운영하는 학교/기관 FK |
-| `ownerUserId` | 대회 담당 관리자 FK. 같은 `organizationId` 소속 관리자여야 함 |
-| `title` | 대회명 |
-| `department` | 주관 부서 |
-| `status` | 대회 전체 상태. 목록 필터와 운영 상태 표시용 |
-| `type` | 참가 방식. 팀전, 개인전, 개인/팀 |
-| `awardCount` | 예정 시상 수 |
-| `posterUrl` | 공개 페이지 대표 포스터 URL |
-| `summary` | 공개 페이지 한 줄 소개 |
-| `target` | 참가 대상 |
-| `applicationMethod` | 접수 방법 안내 |
-| `benefits` | 시상 및 혜택 |
-| `tags` | 검색/노출용 태그. 초기에는 콤마 문자열로 시작 가능 |
-| `detailHtml` | 공개 공고 상세 본문 HTML |
-| `createdAt` | 생성 시각 |
-| `updatedAt` | 수정 시각 |
-
-### CONTEST_STAGE
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 대회 단계 PK |
-| `contestId` | 소속 대회 FK |
-| `name` | 단계명. 예: 참가 신청, 1차 제출, 최종 PT |
-| `stageType` | 단계 유형 enum. 화면/정책 분기용 |
-| `sequenceNo` | 대회 내 단계 순서 |
-| `status` | 단계 상태. 대기, 진행중, 종료, 완료 |
-| `startAt` | 단계 시작 시각 |
-| `endAt` | 단계 종료 시각 |
-| `dueAt` | 단계 마감 시각. 단계 유형에 따라 신청 마감, 제출 마감, 심사 마감, 결과 확정 예정일로 해석 |
-| `maxPassedTeams` | 다음 단계 진출 가능 팀 수. 제한 없으면 nullable |
-| `description` | 단계 설명 또는 내부 메모 |
-| `createdAt` | 생성 시각 |
-| `updatedAt` | 수정 시각 |
-
-### TEAM
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 팀/참가 신청 PK |
-| `contestId` | 신청한 대회 FK |
-| `leaderUserId` | 대표 참가자 사용자 FK |
-| `name` | 팀명. 개인전이면 참가자명과 동일하게 둘 수 있음 |
-| `leaderName` | 신청 당시 대표자 이름 스냅샷 |
-| `major` | 대표 소속 또는 팀 대표 소속 |
-| `memberCount` | 신청 인원 수 |
-| `status` | 참가 신청 검토 상태 |
-| `applicantEmail` | 신청자 이메일 스냅샷 |
-| `phone` | 신청자 연락처 |
-| `motivation` | 지원 동기 |
-| `createdAt` | 신청 생성 시각 |
-| `updatedAt` | 신청 수정 시각 |
-
-### TEAM_MEMBER
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 팀원 PK |
-| `teamId` | 소속 팀 FK |
-| `userId` | 팀원 사용자 FK. 팀원 본인의 수상내역 조회 기준 |
-| `name` | 팀원 이름 |
-| `email` | 팀원 이메일 |
-| `studentId` | 팀원 학번 |
-| `major` | 팀원 학과/소속 |
-| `role` | 팀 내 역할. 대표 또는 일반 팀원 |
-| `privacyAgreed` | 개인정보 제공 동의 여부 |
-| `createdAt` | 생성 시각 |
-
-### TEAM_STAGE_RESULT
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 단계별 팀 결과 PK |
-| `teamId` | 대상 팀 FK |
-| `contestStageId` | 대상 단계 FK |
-| `status` | 해당 단계에서의 상태. 대기, 제출, 통과, 탈락, 철회 |
-| `totalScore` | 해당 단계 최종 점수 |
-| `rankNo` | 해당 단계 순위 |
-| `decidedAt` | 통과/탈락/순위 확정 시각 |
-| `createdAt` | 생성 시각 |
-| `updatedAt` | 수정 시각 |
-
-### SUBMISSION
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 제출물 PK |
-| `contestStageId` | 어느 단계 제출물인지 나타내는 FK |
-| `teamId` | 제출한 팀 FK |
-| `title` | 제출물명 |
-| `submissionStatus` | 제출 상태. 임시저장, 제출완료, 수정됨, 철회 |
-| `reviewStatus` | 심사 상태. 접수, 미배정, 배정, 심사완료, 수상후보 |
-| `submittedAt` | 제출 접수 시각 |
-| `createdAt` | 생성 시각 |
-| `updatedAt` | 수정 시각 |
-
-### SUBMISSION_FILE
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 제출 파일 PK |
-| `submissionId` | 소속 제출물 FK |
-| `uploadedByUserId` | 파일을 업로드한 사용자 FK |
-| `replacedByFileId` | 이 파일을 교체한 새 파일 FK. 교체되지 않았으면 nullable |
-| `originalName` | 업로드 당시 원본 파일명 |
-| `contentType` | MIME 타입 |
-| `extension` | 파일 확장자 |
-| `sizeBytes` | 파일 크기 |
-| `storageKey` | S3 object key |
-| `checksum` | 파일 단위 체크섬 |
-| `status` | 파일 상태. 활성, 삭제, 교체됨, 실패 |
-| `deletedAt` | 파일 삭제 시각 |
-| `createdAt` | 생성 시각 |
-
-### SUBMISSION_VERIFICATION
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 검증 기록 PK |
-| `submissionId` | 검증 대상 제출물 FK |
-| `hashAlgorithm` | 해시 알고리즘. 예: SHA-256 |
-| `hashValue` | 제출물 또는 파일 묶음의 해시값 |
-| `chainTxHash` | 블록체인 등록 트랜잭션 해시. 미등록이면 nullable |
-| `status` | 검증 상태. 대기, 해시 생성, 온체인 등록, 실패 |
-| `generatedAt` | 해시 생성 시각 |
-| `registeredAt` | 온체인 등록 시각 |
-
-### REVIEW_CRITERION
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 평가 기준 PK |
-| `contestStageId` | 평가 기준이 적용되는 단계 FK |
-| `code` | 내부 코드. 예: creativity, marketability |
-| `label` | 화면 표시명. 예: 창의성, 시장성 |
-| `maxScore` | 최대 점수 |
-| `sortOrder` | 평가 화면 표시 순서 |
-| `active` | 사용 여부 |
-
-### CONTEST_JUDGE
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 대회 심사위원 PK |
-| `contestId` | 배정된 대회 FK |
-| `userId` | 심사위원이 사용자 계정과 연결된 경우의 FK. 외부 링크 심사만 쓰면 nullable |
-| `name` | 심사위원 이름 스냅샷 |
-| `roleLabel` | 심사위원 역할명. 예: 외부 심사위원, 전임교원 |
-| `reviewToken` | 심사 링크/QR 접근 토큰 |
-| `createdAt` | 생성 시각 |
-| `updatedAt` | 수정 시각 |
-
-### REVIEW_ASSIGNMENT
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 심사 배정 PK |
-| `contestStageId` | 어느 단계 심사인지 나타내는 FK. `submissionId`가 가리키는 제출물의 단계와 일치해야 함 |
-| `contestJudgeId` | 배정받은 심사위원 FK |
-| `submissionId` | 심사 대상 제출물 FK |
-| `status` | 배정 상태. 배정, 완료, 취소 |
-| `assignedAt` | 배정 시각 |
-| `dueAt` | 심사 마감 시각 |
-| `completedAt` | 심사 완료 시각 |
-
-### REVIEW
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 심사 결과 PK |
-| `assignmentId` | 어떤 배정에 대한 결과인지 나타내는 FK |
-| `totalScore` | 항목별 점수 합계 |
-| `comment` | 심사 의견 |
-| `submittedAt` | 심사 제출 시각 |
-
-### REVIEW_SCORE_ITEM
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 항목별 점수 PK |
-| `reviewId` | 소속 심사 결과 FK |
-| `criterionId` | 평가 기준 FK |
-| `score` | 해당 기준에 부여한 점수 |
-
-### AWARD
-
-| 필드 | 의미 |
-| --- | --- |
-| `id` | 수상 결과 PK |
-| `contestId` | 소속 대회 FK |
-| `contestStageId` | 수상 산출 기준 단계 FK. 보통 최종 심사 단계 |
-| `teamId` | 수상 팀 FK |
-| `submissionId` | 수상 기준 제출물 FK. 제출물 없이 수상 처리하면 nullable 가능 |
-| `rankNo` | 순위 |
-| `prize` | 상격. 예: 대상, 최우수상 |
-| `score` | 수상 산출 점수 |
-| `status` | 수상 상태. 후보, 검토중, 확정, 보류 |
-| `certificateNo` | 팀 단위 상장 번호. 팀원들은 같은 상장 정보를 공유 |
-| `confirmedAt` | 수상 확정 시각 |
-| `createdAt` | 생성 시각 |
-
-## JPA 매핑 기준
-
-- 기본 원칙은 자식 엔티티의 단방향 `ManyToOne(fetch = FetchType.LAZY)`입니다.
-- 예를 들어 `Submission`은 `ContestStage`, `Team`을 참조하지만, 초기에는 `ContestStage.submissions` 컬렉션을 만들지 않습니다.
-- 부모에서 자식 목록이 필요하면 엔티티 그래프를 타지 말고 Repository 쿼리로 조회합니다. 예: `submissionRepository.findByContestStageId(stageId)`.
-- 컬렉션 양방향 매핑은 도메인 규칙을 엔티티 메서드로 강하게 묶어야 할 때만 추가합니다.
-- 리스트 화면은 DTO projection, fetch join, `@EntityGraph`, batch size 중 하나를 조회 목적에 맞게 명시합니다.
-- `LAZY`여도 반복 접근하면 N+1이 납니다. 목록 API는 필요한 부모 필드를 join해서 DTO로 바로 내려주는 쿼리를 우선합니다.
-- 조회 성능을 위해 FK 컬럼에는 인덱스를 둡니다. 우선 대상은 `organization_id`, `owner_user_id`, `contest_id`, `contest_stage_id`, `team_id`, `submission_id`, `contest_judge_id`, `review_id`, `criterion_id`입니다.
-
-## 현재 결정 사항
-
-- `TEAM_MEMBER`는 유지합니다. 팀원도 서비스에 가입하고, 개인 수상내역은 `USER -> TEAM_MEMBER -> TEAM -> AWARD` 경로로 조회합니다.
-- `TEAM_STAGE_RESULT`는 유지합니다. 다단계 대회에서 단계별 제출, 통과, 탈락, 순위 확정은 기본 기능으로 봅니다.
-- `SUBMISSION_VERIFICATION`은 유지합니다. 다만 해시/블록체인 검증 API 구현은 파일 제출과 심사 기능 이후로 미룰 수 있습니다.
-- `AWARD_RECIPIENT`는 만들지 않습니다. 상장은 팀 단위로 발급하고, 팀원들은 같은 `AWARD.certificateNo`를 공유합니다.
-- `USER_ORGANIZATION_HISTORY`는 MVP에서 만들지 않습니다. 현재 소속/상태는 `USER.memberStatus`로 관리하고, 과거 대회 참여 정보는 `TEAM_MEMBER` 스냅샷으로 보존합니다.
-- 화면용 집계/캐시 필드는 초기 ERD에서 제외합니다. 예: `CONTEST.progress`, `CONTEST_JUDGE.assignedCount`, `CONTEST_JUDGE.completedCount`, `CONTEST_JUDGE.avgScore`.
-- `CONTEST_STAGE` 날짜 필드는 `startAt`, `endAt`, `dueAt` 3개만 사용합니다.
-- 제출물은 해당 단계의 `dueAt` 전까지만 수정할 수 있습니다.
-- 제출 파일은 S3에 저장하고, DB에는 S3 object key와 파일 메타데이터만 저장합니다. 다운로드 URL은 저장하지 않고 API에서 presigned URL로 발급합니다.
-- 제출 파일 삭제/교체 이력은 `SUBMISSION_FILE.status`, `replacedByFileId`, `deletedAt`으로 추적합니다.
-- 심사위원은 `CONTEST_JUDGE.reviewToken` 기반 QR/링크로 대회 단위 초대합니다.
-- 같은 심사위원이 여러 단계의 제출물을 심사할 수 있도록 허용합니다.
-- 제출물별 심사위원 배정 방식은 주최측 운영 정책으로 열어두고, `REVIEW_ASSIGNMENT` row 생성 방식으로 제어합니다.
-- 심사 결과는 제출 후 수정할 수 없습니다.
-- 평가 기준은 단계별로 관리하고, 점수는 `0 <= score <= REVIEW_CRITERION.maxScore`로 검증합니다. 별도 `minScore`는 두지 않습니다.
-- 동점 처리는 시스템 룰로 자동화하지 않고, 심사위원/운영자 토의 후 `TEAM_STAGE_RESULT`와 `AWARD`에 최종 결과를 반영합니다.
-
-## 권장 제약 조건
-
-- `TEAM_STAGE_RESULT`: `teamId + contestStageId` unique.
-- `REVIEW_ASSIGNMENT`: `contestJudgeId + submissionId` unique.
-- `REVIEW`: `assignmentId` unique.
-- `REVIEW_SCORE_ITEM`: `reviewId + criterionId` unique.
-- `REVIEW_SCORE_ITEM.score`: 0 이상, 연결된 `REVIEW_CRITERION.maxScore` 이하.
-
-## 정책 검토 필요
-
-- `TEAM`을 계속 팀/참가 신청 단위로 볼지, 이름을 `APPLICATION`으로 바꿀지 결정해야 합니다.
-- 팀원이 참가 신청 시점에 반드시 가입을 완료해야 하는지, 초대 후 가입 완료 방식도 허용할지 결정해야 합니다. 현재 ERD는 가입 완료 후 `TEAM_MEMBER.userId`가 필수인 구조입니다.
-- 모든 심사위원이 모든 제출물을 심사할지, 일부 제출물만 배정할지는 주최측 운영 정책으로 결정해야 합니다.
-- 심사위원이 추후 사용자 계정과 연결될 필요가 있는지는 후순위로 결정합니다. 현재는 `CONTEST_JUDGE.userId`를 nullable로 둡니다.
-- 졸업/자퇴/편입 이력을 감사 수준으로 보관해야 하면 `USER_ORGANIZATION_HISTORY`를 후순위로 추가합니다. MVP에서는 `USER.memberStatus`로 현재 상태만 관리합니다.
+이 확장은 실제 업무 요구가 생길 때 migration으로 추가한다. 현재 MVP ERD에 미리 넣지 않는다.
