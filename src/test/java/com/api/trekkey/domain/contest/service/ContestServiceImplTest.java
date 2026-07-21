@@ -11,10 +11,13 @@ import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestLike;
 import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
+import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.entity.StageType;
+import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestLikeRepository;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
+import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
 import com.api.trekkey.domain.contest.web.dto.ContestSearchRes;
 import com.api.trekkey.domain.contest.web.dto.ContestSearchStatus;
 import com.api.trekkey.domain.organization.entity.Organization;
@@ -135,6 +138,79 @@ class ContestServiceImplTest {
         verifyNoInteractions(contestRepository, contestStageRepository, contestLikeRepository);
     }
 
+    @Test
+    @DisplayName("공개 대회의 상세 응답을 조립한다")
+    void getContestDetail_returnsContestDetail() {
+        Contest contest = contest();
+        LocalDateTime applicationStartsAt = LocalDateTime.of(2026, 7, 1, 9, 0);
+        LocalDateTime applicationEndsAt = LocalDateTime.of(2026, 7, 20, 18, 0);
+        LocalDateTime submissionDueAt = LocalDateTime.of(2026, 8, 10, 23, 59);
+        ContestStage applicationStage = ContestStage.builder()
+                .contest(contest)
+                .stageType(StageType.APPLICATION)
+                .startsAt(applicationStartsAt)
+                .endsAt(applicationEndsAt)
+                .build();
+        ContestStage submissionStage = ContestStage.builder()
+                .contest(contest)
+                .stageType(StageType.SUBMISSION)
+                .endsAt(submissionDueAt)
+                .build();
+        Set<ContestStatus> publicStatuses = Set.of(
+                ContestStatus.APPLICATION_OPEN,
+                ContestStatus.REVIEWING,
+                ContestStatus.AWARDED);
+
+        given(contestRepository.findByPublicIdAndStatusIn(contest.getPublicId(), publicStatuses))
+                .willReturn(Optional.of(contest));
+        given(contestStageRepository.findAllByContestIdAndStageTypeInOrderBySequenceNoAsc(
+                1L,
+                Set.of(StageType.APPLICATION, StageType.SUBMISSION)))
+                .willReturn(List.of(applicationStage, submissionStage));
+        given(contestLikeRepository.countByContestId(1L)).willReturn(7L);
+
+        ContestDetailRes result = contestService.getContestDetail(contest.getPublicId());
+
+        assertThat(result).isEqualTo(new ContestDetailRes(
+                "f04739b5-bb66-4c3f-bf91-31b8712011be",
+                "AI 창의 경진대회",
+                ContestStatus.APPLICATION_OPEN,
+                ParticipationType.BOTH,
+                "https://example.com/poster.png",
+                "AI로 해결하는 캠퍼스 문제",
+                List.of("AI", "캠퍼스"),
+                "SW중심대학사업단",
+                applicationStartsAt,
+                applicationEndsAt,
+                submissionDueAt,
+                "전체 재학생",
+                3,
+                "온라인 신청서 제출",
+                "우수팀 시상",
+                "<p>대회 상세</p>",
+                31L,
+                7L));
+    }
+
+    @Test
+    @DisplayName("없거나 공개 전인 대회는 대회 없음으로 처리한다")
+    void getContestDetail_throwsWhenPublicContestDoesNotExist() {
+        String publicId = "f04739b5-bb66-4c3f-bf91-31b8712011be";
+        Set<ContestStatus> publicStatuses = Set.of(
+                ContestStatus.APPLICATION_OPEN,
+                ContestStatus.REVIEWING,
+                ContestStatus.AWARDED);
+        given(contestRepository.findByPublicIdAndStatusIn(publicId, publicStatuses))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> contestService.getContestDetail(publicId))
+                .isInstanceOf(CustomException.class)
+                .extracting("baseResponseCode")
+                .isEqualTo(ContestErrorResponseCode.CONTEST_NOT_FOUND);
+
+        verifyNoInteractions(contestStageRepository, contestLikeRepository);
+    }
+
     private void givenParticipant(Long userId, Long organizationId) {
         User user = mock(User.class);
         Organization organization = mock(Organization.class);
@@ -150,9 +226,15 @@ class ContestServiceImplTest {
                 .title("AI 창의 경진대회")
                 .department("SW중심대학사업단")
                 .status(ContestStatus.APPLICATION_OPEN)
+                .participationType(ParticipationType.BOTH)
+                .awardCount(3)
                 .posterUrl("https://example.com/poster.png")
                 .summary("AI로 해결하는 캠퍼스 문제")
                 .tags(" AI, 캠퍼스 ")
+                .target("전체 재학생")
+                .applicationMethod("온라인 신청서 제출")
+                .benefits("우수팀 시상")
+                .detailHtml("<p>대회 상세</p>")
                 .viewCount(31L)
                 .build();
     }
