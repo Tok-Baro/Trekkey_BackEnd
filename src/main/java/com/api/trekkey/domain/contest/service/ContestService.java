@@ -1,0 +1,9 @@
+package com.api.trekkey.domain.contest.service;
+
+import com.api.trekkey.domain.contest.web.dto.ContestSearchRes;
+import com.api.trekkey.domain.contest.web.dto.ContestSearchStatus;
+import java.util.List;
+
+public interface ContestService {
+    List<ContestSearchRes> searchContests(Long userId, String keyword, ContestSearchStatus status);
+}
