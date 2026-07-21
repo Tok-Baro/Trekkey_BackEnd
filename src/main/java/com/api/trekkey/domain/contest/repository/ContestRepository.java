@@ -4,6 +4,7 @@ import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,4 +27,8 @@ public interface ContestRepository extends JpaRepository<Contest, Long> {
             @Param("organizationId") Long organizationId,
             @Param("keyword") String keyword,
             @Param("statuses") Collection<ContestStatus> statuses);
+
+    Optional<Contest> findByPublicIdAndStatusIn(
+            String publicId,
+            Collection<ContestStatus> statuses);
 }
