@@ -4,9 +4,11 @@ import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.StageType;
+import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestLikeRepository;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
+import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
 import com.api.trekkey.domain.contest.web.dto.ContestSearchRes;
 import com.api.trekkey.domain.contest.web.dto.ContestSearchStatus;
 import com.api.trekkey.domain.user.entity.User;
@@ -81,5 +83,29 @@ public class ContestServiceImpl implements ContestService {
                             likeCounts.getOrDefault(contest.getId(), 0L));
                 })
                 .toList();
+    }
+
+    @Override
+    public ContestDetailRes getContestDetail(String publicId) {
+        /*
+            대회 단건 조회에 상태값이 들어가는 이유
+            현재 publicId로 조회를 하는데 publicId로만 조회 시 상태값이 준비 중인 상태 PREPARING도 조회가 가능하기 때문임.
+            이 API는 누구나 접근 가능한 API이기 때문에 위 사항을 방어해야함.
+            그래서 Set으로 조회가능한 상태값을 넣어서 조회한다.
+         */
+        Contest contest = contestRepository.findByPublicIdAndStatusIn(
+                        publicId,
+                        Set.of(
+                                ContestStatus.APPLICATION_OPEN,
+                                ContestStatus.REVIEWING,
+                                ContestStatus.AWARDED))
+                .orElseThrow(() -> new CustomException(ContestErrorResponseCode.CONTEST_NOT_FOUND));
+        List<ContestStage> stages = contestStageRepository
+                .findAllByContestIdAndStageTypeInOrderBySequenceNoAsc(
+                        contest.getId(),
+                        Set.of(StageType.APPLICATION, StageType.SUBMISSION));
+        long likeCount = contestLikeRepository.countByContestId(contest.getId());
+
+        return ContestDetailRes.from(contest, stages, likeCount);
     }
 }
