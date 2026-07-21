@@ -141,6 +141,7 @@ class ContestServiceImplTest {
     @Test
     @DisplayName("공개 대회의 상세 응답을 조립한다")
     void getContestDetail_returnsContestDetail() {
+        givenParticipant(10L, 2L);
         Contest contest = contest();
         LocalDateTime applicationStartsAt = LocalDateTime.of(2026, 7, 1, 9, 0);
         LocalDateTime applicationEndsAt = LocalDateTime.of(2026, 7, 20, 18, 0);
@@ -161,7 +162,10 @@ class ContestServiceImplTest {
                 ContestStatus.REVIEWING,
                 ContestStatus.AWARDED);
 
-        given(contestRepository.findByPublicIdAndStatusIn(contest.getPublicId(), publicStatuses))
+        given(contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
+                contest.getPublicId(),
+                2L,
+                publicStatuses))
                 .willReturn(Optional.of(contest));
         given(contestStageRepository.findAllByContestIdAndStageTypeInOrderBySequenceNoAsc(
                 1L,
@@ -193,14 +197,18 @@ class ContestServiceImplTest {
     }
 
     @Test
-    @DisplayName("없거나 공개 전인 대회는 대회 없음으로 처리한다")
+    @DisplayName("없거나 다른 학교 또는 공개 전인 대회는 대회 없음으로 처리한다")
     void getContestDetail_throwsWhenPublicContestDoesNotExist() {
+        givenParticipant(10L, 2L);
         String publicId = "f04739b5-bb66-4c3f-bf91-31b8712011be";
         Set<ContestStatus> publicStatuses = Set.of(
                 ContestStatus.APPLICATION_OPEN,
                 ContestStatus.REVIEWING,
                 ContestStatus.AWARDED);
-        given(contestRepository.findByPublicIdAndStatusIn(publicId, publicStatuses))
+        given(contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
+                publicId,
+                2L,
+                publicStatuses))
                 .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> contestService.getContestDetail(10L, publicId))
@@ -209,6 +217,19 @@ class ContestServiceImplTest {
                 .isEqualTo(ContestErrorResponseCode.CONTEST_NOT_FOUND);
 
         verifyNoInteractions(contestStageRepository, contestLikeRepository);
+    }
+
+    @Test
+    @DisplayName("상세 조회 사용자를 찾을 수 없으면 사용자 없음으로 처리한다")
+    void getContestDetail_throwsWhenUserDoesNotExist() {
+        given(userRepository.findById(10L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> contestService.getContestDetail(10L, "public-id"))
+                .isInstanceOf(CustomException.class)
+                .extracting("baseResponseCode")
+                .isEqualTo(UserErrorResponseCode.USER_NOT_FOUND);
+
+        verifyNoInteractions(contestRepository, contestStageRepository, contestLikeRepository);
     }
 
     private void givenParticipant(Long userId, Long organizationId) {

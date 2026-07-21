@@ -88,8 +88,12 @@ public class ContestServiceImpl implements ContestService {
     @Override
     public ContestDetailRes getContestDetail(Long userId, String publicId) {
         // 참가자에게 준비 중인 대회가 노출되지 않도록 공개 가능한 상태만 조회한다.
-        Contest contest = contestRepository.findByPublicIdAndStatusIn(
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(UserErrorResponseCode.USER_NOT_FOUND));
+
+        Contest contest = contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
                         publicId,
+                        user.getOrganization().getId(),
                         Set.of(
                                 ContestStatus.APPLICATION_OPEN,
                                 ContestStatus.REVIEWING,
