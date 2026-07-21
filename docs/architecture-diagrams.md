@@ -257,23 +257,18 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    request(["재제출 요청"]) --> upload["새 storageKey로 먼저 업로드"]
-    upload --> lock["SUBMISSION row 잠금"]
-    lock --> immutable{"finalizedAt 존재 또는 심사 시작?"}
+    request(["제출물 수정 요청"]) --> immutable{"제출 확정 또는 심사 시작?"}
     immutable -->|"예"| reject["수정 거부"]
-    reject --> cleanupNew["새 업로드 객체 정리"]
-    immutable -->|"아니오"| replace["제목과 파일 목록 교체"]
-    replace --> increment["sourceVersion 증가"]
-    increment --> stale["integrityStatus = STALE"]
-    stale --> commit["DB transaction commit"]
+    immutable -->|"아니오"| upload["새 storageKey로 업로드하며 SHA-256 계산"]
+    upload --> lock["SUBMISSION row 잠금"]
+    lock --> recheck{"잠금 후에도 수정 가능한가?"}
+    recheck -->|"아니오"| cleanupNew["새 객체 정리 후 수정 거부"]
+    recheck -->|"예"| replace["제목과 현재 파일 목록 교체"]
+    replace --> commit["DB transaction commit"]
     commit --> cleanupOld["이전 객체 비동기 정리"]
-    commit --> hashWorker["파일 hash worker"]
-    hashWorker --> versionCheck{"읽은 sourceVersion이 최신인가?"}
-    versionCheck -->|"아니오"| discard["오래된 계산 결과 폐기"]
-    versionCheck -->|"예"| ready["SHA-256 저장 및 READY"]
 ```
 
-별도 제출 버전 테이블은 만들지 않는다. 사용자에게는 최종 제출물 한 건만 보이고, 동시성은 `sourceVersion`으로 제어한다.
+별도 제출 버전과 상태 머신은 만들지 않는다. `SUBMISSION`은 팀의 현재 최종 제출물 한 건이며, 수정 요청은 row lock으로 직렬화한다. 파일 SHA-256은 업로드 stream에서 계산하므로 별도 hash worker도 필요 없다.
 
 ## 9. 라운드 심사와 공식 판정
 

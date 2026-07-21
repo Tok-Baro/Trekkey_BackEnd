@@ -166,7 +166,7 @@ Credential은 현재 업무 행을 실시간 참조하는 화면이 아니라 �
 
 ```text
 PARTICIPATION -> TEAM.participationFinalizedAt 존재
-WORK          -> SUBMISSION.finalizedAt 존재 + integrityStatus READY
+WORK          -> SUBMISSION.finalizedAt 존재 + 현재 SUBMISSION_FILE.sha256 전부 존재
 AWARD         -> AWARD.status CONFIRMED + confirmedAt 존재
 ```
 
@@ -297,7 +297,7 @@ source fingerprint 계산
 -> UNIQUE 충돌 시 기존 Credential 재조회 후 반환
 ```
 
-사용자 더블 클릭, HTTP 재시도, worker 중복 실행은 같은 Credential을 반환한다. payload에 영향을 주는 업무 변경은 먼저 `sourceVersion`을 증가시켜야 한다.
+사용자 더블 클릭, HTTP 재시도, worker 중복 실행은 같은 Credential을 반환한다. `ANC_CREDENTIAL_SOURCE.sourceVersion`은 Credential 계층의 발급 revision이며 제출물 수정 이력이 아니다. 최초 WORK 발급은 1을 사용하고, 이미 앵커링된 Credential을 정정해 대체 발급할 때만 증가시킨다. 최초 발급 전 제출물 수정은 같은 `SUBMISSION`을 덮어쓰며 version을 관리하지 않는다.
 
 ## 12. 제출 파일과 manifest
 
@@ -712,7 +712,7 @@ Kaia는 BFT 기반 immediate finality를 제공하므로 임의의 Ethereum conf
 ### 업무 무결성
 
 - 같은 팀원, 제출물, ENTRY, 심사 배정, 수상 중복 생성이 DB 제약으로 실패한다.
-- 동시 재제출에서 오래된 hash worker 결과가 최신 sourceVersion을 덮어쓰지 못한다.
+- 동시 제출물 수정은 row lock으로 직렬화되고 마지막으로 성공한 요청의 파일과 서버 계산 SHA-256이 함께 저장된다.
 - 라운드 확정 후 심사와 결과 수정이 실패한다.
 - AWARD의 team이 ENTRY의 team과 다르면 확정이 실패한다.
 
