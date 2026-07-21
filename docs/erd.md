@@ -173,7 +173,7 @@ erDiagram
         bigint teamId FK "제출 팀, 팀당 한 건"
         string title "작품명"
         string status "DRAFT/SUBMITTED/WITHDRAWN"
-        datetime finalizedAt "제출 잠금 시각"
+        datetime finalizedAt "제출 수정 마감 시각"
         datetime submittedAt "최근 제출 시각"
         datetime createdAt "최초 제출 시각"
         datetime updatedAt "수정 시각"
@@ -506,7 +506,7 @@ erDiagram
 - `UNIQUE SUBMISSION (teamId)`. 제출 버전 테이블은 만들지 않는다.
 - 마감 전 수정은 같은 `SUBMISSION` 행과 현재 `SUBMISSION_FILE` 목록을 덮어쓴다.
 - 새 파일은 고유 `storageKey`로 업로드하면서 서버가 SHA-256을 계산한다.
-- 업로드가 끝나면 `SUBMISSION` 행을 잠그고 수정 가능 여부를 다시 확인한 뒤 제목과 파일 목록을 한 트랜잭션에서 교체한다.
+- 업로드가 끝나면 트랜잭션에서 `SUBMISSION` 최신 상태를 `FOR UPDATE`로 조회한다. 이미 제출이 확정됐거나 심사가 시작됐으면 거부하고, 아니면 제목과 파일 목록을 교체한다.
 - 제출물용 `sourceVersion`, `integrityStatus`, 비동기 hash worker는 두지 않는다.
 - DB 교체 성공 후 이전 객체를 비동기로 정리하고, 실패하면 새 객체를 정리해 기존 제출물을 유지한다.
 - `finalizedAt` 이후 또는 첫 심사 시작 이후 제목과 파일을 수정할 수 없다.
@@ -515,6 +515,7 @@ erDiagram
 
 - `UNIQUE CONTEST_STAGE (contestId, sequenceNo)`.
 - `UNIQUE CONTEST_STAGE_ENTRY (contestStageId, submissionId)`.
+- 라운드 심사를 시작할 때 대상 `SUBMISSION` 전체의 `finalizedAt`을 확정해 이후 수정을 거부한다.
 - `PREVIOUS_PASSED`는 같은 대회의 직전 `sequenceNo`에서 동일 제출물이 `PASSED`인지 검사한다.
 - `PASSED`, `FAILED`, `WITHDRAWN`, `DISQUALIFIED`는 `finalizedAt`이 필수다.
 - `decisionType = MANUAL`이면 `decidedByUserId`와 `decisionReason`이 필수다.

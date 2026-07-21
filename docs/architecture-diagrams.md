@@ -260,15 +260,16 @@ flowchart TD
     request(["제출물 수정 요청"]) --> immutable{"제출 확정 또는 심사 시작?"}
     immutable -->|"예"| reject["수정 거부"]
     immutable -->|"아니오"| upload["새 storageKey로 업로드하며 SHA-256 계산"]
-    upload --> lock["SUBMISSION row 잠금"]
-    lock --> recheck{"잠금 후에도 수정 가능한가?"}
-    recheck -->|"아니오"| cleanupNew["새 객체 정리 후 수정 거부"]
-    recheck -->|"예"| replace["제목과 현재 파일 목록 교체"]
+    upload --> transaction["DB transaction 시작"]
+    transaction --> latest["SUBMISSION 최신 상태 조회 (FOR UPDATE)"]
+    latest --> recheck{"이미 제출 확정 또는 심사 시작?"}
+    recheck -->|"예"| cleanupNew["새 객체 정리 후 수정 거부"]
+    recheck -->|"아니오"| replace["제목과 현재 파일 목록 교체"]
     replace --> commit["DB transaction commit"]
     commit --> cleanupOld["이전 객체 비동기 정리"]
 ```
 
-별도 제출 버전과 상태 머신은 만들지 않는다. `SUBMISSION`은 팀의 현재 최종 제출물 한 건이며, 수정 요청은 row lock으로 직렬화한다. 파일 SHA-256은 업로드 stream에서 계산하므로 별도 hash worker도 필요 없다.
+별도 제출 버전과 상태 머신은 만들지 않는다. 심사 시작 시 대상 제출물은 `finalizedAt`으로 업무상 수정 금지가 된다. `FOR UPDATE`는 이 상태 전환과 파일 교체가 동시에 실행되지 않도록 트랜잭션 동안만 사용하는 DB 동시성 제어다. 파일 SHA-256은 업로드 stream에서 계산하므로 별도 hash worker도 필요 없다.
 
 ## 9. 라운드 심사와 공식 판정
 
@@ -282,6 +283,7 @@ sequenceDiagram
 
     Admin->>API: 라운드 시작
     API->>DB: 대상 제출물 조회
+    API->>DB: 대상 SUBMISSION finalizedAt 확정
     API->>DB: CONTEST_STAGE_ENTRY 생성
     API->>DB: REVIEW_ASSIGNMENT 생성
     Judge->>API: 기준별 점수와 의견 제출

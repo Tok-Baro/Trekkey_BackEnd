@@ -712,7 +712,7 @@ Kaia는 BFT 기반 immediate finality를 제공하므로 임의의 Ethereum conf
 ### 업무 무결성
 
 - 같은 팀원, 제출물, ENTRY, 심사 배정, 수상 중복 생성이 DB 제약으로 실패한다.
-- 동시 제출물 수정은 row lock으로 직렬화되고 마지막으로 성공한 요청의 파일과 서버 계산 SHA-256이 함께 저장된다.
+- 제출물 수정과 심사 시작은 같은 `SUBMISSION`을 `FOR UPDATE`로 조회해 직렬화되고, 마지막으로 성공한 수정의 파일과 서버 계산 SHA-256이 함께 저장된다.
 - 라운드 확정 후 심사와 결과 수정이 실패한다.
 - AWARD의 team이 ENTRY의 team과 다르면 확정이 실패한다.
 

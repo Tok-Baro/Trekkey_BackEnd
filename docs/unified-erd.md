@@ -169,7 +169,7 @@ erDiagram
         bigint teamId FK "제출 팀, 팀당 한 건"
         string title "작품명"
         string status "DRAFT/SUBMITTED/WITHDRAWN"
-        datetime finalizedAt "제출 잠금 시각"
+        datetime finalizedAt "제출 수정 마감 시각"
         datetime submittedAt "최근 제출 시각"
         datetime createdAt "최초 제출 시각"
         datetime updatedAt "수정 시각"
