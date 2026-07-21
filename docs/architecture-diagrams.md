@@ -251,7 +251,7 @@ flowchart TD
     memberBSubject --> memberBHistory["개인 수상 이력 조회"]
 ```
 
-상장은 팀에 한 건만 발급되지만, 발급 당시 구성원을 subject snapshot으로 고정하므로 각 학생이 같은 수상을 자기 이력에서 참조할 수 있다.
+가입한 팀원은 이탈하거나 삭제하지 않는다. 명단 확정 전에는 팀원 추가만 허용하고, 잘못 구성한 신청은 팀을 반려한 뒤 다시 신청한다. 상장은 팀에 한 건만 발급되지만, 발급 당시 구성원을 subject snapshot으로 고정하므로 각 학생이 같은 수상을 자기 이력에서 참조할 수 있다.
 
 ## 8. 제출물 덮어쓰기와 잠금
 
@@ -311,6 +311,8 @@ sequenceDiagram
     Admin->>Domain: 참여·작품·수상 확정
     Domain->>DB: 원천 확정과 outbox 원자적 저장
     Worker->>DB: 확정 원천과 팀원 조회
+    Worker->>Worker: 원천 snapshot과 subject 정규화
+    Worker->>Worker: sourceSnapshotHash와 subjectSetHash 계산
     Worker->>Worker: sourceFingerprint 계산
     Worker->>DB: 기존 Credential 조회
     alt 기존 Credential 존재
@@ -324,7 +326,7 @@ sequenceDiagram
     end
 ```
 
-Credential, source, subjects가 일부만 저장되는 상태는 허용하지 않는다. `sourceFingerprint`의 `UNIQUE`가 재시도와 동시 발급을 멱등하게 만든다.
+Credential, source, subjects가 일부만 저장되는 상태는 허용하지 않는다. `sourceFingerprint`는 숫자 revision 대신 확정 원천 내용과 subject 집합으로 계산한다. `UNIQUE` 제약이 재시도와 동시 발급을 멱등하게 만든다.
 
 ## 11. Canonical JSON부터 Merkle Root까지
 
@@ -492,8 +494,9 @@ flowchart TD
     revokeSign --> revokeChain["revokeCredential 온체인 확정"]
     revokeChain --> revokedState(["기존 Credential REVOKED"])
 
-    action -->|"대체"| sourceVersion["새 sourceVersion 확정"]
-    sourceVersion --> newCredential["새 Credential 생성"]
+    action -->|"대체"| correctedSource["정정 원천 재확정"]
+    correctedSource --> fingerprint["새 sourceFingerprint 계산"]
+    fingerprint --> newCredential["새 Credential 생성"]
     newCredential --> newAnchor["새 batch ANCHORED"]
     newAnchor --> supersedeEvent["기존 Credential status event"]
     supersedeEvent --> supersedeSign["StatusApproval 서명"]

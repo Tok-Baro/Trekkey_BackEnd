@@ -150,7 +150,6 @@ erDiagram
         string contactEmail "신청 연락 이메일"
         string phone "신청 연락처"
         text motivation "지원 동기"
-        bigint sourceVersion "Credential source 버전"
         datetime participationFinalizedAt "명단 확정 및 잠금 시각"
         datetime createdAt "신청 생성 시각"
         datetime updatedAt "수정 시각"
@@ -162,7 +161,6 @@ erDiagram
         bigint userId FK "구성 사용자"
         string roleCode "LEADER/MEMBER"
         datetime joinedAt "팀 참가 시각"
-        datetime leftAt "이탈 시각, 현재 구성원은 null"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -268,7 +266,6 @@ erDiagram
         string prize "상격"
         string status "CANDIDATE/CONFIRMED/HELD"
         string certificateNo UK "팀 단위 상장 번호"
-        bigint sourceVersion "Credential source 버전"
         datetime confirmedAt "수상 확정 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
@@ -369,7 +366,6 @@ erDiagram
         bigint submissionId FK "작품 원천"
         bigint awardId FK "수상 원천"
         string sourcePublicId "원천 공개 ID 스냅샷"
-        bigint sourceVersion "발급에 사용한 원천 버전"
         binary sourceFingerprint UK "의미 기반 멱등 해시"
         datetime sourceFinalizedAt "원천 확정 시각"
     }
@@ -496,7 +492,9 @@ erDiagram
 
 - `UNIQUE TEAM_MEMBER (teamId, userId)`.
 - `TEAM.leaderUserId`는 현재 팀원이며 `roleCode = LEADER`여야 한다.
-- `participationFinalizedAt` 이후 팀원 추가, 삭제, 역할 변경을 거부한다.
+- 팀에 가입한 `TEAM_MEMBER`는 이탈하거나 삭제하지 않는다.
+- 팀원 추가는 `participationFinalizedAt` 전까지만 허용하고, 확정 이후에는 추가와 역할 변경도 거부한다.
+- 구성원을 잘못 등록한 신청은 팀 자체를 반려하고 다시 신청한다.
 - `TEAM.memberCount`는 조회용 캐시이고 원장은 `TEAM_MEMBER`다.
 - 상장은 팀 단위 `AWARD` 및 Credential 한 건으로 발급하고, 모든 구성원은 같은 수상을 참조한다.
 - 발급 당시 팀과 구성원 정보는 `ANC_CREDENTIAL_SUBJECT`에 다시 스냅샷한다.
@@ -507,7 +505,7 @@ erDiagram
 - 마감 전 수정은 같은 `SUBMISSION` 행과 현재 `SUBMISSION_FILE` 목록을 덮어쓴다.
 - 새 파일은 고유 `storageKey`로 업로드하면서 서버가 SHA-256을 계산한다.
 - 업로드가 끝나면 트랜잭션에서 `SUBMISSION` 최신 상태를 `FOR UPDATE`로 조회한다. 이미 제출이 확정됐거나 심사가 시작됐으면 거부하고, 아니면 제목과 파일 목록을 교체한다.
-- 제출물용 `sourceVersion`, `integrityStatus`, 비동기 hash worker는 두지 않는다.
+- 제출물 수정 이력용 컬럼, 별도 무결성 상태, 비동기 hash worker는 두지 않는다.
 - DB 교체 성공 후 이전 객체를 비동기로 정리하고, 실패하면 새 객체를 정리해 기존 제출물을 유지한다.
 - `finalizedAt` 이후 또는 첫 심사 시작 이후 제목과 파일을 수정할 수 없다.
 
@@ -555,6 +553,14 @@ erDiagram
 - `UNIQUE ANC_BATCH_ITEM (batchId, leafIndex)`.
 - `UNIQUE ANC_CHAIN_TRANSACTION (chainId, txHash)`는 `txHash IS NOT NULL`일 때 적용한다.
 - `UNIQUE ANC_CHAIN_TRANSACTION (chainId, txHash, eventLogIndex)`는 event가 확인된 경우 적용한다.
+
+### 중복 발급 방지
+
+- 업무 테이블에 숫자 원천 revision 컬럼을 두지 않는다.
+- `sourceFingerprint`는 발급 기관, Credential 종류, 원천 공개 ID, 확정 원천 snapshot hash, 정렬된 subject 집합 hash, schema profile로 계산한다.
+- 같은 확정 내용을 다시 처리하면 같은 fingerprint로 기존 Credential을 반환한다.
+- 실제 정정으로 확정 원천 또는 subject가 바뀌면 fingerprint가 달라져 새 Credential을 발급할 수 있다.
+- WORK 원천 snapshot에는 현재 파일의 SHA-256 목록을 포함하고 `storageKey`, URL, `updatedAt` 같은 운영 값은 제외한다.
 
 ### 상태와 불변성
 

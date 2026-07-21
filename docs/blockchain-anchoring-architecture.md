@@ -147,7 +147,7 @@ root 하나는 원문의 백업이 아니다. 원문과 proof를 잃으면 root�
 | `WORK` | `SUBMISSION` | 제출 잠금 및 파일 hash 준비 | 작품명, 팀, file manifest |
 | `AWARD` | `AWARD` | 수상 `CONFIRMED` | 대회, 상격, 수상 순위, 팀 |
 
-상장은 팀 단위 Credential 한 건으로 발급한다. 개인별로 같은 Credential을 복제하지 않는다.
+상장은 팀 단위 Credential 한 건으로 발급한다. 개인별로 같은 Credential을 복제하지 않는다. 가입한 팀원은 이탈하거나 삭제하지 않으며, 명단 확정 전까지 팀원 추가만 허용한다. 잘못 구성한 신청은 팀을 반려하고 다시 신청한다.
 
 ```text
 AWARD Credential 1건
@@ -266,18 +266,22 @@ DB에는 조회용 `payloadJson`과 실제 hash 입력인 `canonicalBytes`를 �
 
 ```json
 {
-  "fingerprintVersion": 1,
+  "fingerprintProfileId": "trekkey:source-fingerprint:v1",
   "issuerPublicId": "org_public_id",
   "credentialType": "AWARD",
   "sourceType": "AWARD",
   "sourcePublicId": "award_public_id",
-  "sourceVersion": 1,
+  "sourceSnapshotHash": "sha256_hex",
   "subjectSetHash": "sha256_hex",
   "schemaProfileId": "trekkey:award:v1:jcs-rfc8785:unicode-nfc-1"
 }
 ```
 
 ```text
+sourceSnapshotHash = SHA-256(
+  JCS(credential-relevant finalized source fields)
+)
+
 subjectSetHash = SHA-256(
   JCS([{userId, roleCode}, ...] sorted by userId then roleCode)
 )
@@ -297,7 +301,7 @@ source fingerprint 계산
 -> UNIQUE 충돌 시 기존 Credential 재조회 후 반환
 ```
 
-사용자 더블 클릭, HTTP 재시도, worker 중복 실행은 같은 Credential을 반환한다. `ANC_CREDENTIAL_SOURCE.sourceVersion`은 Credential 계층의 발급 revision이며 제출물 수정 이력이 아니다. 최초 WORK 발급은 1을 사용하고, 이미 앵커링된 Credential을 정정해 대체 발급할 때만 증가시킨다. 최초 발급 전 제출물 수정은 같은 `SUBMISSION`을 덮어쓰며 version을 관리하지 않는다.
+사용자 더블 클릭, HTTP 재시도, worker 중복 실행은 같은 Credential을 반환한다. 숫자 원천 revision 컬럼은 사용하지 않는다. 실제 정정으로 확정 원천 내용이나 subject 집합이 바뀌면 hash와 fingerprint가 달라져 새 Credential을 만들 수 있다. WORK snapshot에는 정렬된 현재 파일 SHA-256 목록을 포함하고 `storageKey`, URL, `updatedAt` 같은 운영 값은 제외한다.
 
 ## 12. 제출 파일과 manifest
 
@@ -599,7 +603,8 @@ QR에는 학번이나 전체 proof를 넣지 않는다. 기본 QR은 HTTPS URL�
 대체 Credential이 검증 불가능한 공백을 만들지 않도록 순서를 고정한다.
 
 ```text
-새 sourceVersion 확정
+정정된 업무 원천 재확정
+-> 새 sourceFingerprint 계산
 -> 새 Credential 생성
 -> 새 batch 앵커 CONFIRMED
 -> 기존 Credential supersede 온체인 확정

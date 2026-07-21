@@ -146,7 +146,6 @@ erDiagram
         string contactEmail "신청 연락 이메일"
         string phone "신청 연락처"
         text motivation "지원 동기"
-        bigint sourceVersion "Credential source 버전"
         datetime participationFinalizedAt "명단 확정 및 잠금 시각"
         datetime createdAt "신청 생성 시각"
         datetime updatedAt "수정 시각"
@@ -158,7 +157,6 @@ erDiagram
         bigint userId FK "구성 사용자"
         string roleCode "LEADER/MEMBER"
         datetime joinedAt "팀 참가 시각"
-        datetime leftAt "이탈 시각, 현재 구성원은 null"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -264,7 +262,6 @@ erDiagram
         string prize "상격"
         string status "CANDIDATE/CONFIRMED/HELD"
         string certificateNo UK "팀 단위 상장 번호"
-        bigint sourceVersion "Credential source 버전"
         datetime confirmedAt "수상 확정 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
@@ -309,7 +306,6 @@ erDiagram
         bigint submissionId FK "작품 원천"
         bigint awardId FK "수상 원천"
         string sourcePublicId "원천 공개 ID 스냅샷"
-        bigint sourceVersion "발급에 사용한 원천 버전"
         binary sourceFingerprint UK "의미 기반 멱등 해시"
         datetime sourceFinalizedAt "원천 확정 시각"
     }
