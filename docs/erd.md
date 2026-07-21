@@ -2,6 +2,7 @@
 
 - 기준일: 2026-07-20
 - 상태: MVP 구현 기준
+- 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 상세 설계: [블록체인 앵커링 설계](./blockchain-anchoring-architecture.md)
 
 ## 1. 범위

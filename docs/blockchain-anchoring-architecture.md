@@ -2,6 +2,7 @@
 
 - 기준일: 2026-07-20
 - 상태: MVP 구현 기준
+- 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 기준 ERD: [Trekkey 공모전·Credential 최종 ERD](./erd.md)
 - 대상 네트워크: Kaia Kairos 우선, EVM 체인 교체 가능 구조
 
