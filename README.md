@@ -105,4 +105,8 @@ MySQL 통합 테스트를 포함하고 있으므로 테스트 환경의 데이�
 
 ## 관련 문서
 
-- [ERD](docs/erd.md)
+- [업무·블록체인 전체 통합 ERD](docs/unified-erd.md)
+- [팀 회의용 Mermaid 다이어그램 보드](docs/architecture-diagrams.md)
+- [공모전·Credential 최종 ERD](docs/erd.md)
+- [Credential 및 Kaia 앵커링 설계](docs/blockchain-anchoring-architecture.md)
+- [설계 문서 인덱스](docs/README.md)
