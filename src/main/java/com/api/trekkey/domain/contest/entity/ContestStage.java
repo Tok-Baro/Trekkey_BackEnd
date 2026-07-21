@@ -82,4 +82,34 @@ public class ContestStage extends BaseEntity {
     @Column(precision = 10, scale = 2)
     // 기준 점수 통과 시 필요한 최소 점수
     private BigDecimal minScore;
+
+    // 관리자 대회 편집 — 단계 설정 전체를 갱신한다. (setter 대신 도메인 메서드)
+    public void update(
+            String name,
+            StageType stageType,
+            int sequenceNo,
+            StageStatus status,
+            LocalDateTime startsAt,
+            LocalDateTime endsAt,
+            StageTargetType targetType,
+            StagePassRule passRule,
+            Integer passCount,
+            BigDecimal minScore
+    ) {
+        this.name = name;
+        this.stageType = stageType;
+        this.sequenceNo = sequenceNo;
+        this.status = status;
+        this.startsAt = startsAt;
+        this.endsAt = endsAt;
+        this.targetType = targetType;
+        this.passRule = passRule;
+        this.passCount = passCount;
+        this.minScore = minScore;
+    }
+
+    // 운영 중 단계 상태만 전환한다.
+    public void changeStatus(StageStatus status) {
+        this.status = status;
+    }
 }
