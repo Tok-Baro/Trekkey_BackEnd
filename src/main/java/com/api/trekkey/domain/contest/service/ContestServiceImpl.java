@@ -7,6 +7,11 @@ import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.repository.ContestLikeRepository;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
+import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
+import com.api.trekkey.domain.contest.repository.ReviewCriterionRepository;
+import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
+import com.api.trekkey.domain.contest.web.dto.CriterionRes;
+import com.api.trekkey.domain.contest.web.dto.StageRes;
 import com.api.trekkey.domain.contest.web.dto.ContestSearchRes;
 import com.api.trekkey.domain.contest.web.dto.ContestSearchStatus;
 import com.api.trekkey.domain.user.entity.User;
@@ -29,6 +34,7 @@ public class ContestServiceImpl implements ContestService {
     private final ContestRepository contestRepository;
     private final ContestStageRepository contestStageRepository;
     private final ContestLikeRepository contestLikeRepository;
+    private final ReviewCriterionRepository reviewCriterionRepository;
     private final UserRepository userRepository;
 
     @Override
@@ -81,5 +87,29 @@ public class ContestServiceImpl implements ContestService {
                             likeCounts.getOrDefault(contest.getId(), 0L));
                 })
                 .toList();
+    }
+
+    @Override
+    public ContestDetailRes getContestDetail(String publicId) {
+        Contest contest = contestRepository.findByPublicId(publicId)
+                .orElseThrow(() -> new CustomException(ContestErrorResponseCode.CONTEST_NOT_FOUND));
+
+        List<ContestStage> stages =
+                contestStageRepository.findAllByContestIdOrderBySequenceNoAsc(contest.getId());
+
+        // 평가 기준 일괄 조회 후 단계별 그룹핑 (N+1 방지)
+        List<Long> stageIds = stages.stream().map(ContestStage::getId).toList();
+        Map<Long, List<CriterionRes>> criteriaByStageId = stageIds.isEmpty()
+                ? Map.of()
+                : reviewCriterionRepository.findAllByContestStageIdInOrderBySortOrderAsc(stageIds).stream()
+                        .collect(Collectors.groupingBy(
+                                criterion -> criterion.getContestStage().getId(),
+                                Collectors.mapping(CriterionRes::from, Collectors.toList())));
+
+        List<StageRes> stageResList = stages.stream()
+                .map(stage -> StageRes.from(stage, criteriaByStageId.getOrDefault(stage.getId(), List.of())))
+                .toList();
+
+        return ContestDetailRes.of(contest, stageResList);
     }
 }

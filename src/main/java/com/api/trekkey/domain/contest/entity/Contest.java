@@ -115,4 +115,33 @@ public class Contest extends BaseEntity {
             publicId = UUID.randomUUID().toString();
         }
     }
+
+    // 관리자 대회 편집 — 공개 공고 정보 전체를 갱신한다. (setter 대신 도메인 메서드)
+    public void update(
+            String title,
+            String department,
+            ContestStatus status,
+            ParticipationType participationType,
+            int awardCount,
+            String posterUrl,
+            String summary,
+            String target,
+            String applicationMethod,
+            String benefits,
+            String tags,
+            String detailHtml
+    ) {
+        this.title = title;
+        this.department = department;
+        this.status = status;
+        this.participationType = participationType;
+        this.awardCount = awardCount;
+        this.posterUrl = posterUrl;
+        this.summary = summary;
+        this.target = target;
+        this.applicationMethod = applicationMethod;
+        this.benefits = benefits;
+        this.tags = tags;
+        this.detailHtml = detailHtml;
+    }
 }

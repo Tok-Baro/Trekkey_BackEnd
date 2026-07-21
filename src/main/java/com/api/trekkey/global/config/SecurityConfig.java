@@ -9,7 +9,10 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -19,6 +22,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 @RequiredArgsConstructor
 @EnableConfigurationProperties(JwtProperties.class)
 public class SecurityConfig {
@@ -39,6 +43,16 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    /**
+     * ROOT_ADMIN은 ADMIN 권한을 포함한다 (docs/ADMIN_SECURITY.md §2-1).
+     * 이 빈은 @EnableMethodSecurity(@PreAuthorize)와 authorizeHttpRequests 양쪽에 자동 적용되므로
+     * 기존 hasRole("ADMIN") 검사를 ROOT_ADMIN이 수정 없이 통과한다.
+     */
+    @Bean
+    public RoleHierarchy roleHierarchy() {
+        return RoleHierarchyImpl.fromHierarchy("ROLE_ROOT_ADMIN > ROLE_ADMIN");
+    }
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -52,7 +66,10 @@ public class SecurityConfig {
                         .requestMatchers(SWAGGER_URLS).permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/organizations/**").permitAll() //회원가입 시 학교 검색 API
-                        .requestMatchers(HttpMethod.GET, "/api/contests").hasRole("PARTICIPANT")
+                        .requestMatchers(HttpMethod.GET, "/api/contests").hasRole("PARTICIPANT") //참가자 대회 찾기
+                        .requestMatchers(HttpMethod.GET, "/api/contests/*").permitAll() //공개 공고 상세 (비로그인 허용)
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN") //관리자 콘솔 (RoleHierarchy로 ROOT 포함)
+                        .requestMatchers("/api/root/**").hasRole("ROOT_ADMIN") //초대 발급·가입 승인 등 ROOT_ADMIN 전용
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
