@@ -1,9 +1,9 @@
-package com.api.trekkey.domain.contest.web.controller;
+package com.api.trekkey.domain.contest.publicapi.web.controller;
 
-import com.api.trekkey.domain.contest.service.ContestService;
-import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
-import com.api.trekkey.domain.contest.web.dto.ContestSearchRes;
-import com.api.trekkey.domain.contest.web.dto.ContestSearchStatus;
+import com.api.trekkey.domain.contest.publicapi.service.ContestService;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestDetailRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
 import com.api.trekkey.global.response.SuccessResponse;
 import com.api.trekkey.global.security.AuthPrincipal;
 

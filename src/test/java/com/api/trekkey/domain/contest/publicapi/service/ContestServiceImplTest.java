@@ -1,4 +1,4 @@
-package com.api.trekkey.domain.contest.service;
+package com.api.trekkey.domain.contest.publicapi.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -14,12 +14,13 @@ import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
+import com.api.trekkey.domain.contest.publicapi.service.ContestServiceImpl;
 import com.api.trekkey.domain.contest.repository.ContestLikeRepository;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
-import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
-import com.api.trekkey.domain.contest.web.dto.ContestSearchRes;
-import com.api.trekkey.domain.contest.web.dto.ContestSearchStatus;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestDetailRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;

@@ -1,4 +1,4 @@
-package com.api.trekkey.domain.contest.service;
+package com.api.trekkey.domain.contest.publicapi.service;
 
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
@@ -8,9 +8,9 @@ import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestLikeRepository;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
-import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
-import com.api.trekkey.domain.contest.web.dto.ContestSearchRes;
-import com.api.trekkey.domain.contest.web.dto.ContestSearchStatus;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestDetailRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;

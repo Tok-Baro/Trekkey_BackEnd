@@ -1,4 +1,4 @@
-package com.api.trekkey.domain.contest.web.dto;
+package com.api.trekkey.domain.contest.publicapi.web.dto;
 
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStatus;

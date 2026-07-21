@@ -1,4 +1,4 @@
-package com.api.trekkey.domain.contest.web.controller;
+package com.api.trekkey.domain.contest.publicapi.web.controller;
 
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
@@ -10,10 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
-import com.api.trekkey.domain.contest.service.ContestService;
-import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
-import com.api.trekkey.domain.contest.web.dto.ContestSearchRes;
-import com.api.trekkey.domain.contest.web.dto.ContestSearchStatus;
+import com.api.trekkey.domain.contest.publicapi.service.ContestService;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestDetailRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
 import com.api.trekkey.global.exception.CustomException;
 import com.api.trekkey.global.exception.GlobalExceptionHandler;
 import com.api.trekkey.global.security.AuthPrincipal;
