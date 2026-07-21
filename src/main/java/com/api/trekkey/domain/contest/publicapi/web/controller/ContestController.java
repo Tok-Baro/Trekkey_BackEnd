@@ -38,9 +38,10 @@ public class ContestController {
 
     @GetMapping("/{publicId}")
     public ResponseEntity<SuccessResponse<ContestDetailRes>> getContestDetail(
+            @AuthenticationPrincipal AuthPrincipal authPrincipal,
             @PathVariable String publicId) {
         return ResponseEntity
                 .status(HttpStatus.OK)
-                .body(SuccessResponse.ok(contestService.getContestDetail(publicId)));
+                .body(SuccessResponse.ok(contestService.getContestDetail(authPrincipal.getId(), publicId)));
     }
 }

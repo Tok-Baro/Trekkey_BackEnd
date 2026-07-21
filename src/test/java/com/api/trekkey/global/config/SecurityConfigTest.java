@@ -51,12 +51,25 @@ class SecurityConfigTest {
     private JpaMetamodelMappingContext jpaMappingContext;
 
     @Test
-    @DisplayName("대회 상세는 인증 없이 조회할 수 있다")
-    void contestDetail_permitsAnonymous() throws Exception {
+    @DisplayName("대회 상세는 인증 없이 조회할 수 없다")
+    void contestDetail_rejectsAnonymous() throws Exception {
         String publicId = "f04739b5-bb66-4c3f-bf91-31b8712011be";
-        given(contestService.getContestDetail(publicId)).willReturn(null);
 
         mockMvc.perform(get("/api/contests/{publicId}", publicId))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(contestService);
+    }
+
+    @Test
+    @DisplayName("참가자는 대회 상세를 조회할 수 있다")
+    void contestDetail_permitsParticipant() throws Exception {
+        String publicId = "f04739b5-bb66-4c3f-bf91-31b8712011be";
+        given(contestService.getContestDetail(10L, publicId)).willReturn(null);
+
+        mockMvc.perform(get("/api/contests/{publicId}", publicId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("PARTICIPANT")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true));
     }

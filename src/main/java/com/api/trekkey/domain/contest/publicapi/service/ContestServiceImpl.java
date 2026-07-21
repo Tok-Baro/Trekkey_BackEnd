@@ -86,7 +86,7 @@ public class ContestServiceImpl implements ContestService {
     }
 
     @Override
-    public ContestDetailRes getContestDetail(String publicId) {
+    public ContestDetailRes getContestDetail(Long userId, String publicId) {
         /*
             대회 단건 조회에 상태값이 들어가는 이유
             현재 publicId로 조회를 하는데 publicId로만 조회 시 상태값이 준비 중인 상태 PREPARING도 조회가 가능하기 때문임.

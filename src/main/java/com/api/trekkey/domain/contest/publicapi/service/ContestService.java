@@ -8,5 +8,5 @@ import java.util.List;
 public interface ContestService {
     List<ContestSearchRes> searchContests(Long userId, String keyword, ContestSearchStatus status);
 
-    ContestDetailRes getContestDetail(String publicId);
+    ContestDetailRes getContestDetail(Long userId, String publicId);
 }

@@ -110,7 +110,7 @@ class ContestControllerTest {
     @DisplayName("대회 단건 상세를 SuccessResponse로 반환한다")
     void getContestDetail_returnsSuccessResponse() throws Exception {
         String publicId = "f04739b5-bb66-4c3f-bf91-31b8712011be";
-        given(contestService.getContestDetail(publicId)).willReturn(detailResponse());
+        given(contestService.getContestDetail(10L, publicId)).willReturn(detailResponse());
 
         mockMvc.perform(get("/api/contests/{publicId}", publicId))
                 .andExpect(status().isOk())
@@ -128,14 +128,14 @@ class ContestControllerTest {
                 .andExpect(jsonPath("$.data.viewCount").value(31))
                 .andExpect(jsonPath("$.data.likeCount").value(7));
 
-        verify(contestService).getContestDetail(publicId);
+        verify(contestService).getContestDetail(10L, publicId);
     }
 
     @Test
     @DisplayName("대회 상세를 찾을 수 없으면 404를 반환한다")
     void getContestDetail_returnsNotFound() throws Exception {
         String publicId = "missing-contest";
-        given(contestService.getContestDetail(publicId))
+        given(contestService.getContestDetail(10L, publicId))
                 .willThrow(new CustomException(ContestErrorResponseCode.CONTEST_NOT_FOUND));
 
         mockMvc.perform(get("/api/contests/{publicId}", publicId))

@@ -14,7 +14,6 @@ import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
-import com.api.trekkey.domain.contest.publicapi.service.ContestServiceImpl;
 import com.api.trekkey.domain.contest.repository.ContestLikeRepository;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
@@ -170,7 +169,7 @@ class ContestServiceImplTest {
                 .willReturn(List.of(applicationStage, submissionStage));
         given(contestLikeRepository.countByContestId(1L)).willReturn(7L);
 
-        ContestDetailRes result = contestService.getContestDetail(contest.getPublicId());
+        ContestDetailRes result = contestService.getContestDetail(10L, contest.getPublicId());
 
         assertThat(result).isEqualTo(new ContestDetailRes(
                 "f04739b5-bb66-4c3f-bf91-31b8712011be",
@@ -204,7 +203,7 @@ class ContestServiceImplTest {
         given(contestRepository.findByPublicIdAndStatusIn(publicId, publicStatuses))
                 .willReturn(Optional.empty());
 
-        assertThatThrownBy(() -> contestService.getContestDetail(publicId))
+        assertThatThrownBy(() -> contestService.getContestDetail(10L, publicId))
                 .isInstanceOf(CustomException.class)
                 .extracting("baseResponseCode")
                 .isEqualTo(ContestErrorResponseCode.CONTEST_NOT_FOUND);
