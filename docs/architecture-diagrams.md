@@ -257,14 +257,12 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    request(["제출물 수정 요청"]) --> immutable{"제출 확정 또는 심사 시작?"}
-    immutable -->|"예"| reject["수정 거부"]
-    immutable -->|"아니오"| upload["새 storageKey로 업로드하며 SHA-256 계산"]
+    request(["제출물 수정 요청"]) --> upload["새 storageKey로 업로드하며 SHA-256 계산"]
     upload --> transaction["DB transaction 시작"]
     transaction --> latest["SUBMISSION 최신 상태 조회 (FOR UPDATE)"]
-    latest --> recheck{"이미 제출 확정 또는 심사 시작?"}
-    recheck -->|"예"| cleanupNew["새 객체 정리 후 수정 거부"]
-    recheck -->|"아니오"| replace["제목과 현재 파일 목록 교체"]
+    latest --> immutable{"제출 확정 또는 심사 시작?"}
+    immutable -->|"예"| cleanupNew["새 객체 정리 후 수정 거부"]
+    immutable -->|"아니오"| replace["제목과 현재 파일 목록 교체"]
     replace --> commit["DB transaction commit"]
     commit --> cleanupOld["이전 객체 비동기 정리"]
 ```
