@@ -1,4 +1,4 @@
-package com.api.trekkey.domain.contest.web.dto;
+package com.api.trekkey.domain.contest.publicapi.web.dto;
 
 public enum ContestSearchStatus {
     OPEN,

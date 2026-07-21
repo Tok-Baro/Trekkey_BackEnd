@@ -66,8 +66,8 @@ public class SecurityConfig {
                         .requestMatchers(SWAGGER_URLS).permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/organizations/**").permitAll() //회원가입 시 학교 검색 API
-                        .requestMatchers(HttpMethod.GET, "/api/contests").hasRole("PARTICIPANT") //참가자 대회 찾기
-                        .requestMatchers(HttpMethod.GET, "/api/contests/*").permitAll() //공개 공고 상세 (비로그인 허용)
+                        .requestMatchers(HttpMethod.GET, "/api/contests").hasRole("PARTICIPANT")
+                        .requestMatchers(HttpMethod.GET, "/api/contests/*").hasRole("PARTICIPANT")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN") //관리자 콘솔 (RoleHierarchy로 ROOT 포함)
                         .requestMatchers("/api/root/**").hasRole("ROOT_ADMIN") //초대 발급·가입 승인 등 ROOT_ADMIN 전용
                         .anyRequest().authenticated())

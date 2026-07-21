@@ -1,19 +1,16 @@
-package com.api.trekkey.domain.contest.service;
+package com.api.trekkey.domain.contest.publicapi.service;
 
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.StageType;
+import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestLikeRepository;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
-import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
-import com.api.trekkey.domain.contest.repository.ReviewCriterionRepository;
-import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
-import com.api.trekkey.domain.contest.web.dto.CriterionRes;
-import com.api.trekkey.domain.contest.web.dto.StageRes;
-import com.api.trekkey.domain.contest.web.dto.ContestSearchRes;
-import com.api.trekkey.domain.contest.web.dto.ContestSearchStatus;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestDetailRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
@@ -34,7 +31,6 @@ public class ContestServiceImpl implements ContestService {
     private final ContestRepository contestRepository;
     private final ContestStageRepository contestStageRepository;
     private final ContestLikeRepository contestLikeRepository;
-    private final ReviewCriterionRepository reviewCriterionRepository;
     private final UserRepository userRepository;
 
     @Override
@@ -90,26 +86,21 @@ public class ContestServiceImpl implements ContestService {
     }
 
     @Override
-    public ContestDetailRes getContestDetail(String publicId) {
-        Contest contest = contestRepository.findByPublicId(publicId)
+    public ContestDetailRes getContestDetail(Long userId, String publicId) {
+        // 참가자에게 준비 중인 대회가 노출되지 않도록 공개 가능한 상태만 조회한다.
+        Contest contest = contestRepository.findByPublicIdAndStatusIn(
+                        publicId,
+                        Set.of(
+                                ContestStatus.APPLICATION_OPEN,
+                                ContestStatus.REVIEWING,
+                                ContestStatus.AWARDED))
                 .orElseThrow(() -> new CustomException(ContestErrorResponseCode.CONTEST_NOT_FOUND));
+        List<ContestStage> stages = contestStageRepository
+                .findAllByContestIdAndStageTypeInOrderBySequenceNoAsc(
+                        contest.getId(),
+                        Set.of(StageType.APPLICATION, StageType.SUBMISSION));
+        long likeCount = contestLikeRepository.countByContestId(contest.getId());
 
-        List<ContestStage> stages =
-                contestStageRepository.findAllByContestIdOrderBySequenceNoAsc(contest.getId());
-
-        // 평가 기준 일괄 조회 후 단계별 그룹핑 (N+1 방지)
-        List<Long> stageIds = stages.stream().map(ContestStage::getId).toList();
-        Map<Long, List<CriterionRes>> criteriaByStageId = stageIds.isEmpty()
-                ? Map.of()
-                : reviewCriterionRepository.findAllByContestStageIdInOrderBySortOrderAsc(stageIds).stream()
-                        .collect(Collectors.groupingBy(
-                                criterion -> criterion.getContestStage().getId(),
-                                Collectors.mapping(CriterionRes::from, Collectors.toList())));
-
-        List<StageRes> stageResList = stages.stream()
-                .map(stage -> StageRes.from(stage, criteriaByStageId.getOrDefault(stage.getId(), List.of())))
-                .toList();
-
-        return ContestDetailRes.of(contest, stageResList);
+        return ContestDetailRes.from(contest, stages, likeCount);
     }
 }

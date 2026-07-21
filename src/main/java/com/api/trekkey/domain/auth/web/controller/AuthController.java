@@ -61,7 +61,7 @@ public class AuthController {
         AuthResult authResult = authService.signIn(userSignInReq);
 
         return ResponseEntity
-                .ok()
+                .status(HttpStatus.OK)
                 .header(HttpHeaders.SET_COOKIE,
                         refreshTokenCookieProvider.createCookie(authResult.refreshToken()).toString())
                 .body(SuccessResponse.ok(authResult.userSignInRes()));
@@ -73,7 +73,7 @@ public class AuthController {
         AuthResult authResult = authService.reissue(refreshToken);
 
         return ResponseEntity
-                .ok()
+                .status(HttpStatus.OK)
                 .header(HttpHeaders.SET_COOKIE,
                         refreshTokenCookieProvider.createCookie(authResult.refreshToken()).toString())
                 .body(SuccessResponse.ok(authResult.userSignInRes()));
@@ -85,7 +85,7 @@ public class AuthController {
         authService.logout(refreshToken);
 
         return ResponseEntity
-                .ok()
+                .status(HttpStatus.OK)
                 .header(HttpHeaders.SET_COOKIE,
                         refreshTokenCookieProvider.deleteCookie().toString())
                 .body(SuccessResponse.emptyCustom("로그아웃 성공"));
