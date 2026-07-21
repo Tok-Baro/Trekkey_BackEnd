@@ -1,11 +1,13 @@
 package com.api.trekkey.domain.contest.publicapi.web.controller;
 
+import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.publicapi.service.ContestService;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestDetailRes;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchRes;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
 import com.api.trekkey.global.response.SuccessResponse;
 import com.api.trekkey.global.security.AuthPrincipal;
+import com.api.trekkey.global.swagger.ApiErrorCodeExamples;
 
 import java.util.List;
 
@@ -36,6 +38,7 @@ public class ContestController {
                 .body(SuccessResponse.ok(contestService.searchContests(authPrincipal.getId(), keyword, status)));
     }
 
+    @ApiErrorCodeExamples(value = ContestErrorResponseCode.class, codes = {"CONTEST_NOT_FOUND"})
     @GetMapping("/{publicId}")
     public ResponseEntity<SuccessResponse<ContestDetailRes>> getContestDetail(
             @AuthenticationPrincipal AuthPrincipal authPrincipal,

@@ -87,12 +87,7 @@ public class ContestServiceImpl implements ContestService {
 
     @Override
     public ContestDetailRes getContestDetail(Long userId, String publicId) {
-        /*
-            대회 단건 조회에 상태값이 들어가는 이유
-            현재 publicId로 조회를 하는데 publicId로만 조회 시 상태값이 준비 중인 상태 PREPARING도 조회가 가능하기 때문임.
-            이 API는 누구나 접근 가능한 API이기 때문에 위 사항을 방어해야함.
-            그래서 Set으로 조회가능한 상태값을 넣어서 조회한다.
-         */
+        // 참가자에게 준비 중인 대회가 노출되지 않도록 공개 가능한 상태만 조회한다.
         Contest contest = contestRepository.findByPublicIdAndStatusIn(
                         publicId,
                         Set.of(

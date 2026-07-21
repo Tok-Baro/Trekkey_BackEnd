@@ -15,4 +15,6 @@ public interface ContestStageRepository extends JpaRepository<ContestStage, Long
     List<ContestStage> findAllByContestIdAndStageTypeInOrderBySequenceNoAsc(
             Long contestId,
             Collection<StageType> stageTypes);
+
+    List<ContestStage> findAllByContestIdOrderBySequenceNoAsc(Long contestId);
 }

@@ -11,6 +11,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface ContestRepository extends JpaRepository<Contest, Long> {
 
+    java.util.Optional<Contest> findByPublicId(String publicId);
+
     @Query("""
             select contest
             from Contest contest
