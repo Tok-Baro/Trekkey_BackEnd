@@ -53,6 +53,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/organizations/**").permitAll() //회원가입 시 학교 검색 API
                         .requestMatchers(HttpMethod.GET, "/api/contests").hasRole("PARTICIPANT")
+                        .requestMatchers(HttpMethod.GET, "/api/contests/*").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
