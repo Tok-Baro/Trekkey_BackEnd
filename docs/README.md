@@ -1,21 +1,26 @@
 # Trekkey 설계 문서
 
-팀 구현 기준 문서는 다음 세 개다.
+팀 구현 기준 문서는 다음 네 개다.
 
-1. [팀 회의용 Mermaid 다이어그램 보드](./architecture-diagrams.md)
+1. [업무·블록체인 전체 통합 ERD](./unified-erd.md)
+   - 업무 SQL 16개와 앵커링 SQL 9개를 한 캔버스에 표시
+   - [확대용 SVG](./assets/trekkey-unified-erd.svg)
+   - [Raw Mermaid](./trekkey-unified-erd.mmd)
+
+2. [팀 회의용 Mermaid 다이어그램 보드](./architecture-diagrams.md)
    - 전체 시스템과 신뢰 경계
    - 업무·Credential 축약 ERD
    - 대회, 심사, 발급, 앵커링, 검증 흐름
    - 상태 머신과 장애 복구
    - 구현 의존 순서
 
-2. [공모전·Credential 최종 ERD](./erd.md)
+3. [공모전·Credential 최종 ERD](./erd.md)
    - 업무 SQL ERD
    - Credential·앵커링 SQL ERD
    - 필수 UNIQUE, CHECK, 잠금 규칙
    - JPA 및 후속 확장 기준
 
-3. [Credential 및 Kaia 앵커링 설계](./blockchain-anchoring-architecture.md)
+4. [Credential 및 Kaia 앵커링 설계](./blockchain-anchoring-architecture.md)
    - 신뢰 경계와 저장 위치
    - canonical JSON, source fingerprint, file manifest
    - Merkle leaf·proof 규칙

@@ -1,37 +1,3 @@
-# Trekkey 공모전·Credential 최종 ERD
-
-- 기준일: 2026-07-20
-- 상태: MVP 구현 기준
-- 통합 보기: [업무·블록체인 전체 ERD](./unified-erd.md)
-- 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
-- 상세 설계: [블록체인 앵커링 설계](./blockchain-anchoring-architecture.md)
-
-## 1. 범위
-
-현재 ERD는 다음 기능을 구현 범위로 고정한다.
-
-- 학교/기관별 사용자와 대회 관리
-- 팀 및 확정 팀원 명단 관리
-- 팀당 최종 제출물 한 건 관리
-- 다단계 심사와 라운드별 공식 결과 관리
-- 팀 단위 수상 확정
-- 참여, 작품, 수상 Credential 발급
-- Credential Merkle 배치와 Kaia 앵커링
-- Credential 폐기 및 대체 발급
-
-아래 기능은 현재 ERD에 넣지 않는다.
-
-- 학적 이력과 졸업요건 판정
-- 공모전과 무관한 독립 작품 관리
-- 제출물 버전 이력
-- 라운드별 블록체인 앵커링
-- 라운드 상태 변경 전체 감사 이벤트
-
-졸업 Credential은 졸업요건 업무 원장이 확정된 뒤 같은 `ANC_*` 파이프라인에 source type만 확장한다.
-
-## 2. 업무 SQL ERD
-
-```mermaid
 erDiagram
     ORGANIZATION ||--o{ USER : has
     ORGANIZATION ||--o{ CONTEST : hosts
@@ -59,7 +25,26 @@ erDiagram
     REVIEW_CRITERION ||--o{ REVIEW_SCORE_ITEM : scores
     CONTEST_STAGE_ENTRY ||--o| AWARD : supports
     TEAM ||--o| AWARD : receives
-
+    ORGANIZATION ||--o{ ANC_ISSUER_KEY : owns
+    ORGANIZATION ||--o{ ANC_CREDENTIAL : issues
+    ORGANIZATION ||--o{ ANC_BATCH : creates
+    ANC_ISSUER_KEY ||--o{ ANC_BATCH : approves
+    ANC_CREDENTIAL ||--|| ANC_CREDENTIAL_SOURCE : derives_from
+    TEAM o|--o{ ANC_CREDENTIAL_SOURCE : sources
+    SUBMISSION o|--o{ ANC_CREDENTIAL_SOURCE : sources
+    AWARD o|--o{ ANC_CREDENTIAL_SOURCE : sources
+    ANC_CREDENTIAL ||--|{ ANC_CREDENTIAL_SUBJECT : snapshots
+    USER o|--o{ ANC_CREDENTIAL_SUBJECT : identifies
+    TEAM o|--o{ ANC_CREDENTIAL_SUBJECT : represents
+    ANC_CREDENTIAL ||--o{ ANC_CREDENTIAL_STATUS_EVENT : changes
+    ANC_CREDENTIAL o|--o{ ANC_CREDENTIAL_STATUS_EVENT : supersedes_with
+    USER o|--o{ ANC_CREDENTIAL_STATUS_EVENT : acts
+    ANC_ISSUER_KEY ||--o{ ANC_CREDENTIAL_STATUS_EVENT : approves
+    ANC_BATCH ||--|{ ANC_BATCH_ITEM : contains
+    ANC_CREDENTIAL ||--o| ANC_BATCH_ITEM : included_in
+    ANC_BATCH o|--o{ ANC_CHAIN_TRANSACTION : targets
+    ANC_CREDENTIAL_STATUS_EVENT o|--o{ ANC_CHAIN_TRANSACTION : targets
+    ANC_ISSUER_KEY o|--o{ ANC_CHAIN_TRANSACTION : targets
     ORGANIZATION {
         bigint id PK "학교/기관 PK"
         string publicId UK "외부 issuer ID"
@@ -275,62 +260,6 @@ erDiagram
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
-```
-
-## 3. Credential 및 앵커링 SQL ERD
-
-온체인 mapping은 SQL 테이블이 아니다. 아래 `ANC_*` 테이블은 Credential 스냅샷, Merkle proof, 학교 승인 서명, Kaia 트랜잭션 영수증을 저장하는 off-chain 원장이다.
-
-```mermaid
-erDiagram
-    ORGANIZATION ||--o{ ANC_ISSUER_KEY : owns
-    ORGANIZATION ||--o{ ANC_CREDENTIAL : issues
-    ORGANIZATION ||--o{ ANC_BATCH : creates
-    ANC_ISSUER_KEY ||--o{ ANC_BATCH : approves
-    ANC_CREDENTIAL ||--|| ANC_CREDENTIAL_SOURCE : derives_from
-    TEAM o|--o{ ANC_CREDENTIAL_SOURCE : sources
-    SUBMISSION o|--o{ ANC_CREDENTIAL_SOURCE : sources
-    AWARD o|--o{ ANC_CREDENTIAL_SOURCE : sources
-    ANC_CREDENTIAL ||--|{ ANC_CREDENTIAL_SUBJECT : snapshots
-    USER o|--o{ ANC_CREDENTIAL_SUBJECT : identifies
-    TEAM o|--o{ ANC_CREDENTIAL_SUBJECT : represents
-    ANC_CREDENTIAL ||--o{ ANC_CREDENTIAL_STATUS_EVENT : changes
-    ANC_CREDENTIAL o|--o{ ANC_CREDENTIAL_STATUS_EVENT : supersedes_with
-    USER o|--o{ ANC_CREDENTIAL_STATUS_EVENT : acts
-    ANC_ISSUER_KEY ||--o{ ANC_CREDENTIAL_STATUS_EVENT : approves
-    ANC_BATCH ||--|{ ANC_BATCH_ITEM : contains
-    ANC_CREDENTIAL ||--o| ANC_BATCH_ITEM : included_in
-    ANC_BATCH o|--o{ ANC_CHAIN_TRANSACTION : targets
-    ANC_CREDENTIAL_STATUS_EVENT o|--o{ ANC_CHAIN_TRANSACTION : targets
-    ANC_ISSUER_KEY o|--o{ ANC_CHAIN_TRANSACTION : targets
-
-    ORGANIZATION {
-        bigint id PK
-        string publicId UK
-        string name
-    }
-
-    USER {
-        bigint id PK
-        bigint organizationId FK
-        string studentId
-    }
-
-    TEAM {
-        bigint id PK
-        string publicId UK
-    }
-
-    SUBMISSION {
-        bigint id PK
-        string publicId UK
-    }
-
-    AWARD {
-        bigint id PK
-        string publicId UK
-    }
-
     ANC_ISSUER_KEY {
         bigint id PK "Issuer key PK"
         bigint organizationId FK "발급 기관"
@@ -484,106 +413,3 @@ erDiagram
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
-```
-
-## 4. 업무 원장 규칙
-
-### 사용자 조회
-
-- 학번은 학교 안에서만 유일하다: `UNIQUE (organizationId, studentId)`.
-- 학교별 서버에서는 학번만 받을 수 있지만, 중앙형 배포에서는 로그인 tenant가 `organizationId`를 함께 제공한다.
-- 학번 검색 API는 본인 또는 학교 관리자에게만 허용하고 공개 검증 API와 분리한다.
-
-### 팀과 팀원
-
-- `UNIQUE TEAM_MEMBER (teamId, userId)`.
-- `TEAM.leaderUserId`는 현재 팀원이며 `roleCode = LEADER`여야 한다.
-- `participationFinalizedAt` 이후 팀원 추가, 삭제, 역할 변경을 거부한다.
-- `TEAM.memberCount`는 조회용 캐시이고 원장은 `TEAM_MEMBER`다.
-- 상장은 팀 단위 `AWARD` 및 Credential 한 건으로 발급하고, 모든 구성원은 같은 수상을 참조한다.
-- 발급 당시 팀과 구성원 정보는 `ANC_CREDENTIAL_SUBJECT`에 다시 스냅샷한다.
-
-### 제출물
-
-- `UNIQUE SUBMISSION (teamId)`. 제출 버전 테이블은 만들지 않는다.
-- 마감 전 재제출은 같은 `SUBMISSION`을 논리적으로 덮어쓴다.
-- 재제출은 row lock 또는 optimistic version 확인, `sourceVersion` 증가, 파일 목록 교체, `integrityStatus = STALE` 변경을 한 트랜잭션 경계에서 처리한다.
-- 해시 worker는 작업 시작 시 읽은 `sourceVersion`이 여전히 같을 때만 `READY`를 반영한다.
-- 객체 저장소에는 새 고유 `storageKey`로 먼저 업로드하고 DB 교체 성공 후 이전 객체를 정리한다.
-- `finalizedAt` 이후 또는 첫 심사 시작 이후 제목과 파일을 수정할 수 없다.
-
-### 라운드와 심사
-
-- `UNIQUE CONTEST_STAGE (contestId, sequenceNo)`.
-- `UNIQUE CONTEST_STAGE_ENTRY (contestStageId, submissionId)`.
-- `PREVIOUS_PASSED`는 같은 대회의 직전 `sequenceNo`에서 동일 제출물이 `PASSED`인지 검사한다.
-- `PASSED`, `FAILED`, `WITHDRAWN`, `DISQUALIFIED`는 `finalizedAt`이 필수다.
-- `decisionType = MANUAL`이면 `decidedByUserId`와 `decisionReason`이 필수다.
-- `FINALIZED` 라운드의 ENTRY, 평가 기준, 심사 배정, 제출된 심사 결과는 수정 및 삭제할 수 없다.
-- `UNIQUE REVIEW_ASSIGNMENT (contestJudgeId, contestStageEntryId)`.
-- 심사 배정 생성 시 judge의 대회와 ENTRY 라운드의 대회가 같은지 트랜잭션 안에서 검사한다.
-- `UNIQUE REVIEW (assignmentId)`.
-- `UNIQUE REVIEW_SCORE_ITEM (reviewId, criterionId)`.
-- 점수는 `0 <= score <= criterion.maxScore`이고 criterion의 라운드는 ENTRY의 라운드와 같아야 한다.
-- 제출 완료된 `REVIEW`는 수정하지 않는다.
-
-### 수상
-
-- `UNIQUE AWARD (contestStageEntryId)`.
-- `CONTEST_STAGE_ENTRY`가 수상의 공식 원천이다.
-- `AWARD.teamId`는 조회용 비정규화 FK이며 `ENTRY -> SUBMISSION -> TEAM`과 항상 같아야 한다.
-- `AWARD.awardRankNo`는 라운드 순위가 아니라 상장에 표시할 수상 순위다.
-- 확정된 ENTRY와 `FINALIZED` 라운드에서만 수상을 `CONFIRMED`로 바꿀 수 있다.
-- `WITHDRAWN` 또는 `DISQUALIFIED` ENTRY에는 수상을 확정할 수 없다.
-
-## 5. Credential 및 앵커 원장 규칙
-
-### 다형성 FK
-
-- `ANC_CREDENTIAL_SOURCE`는 `sourceType`에 맞는 FK 하나만 non-null이어야 한다.
-- `ANC_CREDENTIAL_SUBJECT`는 `subjectType`에 맞춰 `userId`, `teamId` 중 하나만 non-null이어야 한다.
-- `ANC_CHAIN_TRANSACTION`은 `operationType`에 맞는 target FK 하나만 non-null이어야 한다.
-- 위 규칙은 application validation만이 아니라 DB `CHECK` 제약으로도 적용한다.
-
-### 필수 UNIQUE
-
-- `UNIQUE ANC_ISSUER_KEY (organizationId, keyVersion)`.
-- `UNIQUE ANC_CREDENTIAL (issuerOrganizationId, credentialNo)`.
-- `UNIQUE ANC_CREDENTIAL_SOURCE (sourceFingerprint)`.
-- `UNIQUE ANC_CREDENTIAL_SUBJECT (credentialId, subjectOrder)`.
-- `UNIQUE ANC_BATCH_ITEM (credentialId)`. 한 Credential은 하나의 sealed batch에만 들어간다.
-- `UNIQUE ANC_BATCH_ITEM (batchId, leafIndex)`.
-- `UNIQUE ANC_CHAIN_TRANSACTION (chainId, txHash)`는 `txHash IS NOT NULL`일 때 적용한다.
-- `UNIQUE ANC_CHAIN_TRANSACTION (chainId, txHash, eventLogIndex)`는 event가 확인된 경우 적용한다.
-
-### 상태와 불변성
-
-- Credential 발급 트랜잭션은 source, subject, canonical bytes를 모두 저장한 뒤 바로 `READY`로 생성한다. 별도 `DRAFT` 상태는 사용하지 않는다.
-- `READY` 이후 payload, canonical bytes, hash, source, subject는 수정하지 않는다.
-- sealed batch의 item, 순서, root, 서명 payload는 수정하지 않는다.
-- RPC timeout은 `FAILED`가 아니라 `UNKNOWN`이다. 재전송 전 온체인 batch/status를 조회한다.
-- V1은 batch 전체 revoke를 지원하지 않고 개별 Credential `REVOKED`와 `SUPERSEDED`만 지원한다.
-- 대체 발급은 새 Credential 앵커 확인 후 기존 Credential을 `SUPERSEDED` 처리한다.
-
-## 6. JPA 및 구현 기준
-
-- 자식 엔티티의 단방향 `ManyToOne(fetch = FetchType.LAZY)`를 우선한다.
-- 초기 구현에서는 `@ManyToMany`와 부모 컬렉션 양방향 매핑을 사용하지 않는다.
-- 목록 조회는 DTO projection, fetch join, `@EntityGraph`, batch size를 목적에 맞게 사용한다.
-- FK와 위 UNIQUE 선두 컬럼에는 인덱스를 둔다.
-- 업무 상태 변경과 domain outbox 저장은 한 DB 트랜잭션으로 처리한다.
-- batch seal과 anchor outbox 저장도 한 DB 트랜잭션으로 처리한다.
-- private key는 DB, 소스, 일반 환경변수에 저장하지 않고 KMS/HSM 또는 격리 signer를 사용한다.
-
-## 7. 후속 확장
-
-| 요구사항 | 확장 시 추가할 모델 |
-| --- | --- |
-| 졸업요건 증빙 | `GRADUATION_RULE`, `GRADUATION_ACHIEVEMENT`, Credential source type |
-| 복수 학교 및 학적 이력 | `AFFILIATION`, `ORG_UNIT` |
-| 공모전 외 독립 작품 | `WORK`와 `SUBMISSION` 관계 |
-| 라운드별 수정 제출 | `SUBMISSION_VERSION`과 ENTRY의 version FK |
-| 분기형 대회 | `sourceStageEntryId` 또는 별도 진출 관계 |
-| 배치 전체 폐기 | 서명된 `BATCH_STATUS_EVENT`와 온체인 batch revoke |
-
-이 확장은 실제 업무 요구가 생길 때 migration으로 추가한다. 현재 MVP ERD에 미리 넣지 않는다.

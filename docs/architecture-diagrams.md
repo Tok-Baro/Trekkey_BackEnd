@@ -2,6 +2,7 @@
 
 - 기준일: 2026-07-21
 - 상태: MVP 구현 및 팀 회의 기준
+- 전체 통합 ERD: [업무·블록체인 한 캔버스](./unified-erd.md)
 - 상세 컬럼 원장: [공모전·Credential 최종 ERD](./erd.md)
 - 상세 규칙 원장: [Credential 및 Kaia 앵커링 설계](./blockchain-anchoring-architecture.md)
 
