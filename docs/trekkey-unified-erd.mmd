@@ -4,7 +4,7 @@ erDiagram
     USER ||--o{ CONTEST : owns
     CONTEST ||--o{ CONTEST_LIKE : receives
     USER ||--o{ CONTEST_LIKE : likes
-    CONTEST ||--|{ CONTEST_STAGE : has_stages
+    CONTEST ||--o{ REVIEW_ROUND : has_rounds
     CONTEST ||--o{ TEAM : accepts
     USER ||--o{ TEAM : leads
     TEAM ||--|{ TEAM_MEMBER : has_members
@@ -12,18 +12,18 @@ erDiagram
     TEAM ||--o| SUBMISSION : submits
     SUBMISSION ||--o{ SUBMISSION_FILE : contains
     USER ||--o{ SUBMISSION_FILE : uploads
-    CONTEST_STAGE ||--o{ CONTEST_STAGE_ENTRY : records
-    SUBMISSION ||--o{ CONTEST_STAGE_ENTRY : enters
-    USER o|--o{ CONTEST_STAGE_ENTRY : decides
-    CONTEST_STAGE ||--o{ REVIEW_CRITERION : defines
+    REVIEW_ROUND ||--o{ REVIEW_ROUND_ENTRY : records
+    SUBMISSION ||--o{ REVIEW_ROUND_ENTRY : enters
+    USER o|--o{ REVIEW_ROUND_ENTRY : decides
+    REVIEW_ROUND ||--o{ REVIEW_CRITERION : defines
     CONTEST ||--o{ CONTEST_JUDGE : assigns
     USER o|--o{ CONTEST_JUDGE : links
     CONTEST_JUDGE ||--o{ REVIEW_ASSIGNMENT : receives
-    CONTEST_STAGE_ENTRY ||--o{ REVIEW_ASSIGNMENT : is_reviewed
+    REVIEW_ROUND_ENTRY ||--o{ REVIEW_ASSIGNMENT : is_reviewed
     REVIEW_ASSIGNMENT ||--o| REVIEW : completes
     REVIEW ||--|{ REVIEW_SCORE_ITEM : contains
     REVIEW_CRITERION ||--o{ REVIEW_SCORE_ITEM : scores
-    CONTEST_STAGE_ENTRY ||--o| AWARD : supports
+    REVIEW_ROUND_ENTRY ||--o| AWARD : supports
     TEAM ||--o| AWARD : receives
     ORGANIZATION ||--o{ ANC_ISSUER_KEY : owns
     ORGANIZATION ||--o{ ANC_CREDENTIAL : issues
@@ -79,7 +79,7 @@ erDiagram
         bigint ownerUserId FK "담당 관리자"
         string title "대회명"
         string department "주관 부서 스냅샷"
-        string status "DRAFT/OPEN/IN_PROGRESS/COMPLETED/CANCELED"
+        string status "DRAFT/PUBLISHED/COMPLETED/CANCELED"
         string participationType "TEAM/INDIVIDUAL/MIXED"
         int awardCount "예정 시상 수"
         datetime applicationStartsAt "신청 시작"
@@ -103,21 +103,19 @@ erDiagram
         datetime createdAt "좋아요 시각"
     }
 
-    CONTEST_STAGE {
-        bigint id PK "대회 단계 PK"
+    REVIEW_ROUND {
+        bigint id PK "심사 라운드 PK"
         bigint contestId FK "소속 대회"
-        string name "단계명"
-        string stageType "APPLY/SUBMISSION/REVIEW/PRESENTATION/AWARD/CUSTOM"
-        int sequenceNo "대회 내 순서"
-        string status "WAITING/OPEN/IN_REVIEW/FINALIZED"
-        string targetType "ALL_SUBMISSIONS/PREVIOUS_PASSED/MANUAL"
-        string passRule "TOP_N/MIN_SCORE/MANUAL/FINAL"
-        int passCount "통과 팀 수"
-        decimal minScore "최소 통과 점수"
-        datetime startAt "단계 시작"
-        datetime endAt "단계 종료"
-        datetime dueAt "단계 마감"
-        text description "단계 설명"
+        int roundNo "대회 내 심사 순서"
+        string name "심사 라운드명"
+        string status "PREPARING/OPEN/FINALIZED"
+        datetime startsAt "심사 시작 시각"
+        datetime endsAt "심사 종료 시각"
+        string targetType "ALL_SUBMISSIONS/PREVIOUS_SELECTED/MANUAL"
+        string decisionRule "TOP_N/MIN_SCORE/MANUAL"
+        int selectCount "선정 팀 수"
+        decimal minScore "최소 선정 점수"
+        datetime finalizedAt "라운드 확정 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -175,11 +173,11 @@ erDiagram
         datetime updatedAt "수정 시각"
     }
 
-    CONTEST_STAGE_ENTRY {
+    REVIEW_ROUND_ENTRY {
         bigint id PK "라운드 참가 및 공식 판정 PK"
-        bigint contestStageId FK "평가 라운드"
+        bigint reviewRoundId FK "평가 라운드"
         bigint submissionId FK "대상 제출물"
-        string status "ELIGIBLE/IN_REVIEW/PASSED/FAILED/WITHDRAWN/DISQUALIFIED"
+        string status "ELIGIBLE/IN_REVIEW/SELECTED/NOT_SELECTED/WITHDRAWN/DISQUALIFIED"
         decimal finalScore "확정 합산 점수"
         int rankNo "라운드 확정 순위"
         string decisionType "RULE/MANUAL"
@@ -192,7 +190,7 @@ erDiagram
 
     REVIEW_CRITERION {
         bigint id PK "평가 기준 PK"
-        bigint contestStageId FK "적용 라운드"
+        bigint reviewRoundId FK "적용 라운드"
         string code "라운드 내 기준 코드"
         string label "화면 표시명"
         int maxScore "최대 점수"
@@ -217,7 +215,7 @@ erDiagram
     REVIEW_ASSIGNMENT {
         bigint id PK "심사 배정 PK"
         bigint contestJudgeId FK "배정 심사위원"
-        bigint contestStageEntryId FK "라운드별 심사 대상"
+        bigint reviewRoundEntryId FK "라운드별 심사 대상"
         string status "ASSIGNED/COMPLETED/CANCELED"
         datetime assignedAt "배정 시각"
         datetime dueAt "심사 마감"
@@ -245,7 +243,7 @@ erDiagram
     AWARD {
         bigint id PK "수상 결과 PK"
         string publicId UK "수상 공개 ID"
-        bigint contestStageEntryId FK "수상 근거 공식 결과"
+        bigint reviewRoundEntryId FK "수상 근거 공식 결과"
         bigint teamId FK "수상 팀 및 조회용 FK"
         int awardRankNo "수상 순위"
         string prize "상격"

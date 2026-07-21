@@ -1,6 +1,6 @@
 # Trekkey 공모전·Credential 최종 ERD
 
-- 기준일: 2026-07-20
+- 기준일: 2026-07-21
 - 상태: MVP 구현 기준
 - 통합 보기: [업무·블록체인 전체 ERD](./unified-erd.md)
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
@@ -13,7 +13,7 @@
 - 학교/기관별 사용자와 대회 관리
 - 팀 및 확정 팀원 명단 관리
 - 팀당 최종 제출물 한 건 관리
-- 다단계 심사와 라운드별 공식 결과 관리
+- 0..N개의 Review Round와 라운드별 공식 결과 관리
 - 팀 단위 수상 확정
 - 참여, 작품, 수상 Credential 발급
 - Credential Merkle 배치와 Kaia 앵커링
@@ -38,7 +38,7 @@ erDiagram
     USER ||--o{ CONTEST : owns
     CONTEST ||--o{ CONTEST_LIKE : receives
     USER ||--o{ CONTEST_LIKE : likes
-    CONTEST ||--|{ CONTEST_STAGE : has_stages
+    CONTEST ||--o{ REVIEW_ROUND : has_rounds
     CONTEST ||--o{ TEAM : accepts
     USER ||--o{ TEAM : leads
     TEAM ||--|{ TEAM_MEMBER : has_members
@@ -46,18 +46,18 @@ erDiagram
     TEAM ||--o| SUBMISSION : submits
     SUBMISSION ||--o{ SUBMISSION_FILE : contains
     USER ||--o{ SUBMISSION_FILE : uploads
-    CONTEST_STAGE ||--o{ CONTEST_STAGE_ENTRY : records
-    SUBMISSION ||--o{ CONTEST_STAGE_ENTRY : enters
-    USER o|--o{ CONTEST_STAGE_ENTRY : decides
-    CONTEST_STAGE ||--o{ REVIEW_CRITERION : defines
+    REVIEW_ROUND ||--o{ REVIEW_ROUND_ENTRY : records
+    SUBMISSION ||--o{ REVIEW_ROUND_ENTRY : enters
+    USER o|--o{ REVIEW_ROUND_ENTRY : decides
+    REVIEW_ROUND ||--o{ REVIEW_CRITERION : defines
     CONTEST ||--o{ CONTEST_JUDGE : assigns
     USER o|--o{ CONTEST_JUDGE : links
     CONTEST_JUDGE ||--o{ REVIEW_ASSIGNMENT : receives
-    CONTEST_STAGE_ENTRY ||--o{ REVIEW_ASSIGNMENT : is_reviewed
+    REVIEW_ROUND_ENTRY ||--o{ REVIEW_ASSIGNMENT : is_reviewed
     REVIEW_ASSIGNMENT ||--o| REVIEW : completes
     REVIEW ||--|{ REVIEW_SCORE_ITEM : contains
     REVIEW_CRITERION ||--o{ REVIEW_SCORE_ITEM : scores
-    CONTEST_STAGE_ENTRY ||--o| AWARD : supports
+    REVIEW_ROUND_ENTRY ||--o| AWARD : supports
     TEAM ||--o| AWARD : receives
 
     ORGANIZATION {
@@ -94,7 +94,7 @@ erDiagram
         bigint ownerUserId FK "담당 관리자"
         string title "대회명"
         string department "주관 부서 스냅샷"
-        string status "DRAFT/OPEN/IN_PROGRESS/COMPLETED/CANCELED"
+        string status "DRAFT/PUBLISHED/COMPLETED/CANCELED"
         string participationType "TEAM/INDIVIDUAL/MIXED"
         int awardCount "예정 시상 수"
         datetime applicationStartsAt "신청 시작"
@@ -118,21 +118,19 @@ erDiagram
         datetime createdAt "좋아요 시각"
     }
 
-    CONTEST_STAGE {
-        bigint id PK "대회 단계 PK"
+    REVIEW_ROUND {
+        bigint id PK "심사 라운드 PK"
         bigint contestId FK "소속 대회"
-        string name "단계명"
-        string stageType "APPLY/SUBMISSION/REVIEW/PRESENTATION/AWARD/CUSTOM"
-        int sequenceNo "대회 내 순서"
-        string status "WAITING/OPEN/IN_REVIEW/FINALIZED"
-        string targetType "ALL_SUBMISSIONS/PREVIOUS_PASSED/MANUAL"
-        string passRule "TOP_N/MIN_SCORE/MANUAL/FINAL"
-        int passCount "통과 팀 수"
-        decimal minScore "최소 통과 점수"
-        datetime startAt "단계 시작"
-        datetime endAt "단계 종료"
-        datetime dueAt "단계 마감"
-        text description "단계 설명"
+        int roundNo "대회 내 심사 순서"
+        string name "심사 라운드명"
+        string status "PREPARING/OPEN/FINALIZED"
+        datetime startsAt "심사 시작 시각"
+        datetime endsAt "심사 종료 시각"
+        string targetType "ALL_SUBMISSIONS/PREVIOUS_SELECTED/MANUAL"
+        string decisionRule "TOP_N/MIN_SCORE/MANUAL"
+        int selectCount "선정 팀 수"
+        decimal minScore "최소 선정 점수"
+        datetime finalizedAt "라운드 확정 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -190,11 +188,11 @@ erDiagram
         datetime updatedAt "수정 시각"
     }
 
-    CONTEST_STAGE_ENTRY {
+    REVIEW_ROUND_ENTRY {
         bigint id PK "라운드 참가 및 공식 판정 PK"
-        bigint contestStageId FK "평가 라운드"
+        bigint reviewRoundId FK "평가 라운드"
         bigint submissionId FK "대상 제출물"
-        string status "ELIGIBLE/IN_REVIEW/PASSED/FAILED/WITHDRAWN/DISQUALIFIED"
+        string status "ELIGIBLE/IN_REVIEW/SELECTED/NOT_SELECTED/WITHDRAWN/DISQUALIFIED"
         decimal finalScore "확정 합산 점수"
         int rankNo "라운드 확정 순위"
         string decisionType "RULE/MANUAL"
@@ -207,7 +205,7 @@ erDiagram
 
     REVIEW_CRITERION {
         bigint id PK "평가 기준 PK"
-        bigint contestStageId FK "적용 라운드"
+        bigint reviewRoundId FK "적용 라운드"
         string code "라운드 내 기준 코드"
         string label "화면 표시명"
         int maxScore "최대 점수"
@@ -232,7 +230,7 @@ erDiagram
     REVIEW_ASSIGNMENT {
         bigint id PK "심사 배정 PK"
         bigint contestJudgeId FK "배정 심사위원"
-        bigint contestStageEntryId FK "라운드별 심사 대상"
+        bigint reviewRoundEntryId FK "라운드별 심사 대상"
         string status "ASSIGNED/COMPLETED/CANCELED"
         datetime assignedAt "배정 시각"
         datetime dueAt "심사 마감"
@@ -260,7 +258,7 @@ erDiagram
     AWARD {
         bigint id PK "수상 결과 PK"
         string publicId UK "수상 공개 ID"
-        bigint contestStageEntryId FK "수상 근거 공식 결과"
+        bigint reviewRoundEntryId FK "수상 근거 공식 결과"
         bigint teamId FK "수상 팀 및 조회용 FK"
         int awardRankNo "수상 순위"
         string prize "상격"
@@ -488,6 +486,14 @@ erDiagram
 - 학교별 서버에서는 학번만 받을 수 있지만, 중앙형 배포에서는 로그인 tenant가 `organizationId`를 함께 제공한다.
 - 학번 검색 API는 본인 또는 학교 관리자에게만 허용하고 공개 검증 API와 분리한다.
 
+### 대회 일정과 상태
+
+- `CONTEST.status`는 `DRAFT/PUBLISHED/COMPLETED/CANCELED` 관리 상태만 저장한다.
+- 신청 전, 신청 중, 제출 중, 심사 중, 수상 완료 같은 화면 단계는 일정, 열린 Review Round, 확정 AWARD로 계산하며 별도 상태로 중복 저장하지 않는다.
+- `applicationStartsAt < applicationEndsAt <= submissionDueAt`을 검사한다.
+- 승인된 팀은 `submissionDueAt`까지 같은 제출물을 등록하고 수정할 수 있다.
+- 신청, 제출, 시상을 표현하는 별도 Stage row는 만들지 않는다.
+
 ### 팀과 팀원
 
 - `UNIQUE TEAM_MEMBER (teamId, userId)`.
@@ -511,14 +517,18 @@ erDiagram
 
 ### 라운드와 심사
 
-- `UNIQUE CONTEST_STAGE (contestId, sequenceNo)`.
-- `UNIQUE CONTEST_STAGE_ENTRY (contestStageId, submissionId)`.
-- 라운드 심사를 시작할 때 대상 `SUBMISSION` 전체의 `finalizedAt`을 확정해 이후 수정을 거부한다.
-- `PREVIOUS_PASSED`는 같은 대회의 직전 `sequenceNo`에서 동일 제출물이 `PASSED`인지 검사한다.
-- `PASSED`, `FAILED`, `WITHDRAWN`, `DISQUALIFIED`는 `finalizedAt`이 필수다.
+- `UNIQUE REVIEW_ROUND (contestId, roundNo)`이고 `roundNo >= 1`이어야 한다.
+- `roundNo`는 1부터 빈 번호 없이 이어지도록 대회 설정 트랜잭션에서 검사한다.
+- `UNIQUE REVIEW_ROUND_ENTRY (reviewRoundId, submissionId)`.
+- `startsAt < endsAt`이어야 한다.
+- 첫 Review Round의 `startsAt`은 `CONTEST.submissionDueAt`보다 빠를 수 없다.
+- `decisionRule = TOP_N`이면 `selectCount > 0`만, `MIN_SCORE`이면 `minScore >= 0`만 사용하고 `MANUAL`이면 둘 다 null이어야 한다.
+- `PREVIOUS_SELECTED`는 2라운드부터 가능하며 직전 `roundNo`가 `FINALIZED`이고 동일 제출물이 `SELECTED`인지 검사한다.
+- 라운드를 `OPEN`으로 전환할 때 대상 ENTRY를 생성하고 대상 `SUBMISSION.finalizedAt`을 확정해 이후 수정을 거부한다.
+- `SELECTED`, `NOT_SELECTED`, `WITHDRAWN`, `DISQUALIFIED`는 `finalizedAt`이 필수다.
 - `decisionType = MANUAL`이면 `decidedByUserId`와 `decisionReason`이 필수다.
 - `FINALIZED` 라운드의 ENTRY, 평가 기준, 심사 배정, 제출된 심사 결과는 수정 및 삭제할 수 없다.
-- `UNIQUE REVIEW_ASSIGNMENT (contestJudgeId, contestStageEntryId)`.
+- `UNIQUE REVIEW_ASSIGNMENT (contestJudgeId, reviewRoundEntryId)`.
 - 심사 배정 생성 시 judge의 대회와 ENTRY 라운드의 대회가 같은지 트랜잭션 안에서 검사한다.
 - `UNIQUE REVIEW (assignmentId)`.
 - `UNIQUE REVIEW_SCORE_ITEM (reviewId, criterionId)`.
@@ -527,12 +537,13 @@ erDiagram
 
 ### 수상
 
-- `UNIQUE AWARD (contestStageEntryId)`.
-- `CONTEST_STAGE_ENTRY`가 수상의 공식 원천이다.
+- `UNIQUE AWARD (reviewRoundEntryId)`.
+- 대회에 설정된 가장 높은 `roundNo`의 Review Round가 `FINALIZED`일 때, 그 라운드의 `SELECTED REVIEW_ROUND_ENTRY`만 수상의 공식 원천이 된다.
+- 심사 없이 수동 선정하는 대회도 `targetType = MANUAL`, `decisionRule = MANUAL`인 Review Round 한 건을 생성한다.
 - `AWARD.teamId`는 조회용 비정규화 FK이며 `ENTRY -> SUBMISSION -> TEAM`과 항상 같아야 한다.
 - `AWARD.awardRankNo`는 라운드 순위가 아니라 상장에 표시할 수상 순위다.
-- 확정된 ENTRY와 `FINALIZED` 라운드에서만 수상을 `CONFIRMED`로 바꿀 수 있다.
-- `WITHDRAWN` 또는 `DISQUALIFIED` ENTRY에는 수상을 확정할 수 없다.
+- AWARD가 하나라도 `CONFIRMED`된 뒤에는 Review Round를 추가, 삭제, 재정렬할 수 없다.
+- `NOT_SELECTED`, `WITHDRAWN`, `DISQUALIFIED` ENTRY에는 수상을 확정할 수 없다.
 
 ## 5. Credential 및 앵커 원장 규칙
 
@@ -588,8 +599,8 @@ erDiagram
 | 졸업요건 증빙 | `GRADUATION_RULE`, `GRADUATION_ACHIEVEMENT`, Credential source type |
 | 복수 학교 및 학적 이력 | `AFFILIATION`, `ORG_UNIT` |
 | 공모전 외 독립 작품 | `WORK`와 `SUBMISSION` 관계 |
-| 라운드별 수정 제출 | `SUBMISSION_VERSION`과 ENTRY의 version FK |
-| 분기형 대회 | `sourceStageEntryId` 또는 별도 진출 관계 |
+| 라운드별 별도 제출물 | `REVIEW_ROUND_SUBMISSION`과 Round Entry FK |
+| 분기형 심사 | `sourceReviewRoundEntryId` 또는 별도 진출 관계 |
 | 배치 전체 폐기 | 서명된 `BATCH_STATUS_EVENT`와 온체인 batch revoke |
 
 이 확장은 실제 업무 요구가 생길 때 migration으로 추가한다. 현재 MVP ERD에 미리 넣지 않는다.

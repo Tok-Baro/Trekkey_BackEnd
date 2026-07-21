@@ -1,6 +1,6 @@
 # Trekkey Credential 및 Kaia 앵커링 설계
 
-- 기준일: 2026-07-20
+- 기준일: 2026-07-21
 - 상태: MVP 구현 기준
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 기준 ERD: [Trekkey 공모전·Credential 최종 ERD](./erd.md)
@@ -741,9 +741,10 @@ Kaia는 BFT 기반 immediate finality를 제공하므로 임의의 Ethereum conf
 ### Phase 1. 업무 원장
 
 - ERD의 업무 테이블과 제약 migration
+- `CONTEST` 신청 기간·제출 마감과 가변 `REVIEW_ROUND` 분리
 - 팀 명단 및 제출물 잠금
 - 서버 측 파일 SHA-256
-- 라운드 확정과 수상 원천 연결
+- Review Round 확정과 수상 원천 연결
 - domain outbox
 
 ### Phase 2. 체인 독립 Credential
@@ -796,8 +797,9 @@ Trekkey는 개인정보와 인증서 원문을 퍼블릭 체인에 저장하지 
 - 개인정보와 원문은 온체인에 저장하지 않는다.
 - 팀 상장은 Credential 한 건이며 구성원은 subject snapshot으로 연결한다.
 - 제출물은 팀당 한 건이고 마감 전 덮어쓰기, 확정 후 잠금이다.
-- 라운드 심사 원점수와 공식 판정 ENTRY를 분리한다.
-- AWARD는 공식 `CONTEST_STAGE_ENTRY`를 원천으로 가진다.
+- 고정된 신청 기간과 제출 마감은 `CONTEST`에 두고, 가변 심사만 `REVIEW_ROUND`로 관리한다.
+- 심사위원별 원점수와 학교가 확정한 `REVIEW_ROUND_ENTRY`를 분리한다.
+- AWARD는 대회에 설정된 마지막 Review Round가 확정된 뒤 그 라운드의 `SELECTED REVIEW_ROUND_ENTRY`를 원천으로 가진다.
 - `sourceFingerprint`로 의미 기반 중복 발급을 막는다.
 - JCS + NFC, SHA-256 content hash, OpenZeppelin-compatible Merkle 규칙을 고정한다.
 - 학교는 EIP-712 approval을 서명하고 표준 EVM relayer가 Kaia 트랜잭션을 보낸다.

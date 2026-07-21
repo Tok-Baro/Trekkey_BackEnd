@@ -4,6 +4,7 @@
 
 1. [업무·블록체인 전체 통합 ERD](./unified-erd.md)
    - 업무 SQL 16개와 앵커링 SQL 9개를 한 캔버스에 표시
+   - 신청·제출 일정은 `CONTEST`, 가변 심사는 `REVIEW_ROUND`로 분리
    - [확대용 SVG](./assets/trekkey-unified-erd.svg)
    - [Raw Mermaid](./trekkey-unified-erd.mmd)
 
@@ -29,6 +30,6 @@
 
 ## 현재 구현 범위
 
-MVP는 공모전 참여, 최종 제출 작품, 팀 수상 Credential을 대상으로 한다. 졸업요건, 학적 이력, 공모전 외 독립 작품, 제출 버전은 현재 ERD에 넣지 않고 실제 업무 요구가 확정될 때 확장한다.
+MVP는 공모전 참여, 최종 제출 작품, 0..N개의 Review Round, 팀 수상 Credential을 대상으로 한다. 신청 기간과 제출 마감은 `CONTEST`가 직접 보유하며 별도 workflow stage는 만들지 않는다. 졸업요건, 학적 이력, 공모전 외 독립 작품, 제출 버전은 실제 업무 요구가 확정될 때 확장한다.
 
 문서와 구현이 충돌하면 임의로 해석하지 말고 ERD 결정사항을 먼저 갱신한다. 특히 hash 입력, schema profile, Merkle tree version은 배포 후 조용히 변경하면 안 된다.
