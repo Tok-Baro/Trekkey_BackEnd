@@ -1,7 +1,7 @@
-package com.api.trekkey.domain.contest.service;
+package com.api.trekkey.domain.contest.admin.service;
 
-import com.api.trekkey.domain.contest.web.dto.ContestAdminSearchCond;
-import com.api.trekkey.domain.contest.web.dto.ContestAdminSummaryRes;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSearchCond;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSummaryRes;
 import com.api.trekkey.global.response.PageRes;
 
 public interface ContestAdminQueryService {

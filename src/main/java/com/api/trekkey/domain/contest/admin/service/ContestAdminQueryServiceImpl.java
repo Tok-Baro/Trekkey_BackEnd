@@ -1,9 +1,9 @@
-package com.api.trekkey.domain.contest.service;
+package com.api.trekkey.domain.contest.admin.service;
 
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.repository.ContestQueryRepository;
-import com.api.trekkey.domain.contest.web.dto.ContestAdminSearchCond;
-import com.api.trekkey.domain.contest.web.dto.ContestAdminSummaryRes;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSearchCond;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSummaryRes;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;

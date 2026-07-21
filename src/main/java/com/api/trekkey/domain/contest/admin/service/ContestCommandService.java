@@ -1,9 +1,9 @@
-package com.api.trekkey.domain.contest.service;
+package com.api.trekkey.domain.contest.admin.service;
 
-import com.api.trekkey.domain.contest.web.dto.ContestCreateReq;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestCreateReq;
 import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
 import com.api.trekkey.domain.contest.web.dto.StageRes;
-import com.api.trekkey.domain.contest.web.dto.StageStatusUpdateReq;
+import com.api.trekkey.domain.contest.admin.web.dto.StageStatusUpdateReq;
 
 public interface ContestCommandService {
 

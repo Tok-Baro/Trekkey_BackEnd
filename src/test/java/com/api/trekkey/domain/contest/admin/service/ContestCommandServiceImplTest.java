@@ -1,4 +1,4 @@
-package com.api.trekkey.domain.contest.service;
+package com.api.trekkey.domain.contest.admin.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,12 +22,12 @@ import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
 import com.api.trekkey.domain.contest.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.contest.support.ContestHtmlSanitizer;
-import com.api.trekkey.domain.contest.web.dto.ContestCreateReq;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestCreateReq;
 import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
-import com.api.trekkey.domain.contest.web.dto.CriterionReq;
-import com.api.trekkey.domain.contest.web.dto.StageReq;
+import com.api.trekkey.domain.contest.admin.web.dto.CriterionReq;
+import com.api.trekkey.domain.contest.admin.web.dto.StageReq;
 import com.api.trekkey.domain.contest.web.dto.StageRes;
-import com.api.trekkey.domain.contest.web.dto.StageStatusUpdateReq;
+import com.api.trekkey.domain.contest.admin.web.dto.StageStatusUpdateReq;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.user.entity.MemberType;
 import com.api.trekkey.domain.user.entity.User;
