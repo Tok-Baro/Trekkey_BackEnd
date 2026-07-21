@@ -149,10 +149,9 @@ erDiagram
     TEAM_MEMBER {
         bigint id PK "팀 구성원 PK"
         bigint teamId FK "소속 팀"
-        bigint userId FK "구성 사용자"
+        bigint userId FK "구성 사용자, 팀 내 유일 - 탈퇴는 행 삭제, 이력은 Credential snapshot 담당"
         string roleCode "LEADER/MEMBER"
         datetime joinedAt "팀 참가 시각"
-        datetime leftAt "이탈 시각, 현재 구성원은 null"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -163,6 +162,8 @@ erDiagram
         bigint teamId FK "제출 팀, 팀당 한 건"
         string title "작품명"
         string status "DRAFT/SUBMITTED/WITHDRAWN"
+        bigint sourceVersion "재제출마다 증가, Credential source 버전"
+        string integrityStatus "STALE/READY, 해시 워커 최신 버전 확인용"
         datetime finalizedAt "제출 수정 마감 시각"
         datetime submittedAt "최근 제출 시각"
         datetime createdAt "최초 제출 시각"
