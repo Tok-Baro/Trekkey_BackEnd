@@ -1,12 +1,12 @@
 # Trekkey 통합 ERD
 
-- 기준일: 2026-07-21
+- 기준일: 2026-07-24
 - 범위: 업무 SQL 16개 + Credential·앵커링 SQL 9개
 - [확대용 SVG 열기](./assets/trekkey-unified-erd.svg)
 - [Raw Mermaid 원본](./trekkey-unified-erd.mmd)
 - 분리 원장: [공모전·Credential 최종 ERD](./erd.md)
 
-팀 회의에서 업무 원장과 블록체인 원장을 한 캔버스로 보기 위한 통합 뷰다. 실제 컬럼과 제약을 수정할 때는 분리 원장인 `erd.md`를 먼저 갱신하고 이 뷰를 동기화한다.
+팀 회의에서 업무 SQL과 앵커링 SQL을 한 캔버스로 보기 위한 통합 뷰다. `ANC_*`도 MySQL 테이블이며, Kaia에는 이 테이블이 생성되지 않는다. Kaia는 issuer key, Merkle root, Credential 폐기·대체 상태만 보관한다. 실제 컬럼과 제약을 수정할 때는 분리 원장인 `erd.md`를 먼저 갱신하고 이 뷰를 동기화한다.
 
 ```mermaid
 erDiagram
@@ -47,7 +47,7 @@ erDiagram
     ANC_CREDENTIAL ||--|{ ANC_CREDENTIAL_SUBJECT : snapshots
     USER o|--o{ ANC_CREDENTIAL_SUBJECT : identifies
     TEAM o|--o{ ANC_CREDENTIAL_SUBJECT : represents
-    ANC_CREDENTIAL ||--o{ ANC_CREDENTIAL_STATUS_EVENT : changes
+    ANC_CREDENTIAL ||--o| ANC_CREDENTIAL_STATUS_EVENT : changes
     ANC_CREDENTIAL o|--o{ ANC_CREDENTIAL_STATUS_EVENT : supersedes_with
     USER o|--o{ ANC_CREDENTIAL_STATUS_EVENT : acts
     ANC_ISSUER_KEY ||--o{ ANC_CREDENTIAL_STATUS_EVENT : approves
@@ -387,10 +387,13 @@ erDiagram
         string contractVersion "계약 버전"
         binary txHash "트랜잭션 해시 BINARY(32)"
         bigint txNonce "relayer nonce"
+        binary relayerAddress "relayer 주소 BINARY(20)"
+        blob signedRawTransaction "재방송할 서명 raw transaction"
+        datetime preparedAt "raw transaction 선저장 시각"
         bigint blockNumber "확정 블록 번호"
         binary blockHash "확정 블록 해시 BINARY(32)"
         int eventLogIndex "계약 이벤트 log index"
-        string status "PENDING/SUBMITTED/CONFIRMED/UNKNOWN/FAILED"
+        string status "PENDING/PREPARED/SUBMITTED/CONFIRMED/UNKNOWN/FAILED"
         string lastErrorCode "마지막 오류 코드"
         datetime submittedAt "전송 시각"
         datetime confirmedAt "확정 시각"
