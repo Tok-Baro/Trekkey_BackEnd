@@ -1,0 +1,209 @@
+{
+  "treeVersion": 1,
+  "leafDomain": "0x5d94c81e6ec3080e984cba1adb7df83a737c11ae46c6d9b02eb62d3ed54d58ed",
+  "leafTypes": [
+    "bytes32",
+    "bytes32",
+    "bytes32",
+    "bytes32",
+    "bytes32",
+    "bytes32"
+  ],
+  "hashRule": "leafHash = keccak256(bytes.concat(keccak256(abi.encode(leaf tuple))))",
+  "nodeRule": "nodeHash = keccak256(sorted(left, right))",
+  "cases": [
+    {
+      "name": "one-leaf",
+      "root": "0x4c8191808604541777eb904a4e9d74cc9b8c3d30c7b340b054a5ceddd1e8ede1",
+      "sortedLeaves": [
+        "0x4c8191808604541777eb904a4e9d74cc9b8c3d30c7b340b054a5ceddd1e8ede1"
+      ],
+      "leaves": [
+        {
+          "issuerId": "0x1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954",
+          "credentialIdHash": "0x2e15bc1a19cec0e1d152aae0114d7c04b9c59e482cf1982a864832cc3dbc63a4",
+          "schemaVersionHash": "0xa85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c",
+          "contentHash": "0xe7f3166da4dc7113539b2dc0f228502661429a2a96fa753a2d0a533d7bcf6b6f",
+          "fileManifestHash": "0xf1d7ed28735bd09ca4645a3a690d23b0017337d61134e1a61dca9655b7887814",
+          "encodedLeafValue": "0x5d94c81e6ec3080e984cba1adb7df83a737c11ae46c6d9b02eb62d3ed54d58ed1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f9542e15bc1a19cec0e1d152aae0114d7c04b9c59e482cf1982a864832cc3dbc63a4a85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012ce7f3166da4dc7113539b2dc0f228502661429a2a96fa753a2d0a533d7bcf6b6ff1d7ed28735bd09ca4645a3a690d23b0017337d61134e1a61dca9655b7887814",
+          "leafHash": "0x4c8191808604541777eb904a4e9d74cc9b8c3d30c7b340b054a5ceddd1e8ede1",
+          "leafIndex": 0,
+          "proof": []
+        }
+      ]
+    },
+    {
+      "name": "two-leaves-same-content-different-credential-id",
+      "root": "0xccc9edd2fffe9e10dc1a2bea0111875a5284dbb48815c8af86c2173da5d83c80",
+      "sortedLeaves": [
+        "0x8889113aa9faed5889780f3ba63e4b58f890a41e7d3db72c47099d1dcebba965",
+        "0x922bedba1a7fdbc4b83e90893955a0e1b31a406b5e78d183532c2930ad3cdf81"
+      ],
+      "leaves": [
+        {
+          "issuerId": "0x1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954",
+          "credentialIdHash": "0x5c10f9fe2e8f61b9f573db03b876ccd8f0c2eca4cee4c0551750fb9575f776b5",
+          "schemaVersionHash": "0xa85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c",
+          "contentHash": "0xf8b77816a110c1701affeec43d4c420f128ec536deab4970fa7a38a62861c7ee",
+          "fileManifestHash": "0x06552c9db154b7c5784b29e73e51422ac976dd1172202db47ab8f105e94b6332",
+          "encodedLeafValue": "0x5d94c81e6ec3080e984cba1adb7df83a737c11ae46c6d9b02eb62d3ed54d58ed1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f9545c10f9fe2e8f61b9f573db03b876ccd8f0c2eca4cee4c0551750fb9575f776b5a85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012cf8b77816a110c1701affeec43d4c420f128ec536deab4970fa7a38a62861c7ee06552c9db154b7c5784b29e73e51422ac976dd1172202db47ab8f105e94b6332",
+          "leafHash": "0x8889113aa9faed5889780f3ba63e4b58f890a41e7d3db72c47099d1dcebba965",
+          "leafIndex": 0,
+          "proof": [
+            "0x922bedba1a7fdbc4b83e90893955a0e1b31a406b5e78d183532c2930ad3cdf81"
+          ]
+        },
+        {
+          "issuerId": "0x1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954",
+          "credentialIdHash": "0x1d5f49b2a393f35788c85e4d19dc88de89941c4528ca9b2ee88eb9a5dba45da9",
+          "schemaVersionHash": "0xa85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c",
+          "contentHash": "0xf8b77816a110c1701affeec43d4c420f128ec536deab4970fa7a38a62861c7ee",
+          "fileManifestHash": "0x06552c9db154b7c5784b29e73e51422ac976dd1172202db47ab8f105e94b6332",
+          "encodedLeafValue": "0x5d94c81e6ec3080e984cba1adb7df83a737c11ae46c6d9b02eb62d3ed54d58ed1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f9541d5f49b2a393f35788c85e4d19dc88de89941c4528ca9b2ee88eb9a5dba45da9a85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012cf8b77816a110c1701affeec43d4c420f128ec536deab4970fa7a38a62861c7ee06552c9db154b7c5784b29e73e51422ac976dd1172202db47ab8f105e94b6332",
+          "leafHash": "0x922bedba1a7fdbc4b83e90893955a0e1b31a406b5e78d183532c2930ad3cdf81",
+          "leafIndex": 1,
+          "proof": [
+            "0x8889113aa9faed5889780f3ba63e4b58f890a41e7d3db72c47099d1dcebba965"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "three-leaves-odd-count-and-content-change",
+      "root": "0x8865b8a4a1caf00acc8a6070d8c5e287378e4cf63b437f1882246473e3fe5668",
+      "sortedLeaves": [
+        "0x1338f469bd08f99b51f4782f78ac5142678d31d39c9605e1b1f8768201001dab",
+        "0x448f4681b558c20128c85c39072e2872cac2053e66f69b018666cac9fba04dad",
+        "0xa665767d5576305d3083e03bfdf1ebe40178780a9e6059cb6d3f102aebc8f346"
+      ],
+      "leaves": [
+        {
+          "issuerId": "0x1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954",
+          "credentialIdHash": "0xb3a83148894fbdde1ddb332259f4b430f727cd9aec0fe5fee93a53f9a125f00f",
+          "schemaVersionHash": "0xa85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c",
+          "contentHash": "0x136193705b01e96528c9bcb25d777977569b8b9dfdd053a252c85099e174f4da",
+          "fileManifestHash": "0x57c60f05d0b5f1b3fcdf1165fb085a16aee185dee954a38f285d1fada7e16d4a",
+          "encodedLeafValue": "0x5d94c81e6ec3080e984cba1adb7df83a737c11ae46c6d9b02eb62d3ed54d58ed1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954b3a83148894fbdde1ddb332259f4b430f727cd9aec0fe5fee93a53f9a125f00fa85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c136193705b01e96528c9bcb25d777977569b8b9dfdd053a252c85099e174f4da57c60f05d0b5f1b3fcdf1165fb085a16aee185dee954a38f285d1fada7e16d4a",
+          "leafHash": "0x1338f469bd08f99b51f4782f78ac5142678d31d39c9605e1b1f8768201001dab",
+          "leafIndex": 0,
+          "proof": [
+            "0x448f4681b558c20128c85c39072e2872cac2053e66f69b018666cac9fba04dad",
+            "0xa665767d5576305d3083e03bfdf1ebe40178780a9e6059cb6d3f102aebc8f346"
+          ]
+        },
+        {
+          "issuerId": "0x1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954",
+          "credentialIdHash": "0x26a79ca0490d0b44fd5e47b571cc1ae12b5ab306369033bc88e783d688ef0aa6",
+          "schemaVersionHash": "0xa85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c",
+          "contentHash": "0xaabe8856cdfd9be31c5f27766027402b88731a2958148ede1459395a81f32ebd",
+          "fileManifestHash": "0xc215dc1da9cabc89fcb8dea80683043fa1ad34e8194edd9a31dcf85392822b56",
+          "encodedLeafValue": "0x5d94c81e6ec3080e984cba1adb7df83a737c11ae46c6d9b02eb62d3ed54d58ed1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f95426a79ca0490d0b44fd5e47b571cc1ae12b5ab306369033bc88e783d688ef0aa6a85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012caabe8856cdfd9be31c5f27766027402b88731a2958148ede1459395a81f32ebdc215dc1da9cabc89fcb8dea80683043fa1ad34e8194edd9a31dcf85392822b56",
+          "leafHash": "0xa665767d5576305d3083e03bfdf1ebe40178780a9e6059cb6d3f102aebc8f346",
+          "leafIndex": 2,
+          "proof": [
+            "0xddd21fd78fa16b2bd860f4240f48a1e23dd6ebf0149e2b809c569c5e59711a85"
+          ]
+        },
+        {
+          "issuerId": "0x1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954",
+          "credentialIdHash": "0x33cb4a8a604d3686e48ac3f512a2e336985f3896c63fe6e4f83d6a15983042f2",
+          "schemaVersionHash": "0xa85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c",
+          "contentHash": "0x29f6f9274e3a6351f797c3ab4554245b13ce06b556537720188a499a839b0889",
+          "fileManifestHash": "0xa59c96a4e1a8ce1ef3ede5e480d7ab5c1bc080e65620b1987c69f9440758e789",
+          "encodedLeafValue": "0x5d94c81e6ec3080e984cba1adb7df83a737c11ae46c6d9b02eb62d3ed54d58ed1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f95433cb4a8a604d3686e48ac3f512a2e336985f3896c63fe6e4f83d6a15983042f2a85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c29f6f9274e3a6351f797c3ab4554245b13ce06b556537720188a499a839b0889a59c96a4e1a8ce1ef3ede5e480d7ab5c1bc080e65620b1987c69f9440758e789",
+          "leafHash": "0x448f4681b558c20128c85c39072e2872cac2053e66f69b018666cac9fba04dad",
+          "leafIndex": 1,
+          "proof": [
+            "0x1338f469bd08f99b51f4782f78ac5142678d31d39c9605e1b1f8768201001dab",
+            "0xa665767d5576305d3083e03bfdf1ebe40178780a9e6059cb6d3f102aebc8f346"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "five-leaves-complete-tree-layout",
+      "root": "0xc7f0dd86975e25984c59597ec7f246222157dabe491459a3667e7ebde2e584cc",
+      "sortedLeaves": [
+        "0x4840af8d0672f6a15104013bfeee4e4c68a3dcab50c01fe70114162a7222972f",
+        "0x4eda3b07a2f1fb066072f9b4f966413f3910c8b275d0602810711289668079cc",
+        "0x66f753faeea67e8b48860f20b56acf14af6b51c32920a43d635d7880d214a67b",
+        "0x7a00eb062735240412e7cd5f30894558597a8da6b258f1f291b1d470320526b8",
+        "0xba39ba9e2b0d849fa162e90df83a7cae312cec364caa8476b820d767db1bcbb8"
+      ],
+      "leaves": [
+        {
+          "issuerId": "0x1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954",
+          "credentialIdHash": "0xdfd280e14b9da83508a3a50afc1817522bcdb40313b8f92285fc45d0a9af4f41",
+          "schemaVersionHash": "0xa85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c",
+          "contentHash": "0xe820b706cb628363b5a4e13281d2f0ec1b655b5b6f4a74dfc750422d76ea04eb",
+          "fileManifestHash": "0xa5e97d6ea2d466243a195fd8eb928dd4d8b04465a5671d8bcc81432140a590b0",
+          "encodedLeafValue": "0x5d94c81e6ec3080e984cba1adb7df83a737c11ae46c6d9b02eb62d3ed54d58ed1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954dfd280e14b9da83508a3a50afc1817522bcdb40313b8f92285fc45d0a9af4f41a85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012ce820b706cb628363b5a4e13281d2f0ec1b655b5b6f4a74dfc750422d76ea04eba5e97d6ea2d466243a195fd8eb928dd4d8b04465a5671d8bcc81432140a590b0",
+          "leafHash": "0x7a00eb062735240412e7cd5f30894558597a8da6b258f1f291b1d470320526b8",
+          "leafIndex": 3,
+          "proof": [
+            "0x66f753faeea67e8b48860f20b56acf14af6b51c32920a43d635d7880d214a67b",
+            "0x75770d70d6deef0bd1401993677170089b96ad0d9a9c12da6aa90d350a2b93cb"
+          ]
+        },
+        {
+          "issuerId": "0x1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954",
+          "credentialIdHash": "0xf0188625edeb3a51c066b18afc5c9277499e7e6d8c3319387bfcda257b9e60c2",
+          "schemaVersionHash": "0xa85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c",
+          "contentHash": "0x8891f9bfe33b1904a0281b22dcbaea82b4995fa5408ab074a2c8f31cc1f388b9",
+          "fileManifestHash": "0xc3b47a910faed1fec63220f94d769ef7015f0b4f26a803c0424a57ddded2905b",
+          "encodedLeafValue": "0x5d94c81e6ec3080e984cba1adb7df83a737c11ae46c6d9b02eb62d3ed54d58ed1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954f0188625edeb3a51c066b18afc5c9277499e7e6d8c3319387bfcda257b9e60c2a85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c8891f9bfe33b1904a0281b22dcbaea82b4995fa5408ab074a2c8f31cc1f388b9c3b47a910faed1fec63220f94d769ef7015f0b4f26a803c0424a57ddded2905b",
+          "leafHash": "0x66f753faeea67e8b48860f20b56acf14af6b51c32920a43d635d7880d214a67b",
+          "leafIndex": 2,
+          "proof": [
+            "0x7a00eb062735240412e7cd5f30894558597a8da6b258f1f291b1d470320526b8",
+            "0x75770d70d6deef0bd1401993677170089b96ad0d9a9c12da6aa90d350a2b93cb"
+          ]
+        },
+        {
+          "issuerId": "0x1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954",
+          "credentialIdHash": "0x3b482d255584f0c4ed462d1281aa72a0ee350a53f8f2cae004536c0cb0b4fd66",
+          "schemaVersionHash": "0xa85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c",
+          "contentHash": "0xb0a0b708110536c69e26f353fe050fe39fb9eeaad36f9837ed21442db3238cc0",
+          "fileManifestHash": "0x77814c9f1ecb8c78f58db875b28855488b96b12492978e747dbb1a994b8a6f26",
+          "encodedLeafValue": "0x5d94c81e6ec3080e984cba1adb7df83a737c11ae46c6d9b02eb62d3ed54d58ed1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f9543b482d255584f0c4ed462d1281aa72a0ee350a53f8f2cae004536c0cb0b4fd66a85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012cb0a0b708110536c69e26f353fe050fe39fb9eeaad36f9837ed21442db3238cc077814c9f1ecb8c78f58db875b28855488b96b12492978e747dbb1a994b8a6f26",
+          "leafHash": "0xba39ba9e2b0d849fa162e90df83a7cae312cec364caa8476b820d767db1bcbb8",
+          "leafIndex": 4,
+          "proof": [
+            "0x9b078581ee9a6e4be23ef6e7eeb3401658b3405922f2d1d0ebbe88e2352d66c3",
+            "0x8e34adf1588d4185cb9bbaacb027c35b38bf1b8151aef7dac4fd25f248c622bd"
+          ]
+        },
+        {
+          "issuerId": "0x1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954",
+          "credentialIdHash": "0x66037394e3f6567f8ab90eca2ffc1337ee1adec53d04a2330775ee6c0e5223b1",
+          "schemaVersionHash": "0xa85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c",
+          "contentHash": "0x2f48d8570aa6275b3e6fe8488794a24bd94aee0ee385e46d5cbfa3c780f0907d",
+          "fileManifestHash": "0x27d0906d1ad73f1ba084fee5a440f885aa209f2a1ae9bd9b543d4e4ac42e4a89",
+          "encodedLeafValue": "0x5d94c81e6ec3080e984cba1adb7df83a737c11ae46c6d9b02eb62d3ed54d58ed1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f95466037394e3f6567f8ab90eca2ffc1337ee1adec53d04a2330775ee6c0e5223b1a85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c2f48d8570aa6275b3e6fe8488794a24bd94aee0ee385e46d5cbfa3c780f0907d27d0906d1ad73f1ba084fee5a440f885aa209f2a1ae9bd9b543d4e4ac42e4a89",
+          "leafHash": "0x4840af8d0672f6a15104013bfeee4e4c68a3dcab50c01fe70114162a7222972f",
+          "leafIndex": 0,
+          "proof": [
+            "0x4eda3b07a2f1fb066072f9b4f966413f3910c8b275d0602810711289668079cc",
+            "0xba39ba9e2b0d849fa162e90df83a7cae312cec364caa8476b820d767db1bcbb8",
+            "0x8e34adf1588d4185cb9bbaacb027c35b38bf1b8151aef7dac4fd25f248c622bd"
+          ]
+        },
+        {
+          "issuerId": "0x1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f954",
+          "credentialIdHash": "0x4ba4864af1366f9bd7aa4787e39b26caccb0dc40369162bb54379c7b2d44773e",
+          "schemaVersionHash": "0xa85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c",
+          "contentHash": "0x975451d292f6667759618539f15c1961eb18d06405dae2c23d45faf50fa5947c",
+          "fileManifestHash": "0x1a0288ff3514167af8d5cb4ed5c2f37766ccaf001215429bde84ef97233c40a0",
+          "encodedLeafValue": "0x5d94c81e6ec3080e984cba1adb7df83a737c11ae46c6d9b02eb62d3ed54d58ed1b4b60001d40d20639e89ae875fa01eaf1ccec9da59fc9c2b94f67a97e82f9544ba4864af1366f9bd7aa4787e39b26caccb0dc40369162bb54379c7b2d44773ea85859e4135243f8ef6848827fc78f57e621db32231756e8ba640b96e666012c975451d292f6667759618539f15c1961eb18d06405dae2c23d45faf50fa5947c1a0288ff3514167af8d5cb4ed5c2f37766ccaf001215429bde84ef97233c40a0",
+          "leafHash": "0x4eda3b07a2f1fb066072f9b4f966413f3910c8b275d0602810711289668079cc",
+          "leafIndex": 1,
+          "proof": [
+            "0x4840af8d0672f6a15104013bfeee4e4c68a3dcab50c01fe70114162a7222972f",
+            "0xba39ba9e2b0d849fa162e90df83a7cae312cec364caa8476b820d767db1bcbb8",
+            "0x8e34adf1588d4185cb9bbaacb027c35b38bf1b8151aef7dac4fd25f248c622bd"
+          ]
+        }
+      ]
+    }
+  ]
+}
