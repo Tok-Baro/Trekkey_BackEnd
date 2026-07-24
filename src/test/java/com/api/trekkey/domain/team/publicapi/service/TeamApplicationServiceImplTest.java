@@ -2,6 +2,7 @@ package com.api.trekkey.domain.team.publicapi.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -15,14 +16,23 @@ import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.team.entity.Team;
+import com.api.trekkey.domain.team.entity.TeamMember;
+import com.api.trekkey.domain.team.entity.TeamMemberRole;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
+import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantSearchRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
+import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationRes;
+import com.api.trekkey.domain.team.repository.TeamMemberRepository;
 import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
+import com.api.trekkey.domain.user.entity.UserRole;
+import com.api.trekkey.domain.user.entity.UserStatus;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
@@ -32,6 +42,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class TeamApplicationServiceImplTest {
@@ -50,13 +62,112 @@ class TeamApplicationServiceImplTest {
     @Mock
     private TeamRepository teamRepository;
 
+    @Mock
+    private TeamMemberRepository teamMemberRepository;
+
     @InjectMocks
     private TeamApplicationServiceImpl teamApplicationService;
 
     @Test
+    @DisplayName("본인의 참가 신청을 최신순 응답으로 매핑한다")
+    void getMyApplications_returnsMappedApplications() {
+        given(userRepository.findById(10L))
+                .willReturn(Optional.of(org.mockito.Mockito.mock(User.class)));
+        LocalDateTime newerCreatedAt = LocalDateTime.of(2026, 7, 24, 15, 30);
+        LocalDateTime newerUpdatedAt = LocalDateTime.of(2026, 7, 24, 16, 10);
+        LocalDateTime olderCreatedAt = LocalDateTime.of(2026, 7, 20, 9, 0);
+        LocalDateTime olderUpdatedAt = LocalDateTime.of(2026, 7, 21, 11, 20);
+        Team newerTeam = application(
+                "newer-contest",
+                "AI 창의 경진대회",
+                "SW중심대학사업단",
+                ParticipationType.TEAM,
+                "트랙키 팀",
+                TeamStatus.PENDING,
+                newerCreatedAt,
+                newerUpdatedAt);
+        Team olderTeam = application(
+                "older-contest",
+                "캠퍼스 아이디어톤",
+                "학생지원처",
+                ParticipationType.INDIVIDUAL,
+                "김참가",
+                TeamStatus.APPROVED,
+                olderCreatedAt,
+                olderUpdatedAt);
+        User participant = org.mockito.Mockito.mock(User.class);
+        given(teamMemberRepository.findAllWithTeamAndContestByUserId(10L))
+                .willReturn(List.of(
+                        teamMember(newerTeam, participant, TeamMemberRole.MEMBER),
+                        teamMember(olderTeam, participant, TeamMemberRole.LEADER)));
+
+        List<TeamApplicationRes> result = teamApplicationService.getMyApplications(10L);
+
+        assertThat(result).containsExactly(
+                new TeamApplicationRes(
+                        "newer-contest",
+                        "AI 창의 경진대회",
+                        "SW중심대학사업단",
+                        ParticipationType.TEAM,
+                        "트랙키 팀",
+                        "김참가",
+                        "컴퓨터공학부",
+                        3,
+                        TeamStatus.PENDING,
+                        "leader@example.com",
+                        "010-1234-5678",
+                        "학교 문제를 해결하고 싶습니다.",
+                        newerCreatedAt,
+                        newerUpdatedAt),
+                new TeamApplicationRes(
+                        "older-contest",
+                        "캠퍼스 아이디어톤",
+                        "학생지원처",
+                        ParticipationType.INDIVIDUAL,
+                        "김참가",
+                        "김참가",
+                        "컴퓨터공학부",
+                        3,
+                        TeamStatus.APPROVED,
+                        "leader@example.com",
+                        "010-1234-5678",
+                        "학교 문제를 해결하고 싶습니다.",
+                        olderCreatedAt,
+                        olderUpdatedAt));
+        verify(teamMemberRepository).findAllWithTeamAndContestByUserId(10L);
+    }
+
+    @Test
+    @DisplayName("본인의 참가 신청이 없으면 빈 목록을 반환한다")
+    void getMyApplications_returnsEmptyList() {
+        given(userRepository.findById(10L))
+                .willReturn(Optional.of(org.mockito.Mockito.mock(User.class)));
+        given(teamMemberRepository.findAllWithTeamAndContestByUserId(10L))
+                .willReturn(List.of());
+
+        assertThat(teamApplicationService.getMyApplications(10L)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("참가 신청 목록 조회 사용자를 찾을 수 없으면 사용자 없음으로 처리한다")
+    void getMyApplications_throwsWhenUserDoesNotExist() {
+        given(userRepository.findById(10L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> teamApplicationService.getMyApplications(10L))
+                .isInstanceOf(CustomException.class)
+                .extracting("baseResponseCode")
+                .isEqualTo(UserErrorResponseCode.USER_NOT_FOUND);
+
+        verifyNoInteractions(teamRepository, teamMemberRepository);
+    }
+
+    @Test
     @DisplayName("참가 신청 정보를 정리하고 검토 대기 상태로 저장한다")
+    @SuppressWarnings("unchecked")
     void createApplication_savesPendingApplication() {
         User user = givenParticipant(10L, 2L);
+        User firstMember = User.builder().id(11L).build();
+        User secondMember = User.builder().id(12L).build();
         Contest contest = contest(20L, ContestStatus.APPLICATION_OPEN, ParticipationType.TEAM);
         given(user.getId()).willReturn(10L);
         given(contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
@@ -65,8 +176,22 @@ class TeamApplicationServiceImplTest {
                 PUBLIC_STATUSES))
                 .willReturn(Optional.of(contest));
         given(teamRepository.existsByContestIdAndLeaderUserId(20L, 10L)).willReturn(false);
+        given(userRepository.findAllByIdInAndOrganizationIdAndRoleAndStatus(
+                List.of(11L, 12L),
+                2L,
+                UserRole.PARTICIPANT,
+                UserStatus.ACTIVE))
+                .willReturn(List.of(firstMember, secondMember));
+        given(teamMemberRepository.existsByTeamContestIdAndUserIdIn(
+                20L, List.of(11L, 12L, 10L)))
+                .willReturn(false);
+        given(teamRepository.save(any(Team.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
 
-        teamApplicationService.createApplication(10L, "contest-public-id", applicationRequest(3));
+        teamApplicationService.createApplication(
+                10L,
+                "contest-public-id",
+                applicationRequest(List.of(11L, 12L)));
 
         ArgumentCaptor<Team> teamCaptor = ArgumentCaptor.forClass(Team.class);
         verify(teamRepository).save(teamCaptor.capture());
@@ -81,6 +206,16 @@ class TeamApplicationServiceImplTest {
         assertThat(savedTeam.getContactEmail()).isEqualTo("leader@example.com");
         assertThat(savedTeam.getPhone()).isEqualTo("010-1234-5678");
         assertThat(savedTeam.getMotivation()).isEqualTo("학교 문제를 해결하고 싶습니다.");
+
+        ArgumentCaptor<List<TeamMember>> teamMembersCaptor =
+                ArgumentCaptor.forClass(List.class);
+        verify(teamMemberRepository).saveAll(teamMembersCaptor.capture());
+        assertThat(teamMembersCaptor.getValue())
+                .extracting(TeamMember::getUser, TeamMember::getRole, TeamMember::getTeam)
+                .containsExactly(
+                        tuple(user, TeamMemberRole.LEADER, savedTeam),
+                        tuple(firstMember, TeamMemberRole.MEMBER, savedTeam),
+                        tuple(secondMember, TeamMemberRole.MEMBER, savedTeam));
     }
 
     @Test
@@ -91,12 +226,12 @@ class TeamApplicationServiceImplTest {
         assertThatThrownBy(() -> teamApplicationService.createApplication(
                 10L,
                 "contest-public-id",
-                applicationRequest(3)))
+                applicationRequest(List.of(11L, 12L))))
                 .isInstanceOf(CustomException.class)
                 .extracting("baseResponseCode")
                 .isEqualTo(UserErrorResponseCode.USER_NOT_FOUND);
 
-        verifyNoInteractions(contestRepository, teamRepository);
+        verifyNoInteractions(contestRepository, teamRepository, teamMemberRepository);
     }
 
     @Test
@@ -112,12 +247,12 @@ class TeamApplicationServiceImplTest {
         assertThatThrownBy(() -> teamApplicationService.createApplication(
                 10L,
                 "contest-public-id",
-                applicationRequest(3)))
+                applicationRequest(List.of(11L, 12L))))
                 .isInstanceOf(CustomException.class)
                 .extracting("baseResponseCode")
                 .isEqualTo(ContestErrorResponseCode.CONTEST_NOT_FOUND);
 
-        verifyNoInteractions(teamRepository);
+        verifyNoInteractions(teamRepository, teamMemberRepository);
     }
 
     @Test
@@ -134,12 +269,12 @@ class TeamApplicationServiceImplTest {
         assertThatThrownBy(() -> teamApplicationService.createApplication(
                 10L,
                 "contest-public-id",
-                applicationRequest(3)))
+                applicationRequest(List.of(11L, 12L))))
                 .isInstanceOf(CustomException.class)
                 .extracting("baseResponseCode")
                 .isEqualTo(TeamErrorResponseCode.TEAM_APPLICATION_NOT_OPEN);
 
-        verifyNoInteractions(teamRepository);
+        verifyNoInteractions(teamRepository, teamMemberRepository);
     }
 
     @Test
@@ -156,12 +291,34 @@ class TeamApplicationServiceImplTest {
         assertThatThrownBy(() -> teamApplicationService.createApplication(
                 10L,
                 "contest-public-id",
-                applicationRequest(2)))
+                applicationRequest(List.of(11L))))
                 .isInstanceOf(CustomException.class)
                 .extracting("baseResponseCode")
                 .isEqualTo(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_COUNT_INVALID);
 
-        verifyNoInteractions(teamRepository);
+        verifyNoInteractions(teamRepository, teamMemberRepository);
+    }
+
+    @Test
+    @DisplayName("대표자를 제외한 팀원이 4명을 초과하면 참가 인원 오류로 처리한다")
+    void createApplication_throwsWhenMemberCountExceedsLimit() {
+        givenParticipant(10L, 2L);
+        Contest contest = contest(20L, ContestStatus.APPLICATION_OPEN, ParticipationType.TEAM);
+        given(contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
+                "contest-public-id",
+                2L,
+                PUBLIC_STATUSES))
+                .willReturn(Optional.of(contest));
+
+        assertThatThrownBy(() -> teamApplicationService.createApplication(
+                10L,
+                "contest-public-id",
+                applicationRequest(List.of(11L, 12L, 13L, 14L, 15L))))
+                .isInstanceOf(CustomException.class)
+                .extracting("baseResponseCode")
+                .isEqualTo(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_COUNT_INVALID);
+
+        verifyNoInteractions(teamRepository, teamMemberRepository);
     }
 
     @Test
@@ -180,12 +337,214 @@ class TeamApplicationServiceImplTest {
         assertThatThrownBy(() -> teamApplicationService.createApplication(
                 10L,
                 "contest-public-id",
-                applicationRequest(3)))
+                applicationRequest(List.of(11L, 12L))))
                 .isInstanceOf(CustomException.class)
                 .extracting("baseResponseCode")
                 .isEqualTo(TeamErrorResponseCode.TEAM_APPLICATION_ALREADY_EXISTS);
 
         verify(teamRepository, never()).save(any(Team.class));
+        verifyNoInteractions(teamMemberRepository);
+    }
+
+    @Test
+    @DisplayName("대표자를 팀원 목록에 포함하면 유효하지 않은 팀원으로 처리한다")
+    void createApplication_throwsWhenLeaderIsIncludedInMembers() {
+        User user = givenParticipant(10L, 2L);
+        Contest contest = contest(20L, ContestStatus.APPLICATION_OPEN, ParticipationType.TEAM);
+        given(user.getId()).willReturn(10L);
+        given(contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
+                "contest-public-id",
+                2L,
+                PUBLIC_STATUSES))
+                .willReturn(Optional.of(contest));
+        assertThatThrownBy(() -> teamApplicationService.createApplication(
+                10L,
+                "contest-public-id",
+                applicationRequest(List.of(10L))))
+                .isInstanceOf(CustomException.class)
+                .extracting("baseResponseCode")
+                .isEqualTo(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_INVALID);
+
+        verify(teamRepository, never()).save(any(Team.class));
+        verifyNoInteractions(teamMemberRepository);
+    }
+
+    @Test
+    @DisplayName("중복된 팀원을 포함하면 유효하지 않은 팀원으로 처리한다")
+    void createApplication_throwsWhenMemberIdsAreDuplicated() {
+        User user = givenParticipant(10L, 2L);
+        Contest contest = contest(20L, ContestStatus.APPLICATION_OPEN, ParticipationType.TEAM);
+        given(user.getId()).willReturn(10L);
+        given(contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
+                "contest-public-id",
+                2L,
+                PUBLIC_STATUSES))
+                .willReturn(Optional.of(contest));
+        assertThatThrownBy(() -> teamApplicationService.createApplication(
+                10L,
+                "contest-public-id",
+                applicationRequest(List.of(11L, 11L))))
+                .isInstanceOf(CustomException.class)
+                .extracting("baseResponseCode")
+                .isEqualTo(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_INVALID);
+
+        verify(teamRepository, never()).save(any(Team.class));
+        verifyNoInteractions(teamMemberRepository);
+    }
+
+    @Test
+    @DisplayName("같은 학교의 활성 참가자로 조회되지 않는 팀원이 있으면 신청할 수 없다")
+    void createApplication_throwsWhenMemberIsNotEligible() {
+        User user = givenParticipant(10L, 2L);
+        Contest contest = contest(20L, ContestStatus.APPLICATION_OPEN, ParticipationType.TEAM);
+        given(user.getId()).willReturn(10L);
+        given(contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
+                "contest-public-id",
+                2L,
+                PUBLIC_STATUSES))
+                .willReturn(Optional.of(contest));
+        given(teamRepository.existsByContestIdAndLeaderUserId(20L, 10L)).willReturn(false);
+        given(userRepository.findAllByIdInAndOrganizationIdAndRoleAndStatus(
+                List.of(11L, 12L),
+                2L,
+                UserRole.PARTICIPANT,
+                UserStatus.ACTIVE))
+                .willReturn(List.of(User.builder().id(11L).build()));
+
+        assertThatThrownBy(() -> teamApplicationService.createApplication(
+                10L,
+                "contest-public-id",
+                applicationRequest(List.of(11L, 12L))))
+                .isInstanceOf(CustomException.class)
+                .extracting("baseResponseCode")
+                .isEqualTo(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_INVALID);
+
+        verify(teamRepository, never()).save(any(Team.class));
+        verifyNoInteractions(teamMemberRepository);
+    }
+
+    @Test
+    @DisplayName("대표자나 선택 팀원이 같은 대회의 다른 팀에 참여 중이면 신청할 수 없다")
+    void createApplication_throwsWhenParticipantAlreadyJoinedContest() {
+        User user = givenParticipant(10L, 2L);
+        User member = User.builder().id(11L).build();
+        Contest contest = contest(20L, ContestStatus.APPLICATION_OPEN, ParticipationType.TEAM);
+        given(user.getId()).willReturn(10L);
+        given(contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
+                "contest-public-id",
+                2L,
+                PUBLIC_STATUSES))
+                .willReturn(Optional.of(contest));
+        given(teamRepository.existsByContestIdAndLeaderUserId(20L, 10L)).willReturn(false);
+        given(userRepository.findAllByIdInAndOrganizationIdAndRoleAndStatus(
+                List.of(11L),
+                2L,
+                UserRole.PARTICIPANT,
+                UserStatus.ACTIVE))
+                .willReturn(List.of(member));
+        given(teamMemberRepository.existsByTeamContestIdAndUserIdIn(
+                20L, List.of(11L, 10L)))
+                .willReturn(true);
+
+        assertThatThrownBy(() -> teamApplicationService.createApplication(
+                10L,
+                "contest-public-id",
+                applicationRequest(List.of(11L))))
+                .isInstanceOf(CustomException.class)
+                .extracting("baseResponseCode")
+                .isEqualTo(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_ALREADY_PARTICIPATING);
+
+        verify(teamRepository, never()).save(any(Team.class));
+    }
+
+    @Test
+    @DisplayName("개인전은 대표자 한 명을 LEADER로 저장한다")
+    @SuppressWarnings("unchecked")
+    void createApplication_savesLeaderForIndividualContest() {
+        User user = givenParticipant(10L, 2L);
+        Contest contest = contest(20L, ContestStatus.APPLICATION_OPEN, ParticipationType.INDIVIDUAL);
+        given(user.getId()).willReturn(10L);
+        given(contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
+                "contest-public-id",
+                2L,
+                PUBLIC_STATUSES))
+                .willReturn(Optional.of(contest));
+        given(teamRepository.existsByContestIdAndLeaderUserId(20L, 10L)).willReturn(false);
+        given(teamMemberRepository.existsByTeamContestIdAndUserIdIn(20L, List.of(10L)))
+                .willReturn(false);
+        given(teamRepository.save(any(Team.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+
+        teamApplicationService.createApplication(
+                10L,
+                "contest-public-id",
+                applicationRequest(List.of()));
+
+        ArgumentCaptor<Team> teamCaptor = ArgumentCaptor.forClass(Team.class);
+        verify(teamRepository).save(teamCaptor.capture());
+        assertThat(teamCaptor.getValue().getMemberCount()).isEqualTo(1);
+
+        ArgumentCaptor<List<TeamMember>> teamMembersCaptor =
+                ArgumentCaptor.forClass(List.class);
+        verify(teamMemberRepository).saveAll(teamMembersCaptor.capture());
+        assertThat(teamMembersCaptor.getValue()).singleElement().satisfies(teamMember -> {
+            assertThat(teamMember.getUser()).isSameAs(user);
+            assertThat(teamMember.getRole()).isEqualTo(TeamMemberRole.LEADER);
+            assertThat(teamMember.getTeam()).isSameAs(teamCaptor.getValue());
+        });
+    }
+
+    @Test
+    @DisplayName("같은 학교의 활성 참가자를 이름 또는 학번 검색 응답으로 매핑한다")
+    void searchParticipants_returnsMappedParticipants() {
+        givenParticipant(10L, 2L);
+        User candidate = User.builder()
+                .id(11L)
+                .name("김팀원")
+                .studentId("20260001")
+                .major("컴퓨터공학부")
+                .build();
+        given(userRepository.searchParticipants(
+                2L,
+                UserRole.PARTICIPANT,
+                UserStatus.ACTIVE,
+                10L,
+                "김",
+                PageRequest.of(0, 20)))
+                .willReturn(List.of(candidate));
+
+        assertThat(teamApplicationService.searchParticipants(10L, "  김  "))
+                .containsExactly(new ParticipantSearchRes(
+                        11L,
+                        "김팀원",
+                        "20260001",
+                        "컴퓨터공학부"));
+    }
+
+    @Test
+    @DisplayName("참가자 검색어가 비어 있으면 전체 목록 대신 빈 목록을 반환한다")
+    void searchParticipants_returnsEmptyListWhenKeywordIsBlank() {
+        given(userRepository.findById(10L))
+                .willReturn(Optional.of(org.mockito.Mockito.mock(User.class)));
+
+        assertThat(teamApplicationService.searchParticipants(10L, "  ")).isEmpty();
+
+        verify(userRepository, never()).searchParticipants(
+                any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("참가자 검색 사용자를 찾을 수 없으면 사용자 없음으로 처리한다")
+    void searchParticipants_throwsWhenUserDoesNotExist() {
+        given(userRepository.findById(10L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> teamApplicationService.searchParticipants(10L, "김"))
+                .isInstanceOf(CustomException.class)
+                .extracting("baseResponseCode")
+                .isEqualTo(UserErrorResponseCode.USER_NOT_FOUND);
+
+        verify(userRepository, never()).searchParticipants(
+                any(), any(), any(), any(), any(), any());
     }
 
     private User givenParticipant(Long userId, Long organizationId) {
@@ -206,14 +565,53 @@ class TeamApplicationServiceImplTest {
                 .build();
     }
 
-    private TeamApplicationCreateReq applicationRequest(int memberCount) {
+    private TeamApplicationCreateReq applicationRequest(List<Long> memberUserIds) {
         return new TeamApplicationCreateReq(
                 "  트랙키 팀  ",
                 "  김참가  ",
                 "  컴퓨터공학부  ",
-                memberCount,
+                memberUserIds,
                 "  leader@example.com  ",
                 "  010-1234-5678  ",
                 "  학교 문제를 해결하고 싶습니다.  ");
+    }
+
+    private Team application(
+            String contestPublicId,
+            String contestTitle,
+            String department,
+            ParticipationType participationType,
+            String teamName,
+            TeamStatus status,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt) {
+        Contest contest = Contest.builder()
+                .publicId(contestPublicId)
+                .title(contestTitle)
+                .department(department)
+                .participationType(participationType)
+                .build();
+        Team team = Team.builder()
+                .contest(contest)
+                .name(teamName)
+                .leaderName("김참가")
+                .major("컴퓨터공학부")
+                .memberCount(3)
+                .status(status)
+                .contactEmail("leader@example.com")
+                .phone("010-1234-5678")
+                .motivation("학교 문제를 해결하고 싶습니다.")
+                .build();
+        ReflectionTestUtils.setField(team, "createdAt", createdAt);
+        ReflectionTestUtils.setField(team, "updatedAt", updatedAt);
+        return team;
+    }
+
+    private TeamMember teamMember(Team team, User user, TeamMemberRole role) {
+        return TeamMember.builder()
+                .team(team)
+                .user(user)
+                .role(role)
+                .build();
     }
 }

@@ -136,7 +136,7 @@ class SecurityConfigTest {
                         "트랙키 팀",
                         "홍길동",
                         "컴퓨터공학부",
-                        3,
+                        List.of(11L, 12L),
                         "hong@example.com",
                         "010-1234-5678",
                         "AI 아이디어를 구현하고 싶습니다."));
@@ -155,13 +155,86 @@ class SecurityConfigTest {
         verifyNoInteractions(teamApplicationService);
     }
 
+    @Test
+    @DisplayName("내 참가 신청 목록은 인증 없이 조회할 수 없다")
+    void myApplications_rejectsAnonymous() throws Exception {
+        mockMvc.perform(get("/api/me/applications"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(teamApplicationService);
+    }
+
+    @Test
+    @DisplayName("참가자는 본인의 참가 신청 목록을 조회할 수 있다")
+    void myApplications_permitsParticipant() throws Exception {
+        given(teamApplicationService.getMyApplications(10L)).willReturn(List.of());
+
+        mockMvc.perform(get("/api/me/applications")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("PARTICIPANT")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data").isEmpty());
+
+        verify(teamApplicationService).getMyApplications(10L);
+    }
+
+    @Test
+    @DisplayName("관리자는 참가자의 신청 목록을 조회할 수 없다")
+    void myApplications_rejectsAdmin() throws Exception {
+        mockMvc.perform(get("/api/me/applications")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("ADMIN")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GLOBAL_403"));
+
+        verifyNoInteractions(teamApplicationService);
+    }
+
+    @Test
+    @DisplayName("참가자 검색은 인증 없이 요청할 수 없다")
+    void participantSearch_rejectsAnonymous() throws Exception {
+        mockMvc.perform(get("/api/participants/search")
+                        .param("keyword", "김"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(teamApplicationService);
+    }
+
+    @Test
+    @DisplayName("참가자는 같은 학교의 참가자를 검색할 수 있다")
+    void participantSearch_permitsParticipant() throws Exception {
+        given(teamApplicationService.searchParticipants(10L, "김")).willReturn(List.of());
+
+        mockMvc.perform(get("/api/participants/search")
+                        .param("keyword", "김")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("PARTICIPANT")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data").isEmpty());
+
+        verify(teamApplicationService).searchParticipants(10L, "김");
+    }
+
+    @Test
+    @DisplayName("관리자는 참가자를 검색할 수 없다")
+    void participantSearch_rejectsAdmin() throws Exception {
+        mockMvc.perform(get("/api/participants/search")
+                        .param("keyword", "김")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("ADMIN")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GLOBAL_403"));
+
+        verifyNoInteractions(teamApplicationService);
+    }
+
     private String validApplicationRequest() {
         return """
                 {
                   "teamName": "트랙키 팀",
                   "leaderName": "홍길동",
                   "major": "컴퓨터공학부",
-                  "memberCount": 3,
+                  "memberUserIds": [11, 12],
                   "contactEmail": "hong@example.com",
                   "phone": "010-1234-5678",
                   "motivation": "AI 아이디어를 구현하고 싶습니다."
