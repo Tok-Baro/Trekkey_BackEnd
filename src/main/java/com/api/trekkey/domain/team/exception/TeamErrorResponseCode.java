@@ -18,7 +18,15 @@ public enum TeamErrorResponseCode implements BaseResponseCode {
     TEAM_APPLICATION_MEMBER_COUNT_INVALID(
             "TEAM_APPLICATION_MEMBER_COUNT_INVALID",
             400,
-            "참가 인원이 대회의 참가 방식과 맞지 않습니다.");
+            "참가 인원이 대회의 참가 방식과 맞지 않습니다."),
+    TEAM_APPLICATION_MEMBER_INVALID(
+            "TEAM_APPLICATION_MEMBER_INVALID",
+            400,
+            "유효하지 않은 팀원이 포함되어 있습니다."),
+    TEAM_APPLICATION_MEMBER_ALREADY_PARTICIPATING(
+            "TEAM_APPLICATION_MEMBER_ALREADY_PARTICIPATING",
+            409,
+            "이미 해당 대회에 참가 중인 팀원이 포함되어 있습니다.");
 
     private final String code;
     private final int httpStatus;
