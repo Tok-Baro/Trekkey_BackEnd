@@ -1,7 +1,7 @@
 # Trekkey 공모전·Credential 최종 ERD
 
-- 기준일: 2026-07-24
-- 상태: 블록체인 모듈 구현 완료, 업무 도메인 연결 전
+- 기준일: 2026-07-21
+- 상태: MVP 구현 기준
 - 통합 보기: [업무·블록체인 전체 ERD](./unified-erd.md)
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 상세 설계: [블록체인 앵커링 설계](./blockchain-anchoring-architecture.md)
@@ -287,7 +287,7 @@ erDiagram
     ANC_CREDENTIAL ||--|{ ANC_CREDENTIAL_SUBJECT : snapshots
     USER o|--o{ ANC_CREDENTIAL_SUBJECT : identifies
     TEAM o|--o{ ANC_CREDENTIAL_SUBJECT : represents
-    ANC_CREDENTIAL ||--o| ANC_CREDENTIAL_STATUS_EVENT : changes
+    ANC_CREDENTIAL ||--o{ ANC_CREDENTIAL_STATUS_EVENT : changes
     ANC_CREDENTIAL o|--o{ ANC_CREDENTIAL_STATUS_EVENT : supersedes_with
     USER o|--o{ ANC_CREDENTIAL_STATUS_EVENT : acts
     ANC_ISSUER_KEY ||--o{ ANC_CREDENTIAL_STATUS_EVENT : approves
@@ -447,13 +447,10 @@ erDiagram
         string contractVersion "계약 버전"
         binary txHash "트랜잭션 해시 BINARY(32)"
         bigint txNonce "relayer nonce"
-        binary relayerAddress "relayer 주소 BINARY(20)"
-        blob signedRawTransaction "재방송할 서명 raw transaction"
-        datetime preparedAt "raw transaction 선저장 시각"
         bigint blockNumber "확정 블록 번호"
         binary blockHash "확정 블록 해시 BINARY(32)"
         int eventLogIndex "계약 이벤트 log index"
-        string status "PENDING/PREPARED/SUBMITTED/CONFIRMED/UNKNOWN/FAILED"
+        string status "PENDING/SUBMITTED/CONFIRMED/UNKNOWN/FAILED"
         string lastErrorCode "마지막 오류 코드"
         datetime submittedAt "전송 시각"
         datetime confirmedAt "확정 시각"
@@ -563,12 +560,9 @@ erDiagram
 - `UNIQUE ANC_CREDENTIAL (issuerOrganizationId, credentialNo)`.
 - `UNIQUE ANC_CREDENTIAL_SOURCE (sourceFingerprint)`.
 - `UNIQUE ANC_CREDENTIAL_SUBJECT (credentialId, subjectOrder)`.
-- `UNIQUE ANC_CREDENTIAL_SUBJECT (credentialId, subjectRef, roleCode)`.
-- `UNIQUE ANC_CREDENTIAL_STATUS_EVENT (credentialId)`. V1 상태 변경은 Credential당 한 번만 허용한다.
 - `UNIQUE ANC_BATCH_ITEM (credentialId)`. 한 Credential은 하나의 sealed batch에만 들어간다.
 - `UNIQUE ANC_BATCH_ITEM (batchId, leafIndex)`.
 - `UNIQUE ANC_CHAIN_TRANSACTION (chainId, txHash)`는 `txHash IS NOT NULL`일 때 적용한다.
-- `UNIQUE ANC_CHAIN_TRANSACTION (chainId, relayerAddress, txNonce)`는 nonce가 준비된 경우 적용한다.
 - `UNIQUE ANC_CHAIN_TRANSACTION (chainId, txHash, eventLogIndex)`는 event가 확인된 경우 적용한다.
 
 ### 중복 발급 방지
@@ -583,23 +577,20 @@ erDiagram
 
 - Credential 발급 트랜잭션은 source, subject, canonical bytes를 모두 저장한 뒤 바로 `READY`로 생성한다. 별도 `DRAFT` 상태는 사용하지 않는다.
 - `READY` 이후 payload, canonical bytes, hash, source, subject는 수정하지 않는다.
-- sealed batch의 item, 순서, root는 수정하지 않는다. 만료·실패 승인만 전용 갱신 API에서 nonce, deadline, typed data, digest, signature를 교체한다.
-- raw transaction, relayer 주소, nonce, tx hash는 broadcast 전에 `PREPARED`로 선저장한다.
-- broadcast 응답 유실과 receipt timeout은 `FAILED`가 아니라 `UNKNOWN`이다. 새 nonce를 만들지 않고 저장된 tx hash를 조회하며, 미확정 상태가 지속되면 저장된 동일 raw transaction만 간격을 두고 재방송한다.
-- receipt revert 또는 readback 불일치는 transaction `FAILED`, outbox `DEAD`로 남긴다.
-- 온체인에는 성공했지만 로컬 처리가 실패한 경우, 별도 reconciliation API가 온체인 값 전체 일치를 확인한 뒤 업무 상태만 수렴시킨다. 실패 transaction/outbox 원장은 보존한다.
+- sealed batch의 item, 순서, root, 서명 payload는 수정하지 않는다.
+- RPC timeout은 `FAILED`가 아니라 `UNKNOWN`이다. 재전송 전 온체인 batch/status를 조회한다.
 - V1은 batch 전체 revoke를 지원하지 않고 개별 Credential `REVOKED`와 `SUPERSEDED`만 지원한다.
 - 대체 발급은 새 Credential 앵커 확인 후 기존 Credential을 `SUPERSEDED` 처리한다.
 
 ## 6. JPA 및 구현 기준
 
-- 업무 도메인은 단방향 `ManyToOne(fetch = FetchType.LAZY)`를 우선한다. 앵커링 모듈은 장기 증거의 불변성과 모듈 경계를 위해 FK ID를 scalar로 보관한다.
+- 자식 엔티티의 단방향 `ManyToOne(fetch = FetchType.LAZY)`를 우선한다.
 - 초기 구현에서는 `@ManyToMany`와 부모 컬렉션 양방향 매핑을 사용하지 않는다.
 - 목록 조회는 DTO projection, fetch join, `@EntityGraph`, batch size를 목적에 맞게 사용한다.
 - FK와 위 UNIQUE 선두 컬럼에는 인덱스를 둔다.
-- 업무 원천 확정과 내부 `CredentialIssuanceService.issue()` 호출은 같은 DB 트랜잭션에 참여시킨다.
-- 학교 승인 서명 저장과 chain transaction·anchor outbox 생성은 한 DB 트랜잭션으로 처리한다.
-- 학교 issuer private key는 백엔드에 저장하지 않는다. Kairos 개발용 relayer만 환경변수를 사용하고 운영 relayer는 KMS/HSM adapter로 교체한다.
+- 업무 상태 변경과 domain outbox 저장은 한 DB 트랜잭션으로 처리한다.
+- batch seal과 anchor outbox 저장도 한 DB 트랜잭션으로 처리한다.
+- private key는 DB, 소스, 일반 환경변수에 저장하지 않고 KMS/HSM 또는 격리 signer를 사용한다.
 
 ## 7. 후속 확장
 

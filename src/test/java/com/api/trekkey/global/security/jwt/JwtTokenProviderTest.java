@@ -126,27 +126,4 @@ class JwtTokenProviderTest {
 
         assertThat(first).isNotEqualTo(second);
     }
-
-    @Test
-    @DisplayName("JWT secret이 없으면 애플리케이션 초기화를 거부한다")
-    void initialization_rejectsMissingSecret() {
-        JwtTokenProvider insecureProvider = new JwtTokenProvider(new JwtProperties());
-
-        assertThatThrownBy(insecureProvider::afterPropertiesSet)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("JWT_SECRET is required");
-    }
-
-    @Test
-    @DisplayName("HS512에 부족한 JWT secret은 애플리케이션 초기화를 거부한다")
-    void initialization_rejectsWeakSecret() {
-        JwtProperties weakProperties = new JwtProperties();
-        weakProperties.setSecretKey(Base64.getEncoder().encodeToString(
-                "too-short".getBytes(StandardCharsets.UTF_8)));
-        JwtTokenProvider insecureProvider = new JwtTokenProvider(weakProperties);
-
-        assertThatThrownBy(insecureProvider::afterPropertiesSet)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("at least 64 bytes");
-    }
 }

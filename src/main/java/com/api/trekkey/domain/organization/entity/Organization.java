@@ -2,7 +2,6 @@ package com.api.trekkey.domain.organization.entity;
 
 import com.api.trekkey.global.entity.BaseEntity;
 import jakarta.persistence.*;
-import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -15,23 +14,8 @@ public class Organization extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "public_id", unique = true, length = 36)
-    private String publicId;
-
     private String name; //학교이름
 
     @Enumerated(EnumType.STRING)
     private OrganizationStatus status;
-
-    @PrePersist
-    void assignPublicId() {
-        ensurePublicId();
-    }
-
-    public String ensurePublicId() {
-        if (publicId == null) {
-            publicId = UUID.randomUUID().toString();
-        }
-        return publicId;
-    }
 }

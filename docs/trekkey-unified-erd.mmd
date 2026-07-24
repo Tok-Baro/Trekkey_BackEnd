@@ -36,7 +36,7 @@ erDiagram
     ANC_CREDENTIAL ||--|{ ANC_CREDENTIAL_SUBJECT : snapshots
     USER o|--o{ ANC_CREDENTIAL_SUBJECT : identifies
     TEAM o|--o{ ANC_CREDENTIAL_SUBJECT : represents
-    ANC_CREDENTIAL ||--o| ANC_CREDENTIAL_STATUS_EVENT : changes
+    ANC_CREDENTIAL ||--o{ ANC_CREDENTIAL_STATUS_EVENT : changes
     ANC_CREDENTIAL o|--o{ ANC_CREDENTIAL_STATUS_EVENT : supersedes_with
     USER o|--o{ ANC_CREDENTIAL_STATUS_EVENT : acts
     ANC_ISSUER_KEY ||--o{ ANC_CREDENTIAL_STATUS_EVENT : approves
@@ -376,13 +376,10 @@ erDiagram
         string contractVersion "계약 버전"
         binary txHash "트랜잭션 해시 BINARY(32)"
         bigint txNonce "relayer nonce"
-        binary relayerAddress "relayer 주소 BINARY(20)"
-        blob signedRawTransaction "재방송할 서명 raw transaction"
-        datetime preparedAt "raw transaction 선저장 시각"
         bigint blockNumber "확정 블록 번호"
         binary blockHash "확정 블록 해시 BINARY(32)"
         int eventLogIndex "계약 이벤트 log index"
-        string status "PENDING/PREPARED/SUBMITTED/CONFIRMED/UNKNOWN/FAILED"
+        string status "PENDING/SUBMITTED/CONFIRMED/UNKNOWN/FAILED"
         string lastErrorCode "마지막 오류 코드"
         datetime submittedAt "전송 시각"
         datetime confirmedAt "확정 시각"

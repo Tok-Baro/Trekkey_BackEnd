@@ -36,8 +36,8 @@ flowchart LR
 
     subgraph backend ["Trekkey Off-chain"]
         api["Spring Boot API"]
-        issuanceService["CredentialIssuanceService"]
-        batchService["Merkle Batch Service"]
+        credentialWorker["Credential Worker"]
+        batchWorker["Merkle Batch Worker"]
         anchorWorker["Anchor Worker"]
         mysql[("MySQL")]
         objectStore[("Object Storage")]
@@ -57,12 +57,12 @@ flowchart LR
     verifyPage --> api
     api --> mysql
     api --> objectStore
-    api --> issuanceService
-    issuanceService --> mysql
-    api --> batchService
-    batchService --> mysql
-    batchService --> signer
-    signer --> batchService
+    mysql -.-> credentialWorker
+    credentialWorker --> mysql
+    mysql -.-> batchWorker
+    batchWorker --> mysql
+    batchWorker --> signer
+    signer --> batchWorker
     mysql -.-> anchorWorker
     anchorWorker --> relayer
     relayer --> registry
@@ -190,12 +190,13 @@ erDiagram
     ANC_ISSUER_KEY ||--o{ ANC_BATCH : signs
     ANC_BATCH ||--|{ ANC_BATCH_ITEM : contains
     ANC_CREDENTIAL ||--o| ANC_BATCH_ITEM : anchored_once
-    ANC_CREDENTIAL ||--o| ANC_CREDENTIAL_STATUS_EVENT : changes_status
+    ANC_CREDENTIAL ||--o{ ANC_CREDENTIAL_STATUS_EVENT : changes_status
     ANC_ISSUER_KEY ||--o{ ANC_CREDENTIAL_STATUS_EVENT : approves
     ANC_CREDENTIAL o|--o{ ANC_CREDENTIAL_STATUS_EVENT : supersedes_with
     ANC_BATCH o|--o{ ANC_CHAIN_TRANSACTION : anchors
     ANC_CREDENTIAL_STATUS_EVENT o|--o{ ANC_CHAIN_TRANSACTION : submits_status
     ANC_ISSUER_KEY o|--o{ ANC_CHAIN_TRANSACTION : manages_key
+    ANC_CREDENTIAL ||--o{ ANC_OUTBOX_EVENT : emits
     ANC_BATCH ||--o{ ANC_OUTBOX_EVENT : emits
     ANC_CREDENTIAL_STATUS_EVENT ||--o{ ANC_OUTBOX_EVENT : emits
 ```
@@ -310,22 +311,24 @@ sequenceDiagram
     actor Admin as 학교 관리자
     participant Domain as 업무 API
     participant DB as MySQL
-    participant Issue as CredentialIssuanceService
+    participant Worker as Credential Worker
     participant Canon as Canonicalizer
 
     Admin->>Domain: 참여·작품·수상 확정
-    Domain->>DB: 확정 원천과 팀원 조회·잠금
-    Domain->>Issue: 확정 snapshot으로 issue 호출
-    Issue->>Issue: 원천 snapshot과 subject 정규화
-    Issue->>Issue: sourceFingerprint 계산
-    Issue->>DB: 기존 Credential 조회
+    Domain->>DB: 원천 확정과 outbox 원자적 저장
+    Worker->>DB: 확정 원천과 팀원 조회
+    Worker->>Worker: 원천 snapshot과 subject 정규화
+    Worker->>Worker: sourceSnapshotHash와 subjectSetHash 계산
+    Worker->>Worker: sourceFingerprint 계산
+    Worker->>DB: 기존 Credential 조회
     alt 기존 Credential 존재
-        DB-->>Issue: 같은 요청이면 기존 결과 반환
+        DB-->>Worker: 기존 결과 반환
     else 신규 Credential
-        Issue->>Issue: publicId 생성
-        Issue->>Canon: payload와 file manifest 정규화
-        Canon-->>Issue: canonical bytes와 hash
-        Issue->>DB: READY Credential, source, subjects 원자적 저장
+        Worker->>Worker: publicId와 issuedAt 생성
+        Worker->>Canon: payload와 file manifest 정규화
+        Canon-->>Worker: canonical bytes와 hash
+        Worker->>DB: Credential, source, subjects 원자적 저장
+        Worker->>DB: READY 상태와 batch outbox 저장
     end
 ```
 
@@ -370,22 +373,22 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Batch as 관리자 Batch API
+    participant Batch as Merkle Batch Worker
     participant DB as MySQL
     participant Signer as Issuer Signer
     participant Anchor as Anchor Worker
     participant Relayer as EVM Relayer
     participant Kaia as Kaia Registry
 
-    Batch->>DB: READY Credential 잠금 조회
+    Batch->>DB: READY Credential claim
     Batch->>Batch: leaf, root, proof 계산
-    Batch->>DB: SEALED batch와 items 저장
+    Batch->>DB: SEALED batch, items, outbox 저장
     Batch->>Signer: EIP-712 BatchApproval 서명 요청
     Signer-->>Batch: keyVersion, nonce, signature
-    Batch->>DB: SIGNED batch, chain transaction, outbox 저장
+    Batch->>DB: SIGNED batch 저장
     Anchor->>DB: anchor outbox claim
-    Anchor->>Relayer: nonce 조회와 signed raw transaction 준비
-    Anchor->>DB: PREPARED raw transaction, nonce, txHash 선저장
+    Anchor->>Anchor: chainId, contract, gas, selector 검증
+    Anchor->>Relayer: anchorBatch transaction 생성
     Relayer->>Kaia: transaction 전송과 가스비 지불
     Kaia-->>Relayer: receipt와 BatchAnchored event
     Relayer-->>Anchor: transaction evidence
@@ -428,10 +431,9 @@ flowchart TD
     hashes -->|"아니오"| tampered(["TAMPERED"])
     hashes -->|"예"| proof{"Merkle proof가 유효한가?"}
     proof -->|"아니오"| tampered
-    proof -->|"예"| rpc{"Kaia 조회 결과는?"}
-    rpc -->|"일시 장애"| unavailable(["RPC_UNAVAILABLE"])
-    rpc -->|"체인·ABI 설정 오류"| configError(["BLOCKCHAIN_CONFIGURATION_ERROR"])
-    rpc -->|"정상"| anchor{"Batch anchor가 존재하는가?"}
+    proof -->|"예"| rpc{"Kaia 조회가 가능한가?"}
+    rpc -->|"아니오"| unavailable(["RPC_UNAVAILABLE"])
+    rpc -->|"예"| anchor{"Batch anchor가 존재하는가?"}
     anchor -->|"아니오"| anchorMissing(["ANCHOR_NOT_FOUND"])
     anchor -->|"예"| issuer{"발급 시점 issuer key가 유효한가?"}
     issuer -->|"아니오"| issuerInvalid(["ISSUER_INVALID"])
@@ -441,7 +443,7 @@ flowchart TD
     credentialStatus -->|"정상"| valid(["VALID"])
 ```
 
-체인 RPC 장애는 위변조가 아니다. 일시 장애는 `RPC_UNAVAILABLE`, chain ID·contract ABI 같은 영구 설정 오류는 `BLOCKCHAIN_CONFIGURATION_ERROR`로 구분한다.
+체인 RPC 장애는 위변조가 아니다. `RPC_UNAVAILABLE`로 별도 표시하고 복구 후 다시 조회한다.
 
 ## 14. Credential 상태 머신
 
@@ -464,35 +466,28 @@ stateDiagram-v2
 stateDiagram-v2
     [*] --> SEALED: root와 item 고정
     SEALED --> SIGNED: 학교 EIP-712 승인
-    SIGNED --> ANCHORING: raw transaction 선저장
+    SIGNED --> ANCHORING: outbox claim
     ANCHORING --> ANCHORED: receipt·event·readback 확인
     ANCHORING --> FAILED: 명시적 revert 또는 영구 오류
-    SEALED --> SEALED: 만료된 미서명 승인 갱신
-    FAILED --> SEALED: 온체인 미반영 확인 후 승인 갱신
-    FAILED --> ANCHORED: 온체인 값 전체 일치 reconciliation
+    FAILED --> ANCHORING: 운영자 재처리 가능
     ANCHORED --> [*]
 ```
 
 ```mermaid
 stateDiagram-v2
     [*] --> PENDING: chain operation 생성
-    PENDING --> PREPARED: raw transaction·nonce·txHash 선저장
-    PREPARED --> SUBMITTED: broadcast 응답 수신
-    PREPARED --> UNKNOWN: broadcast 결과 불명
+    PENDING --> SUBMITTED: txHash 확보
     SUBMITTED --> CONFIRMED: receipt·event·readback 확인
-    SUBMITTED --> UNKNOWN: receipt timeout
-    UNKNOWN --> CONFIRMED: receipt 확인 후 readback 일치
-    UNKNOWN --> UNKNOWN: 같은 raw transaction 제한 재방송
-    PREPARED --> PREPARED: 같은 raw transaction 재방송
+    SUBMITTED --> UNKNOWN: RPC timeout 또는 응답 불명
+    UNKNOWN --> CONFIRMED: 온체인 readback에서 성공 확인
+    UNKNOWN --> PENDING: 미반영 확인 후 재전송
     PENDING --> FAILED: 재시도 불가 오류
-    PREPARED --> FAILED: 확정적 broadcast 거부
     SUBMITTED --> FAILED: 명시적 revert
-    UNKNOWN --> FAILED: 명시적 revert 또는 증거 불일치
-    FAILED --> PENDING: 새 승인 검증 후 원장 reset
     CONFIRMED --> [*]
+    FAILED --> [*]
 ```
 
-`UNKNOWN`에서는 새 nonce나 raw transaction을 만들지 않는다. 저장된 tx hash의 receipt를 조회하고, 미확정 상태가 지속되면 저장된 동일 raw transaction만 간격을 두고 재방송한다. `FAILED` 승인 갱신은 batch ID hash 또는 Credential status가 온체인에 없는지 확인한 뒤에만 허용한다.
+`UNKNOWN`을 곧바로 재전송하면 같은 작업이 중복 제출될 수 있다. 먼저 batch ID hash 또는 Credential status를 온체인에서 조회한다.
 
 ## 16. 폐기와 대체 발급
 
@@ -500,10 +495,9 @@ stateDiagram-v2
 flowchart TD
     changeRequest(["정정 또는 폐기 요청"]) --> action{"처리 유형"}
 
-    action -->|"폐기"| revokeEvent["DB status event"]
+    action -->|"폐기"| revokeEvent["DB status event와 outbox"]
     revokeEvent --> revokeSign["StatusApproval 서명"]
-    revokeSign --> revokeOutbox["서명·chain transaction·outbox 저장"]
-    revokeOutbox --> revokeChain["revokeCredential 온체인 확정"]
+    revokeSign --> revokeChain["revokeCredential 온체인 확정"]
     revokeChain --> revokedState(["기존 Credential REVOKED"])
 
     action -->|"대체"| correctedSource["정정 원천 재확정"]
@@ -512,8 +506,7 @@ flowchart TD
     newCredential --> newAnchor["새 batch ANCHORED"]
     newAnchor --> supersedeEvent["기존 Credential status event"]
     supersedeEvent --> supersedeSign["StatusApproval 서명"]
-    supersedeSign --> supersedeOutbox["서명·chain transaction·outbox 저장"]
-    supersedeOutbox --> supersedeChain["supersedeCredential 온체인 확정"]
+    supersedeSign --> supersedeChain["supersedeCredential 온체인 확정"]
     supersedeChain --> oldState(["기존 Credential SUPERSEDED"])
     supersedeChain --> replacement["replacementCredentialIdHash 연결"]
 ```
@@ -524,25 +517,20 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    approval["학교 승인 서명 검증"] --> sameTx["같은 DB transaction"]
-    sameTx --> aggregate[("SIGNED aggregate 저장")]
-    sameTx --> chainTx[("Chain transaction PENDING")]
-    sameTx --> outbox[("Outbox PENDING")]
+    domainTx["업무 상태 변경"] --> sameTx["같은 DB transaction"]
+    sameTx --> aggregate[("Aggregate 저장")]
+    sameTx --> outbox[("Outbox PENDING 저장")]
     outbox --> claim["Worker claim과 lease"]
-    claim --> prepare["raw transaction·nonce·txHash 선저장"]
-    prepare --> process{"Broadcast 결과"}
-    process -->|"응답 수신"| processed["Outbox PROCESSED·Tx SUBMITTED"]
-    process -->|"준비·확정 오류"| retry["attemptCount 증가와 availableAt 갱신"]
+    claim --> process{"처리 결과"}
+    process -->|"성공"| processed["PROCESSED"]
+    process -->|"일시 오류"| retry["attemptCount 증가와 availableAt 갱신"]
     retry --> claim
-    process -->|"응답 유실"| unknown["Outbox PROCESSED·Tx UNKNOWN"]
-    unknown --> receipt["저장된 txHash receipt 조회"]
-    receipt -->|"receipt·event·readback 일치"| confirmed["Tx CONFIRMED"]
-    receipt -->|"아직 없음"| unknown
-    receipt -->|"revert·증거 불일치"| dead["Tx FAILED·Outbox DEAD"]
-    dead --> onchain{"온체인 값 존재?"}
-    onchain -->|"없음"| operator["승인 갱신"]
-    onchain -->|"전체 일치"| reconciled["Aggregate 상태 수렴·실패 원장 보존"]
-    onchain -->|"불일치"| investigate["운영자 조사"]
+    process -->|"RPC 결과 불명"| unknown["Chain transaction UNKNOWN"]
+    unknown --> readback["온체인 readback"]
+    readback -->|"이미 성공"| processed
+    readback -->|"미반영"| retry
+    process -->|"영구 오류"| dead["DEAD 또는 FAILED"]
+    dead --> operator["운영자 조사와 명시적 재처리"]
 ```
 
 outbox와 멱등 키는 DB transaction과 blockchain transaction을 하나의 분산 트랜잭션처럼 가장하지 않고도 안전하게 연결한다.
