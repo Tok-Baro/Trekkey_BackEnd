@@ -9,6 +9,8 @@ public enum AuditAction {
     CONTEST_CREATE("contest.create"),
     CONTEST_UPDATE("contest.update"),
     STAGE_STATUS_CHANGE("stage.status_change"),
+    TEAM_STATUS_CHANGE("team.status_change"),
+    TEAM_FINALIZE("team.finalize"),
     INVITATION_ISSUE("invitation.issue"),
     INVITATION_REVOKE("invitation.revoke"),
     ADMIN_SIGNUP("admin.signup"),
