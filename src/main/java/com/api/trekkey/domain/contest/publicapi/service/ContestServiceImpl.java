@@ -1,6 +1,7 @@
 package com.api.trekkey.domain.contest.publicapi.service;
 
 import com.api.trekkey.domain.contest.entity.Contest;
+import com.api.trekkey.domain.contest.entity.ContestLike;
 import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.StageType;
@@ -106,5 +107,28 @@ public class ContestServiceImpl implements ContestService {
         long likeCount = contestLikeRepository.countByContestId(contest.getId());
 
         return ContestDetailRes.from(contest, stages, likeCount);
+    }
+
+    @Override
+    @org.springframework.transaction.annotation.Transactional
+    public long toggleLike(Long userId, String contestPublicId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(UserErrorResponseCode.USER_NOT_FOUND));
+
+        //자기 학교 대회만 좋아요 가능 — 검색과 동일한 조직 스코프
+        Contest contest = contestRepository.findByPublicId(contestPublicId)
+                .filter(found -> found.getOrganization().getId().equals(user.getOrganization().getId()))
+                .orElseThrow(() -> new CustomException(ContestErrorResponseCode.CONTEST_NOT_FOUND));
+
+        //이미 눌렀으면 취소, 아니면 등록 (uk_contest_like_contest_user가 동시 요청 방어)
+        contestLikeRepository.findByContestIdAndUserId(contest.getId(), user.getId())
+                .ifPresentOrElse(
+                        contestLikeRepository::delete,
+                        () -> contestLikeRepository.save(ContestLike.builder()
+                                .contest(contest)
+                                .user(user)
+                                .build()));
+
+        return contestLikeRepository.countByContestId(contest.getId());
     }
 }
