@@ -1,0 +1,422 @@
+# Trekkey 통합 ERD
+
+- 기준일: 2026-07-24
+- 범위: 업무 SQL 16개 + Credential·앵커링 SQL 9개
+- [확대용 SVG 열기](./assets/trekkey-unified-erd.svg)
+- [Raw Mermaid 원본](./trekkey-unified-erd.mmd)
+- 분리 원장: [공모전·Credential 최종 ERD](./erd.md)
+
+팀 회의에서 업무 SQL과 앵커링 SQL을 한 캔버스로 보기 위한 통합 뷰다. `ANC_*`도 MySQL 테이블이며, Kaia에는 이 테이블이 생성되지 않는다. Kaia는 issuer key, Merkle root, Credential 폐기·대체 상태만 보관한다. 실제 컬럼과 제약을 수정할 때는 분리 원장인 `erd.md`를 먼저 갱신하고 이 뷰를 동기화한다.
+
+```mermaid
+erDiagram
+    ORGANIZATION ||--o{ USER : has
+    ORGANIZATION ||--o{ CONTEST : hosts
+    USER ||--o{ CONTEST : owns
+    CONTEST ||--o{ CONTEST_LIKE : receives
+    USER ||--o{ CONTEST_LIKE : likes
+    CONTEST ||--o{ REVIEW_ROUND : has_rounds
+    CONTEST ||--o{ TEAM : accepts
+    USER ||--o{ TEAM : leads
+    TEAM ||--|{ TEAM_MEMBER : has_members
+    USER ||--o{ TEAM_MEMBER : joins
+    TEAM ||--o| SUBMISSION : submits
+    SUBMISSION ||--o{ SUBMISSION_FILE : contains
+    USER ||--o{ SUBMISSION_FILE : uploads
+    REVIEW_ROUND ||--o{ REVIEW_ROUND_ENTRY : records
+    SUBMISSION ||--o{ REVIEW_ROUND_ENTRY : enters
+    USER o|--o{ REVIEW_ROUND_ENTRY : decides
+    REVIEW_ROUND ||--o{ REVIEW_CRITERION : defines
+    CONTEST ||--o{ CONTEST_JUDGE : assigns
+    USER o|--o{ CONTEST_JUDGE : links
+    CONTEST_JUDGE ||--o{ REVIEW_ASSIGNMENT : receives
+    REVIEW_ROUND_ENTRY ||--o{ REVIEW_ASSIGNMENT : is_reviewed
+    REVIEW_ASSIGNMENT ||--o| REVIEW : completes
+    REVIEW ||--|{ REVIEW_SCORE_ITEM : contains
+    REVIEW_CRITERION ||--o{ REVIEW_SCORE_ITEM : scores
+    REVIEW_ROUND_ENTRY ||--o| AWARD : supports
+    TEAM ||--o| AWARD : receives
+    ORGANIZATION ||--o{ ANC_ISSUER_KEY : owns
+    ORGANIZATION ||--o{ ANC_CREDENTIAL : issues
+    ORGANIZATION ||--o{ ANC_BATCH : creates
+    ANC_ISSUER_KEY ||--o{ ANC_BATCH : approves
+    ANC_CREDENTIAL ||--|| ANC_CREDENTIAL_SOURCE : derives_from
+    TEAM o|--o{ ANC_CREDENTIAL_SOURCE : sources
+    SUBMISSION o|--o{ ANC_CREDENTIAL_SOURCE : sources
+    AWARD o|--o{ ANC_CREDENTIAL_SOURCE : sources
+    ANC_CREDENTIAL ||--|{ ANC_CREDENTIAL_SUBJECT : snapshots
+    USER o|--o{ ANC_CREDENTIAL_SUBJECT : identifies
+    TEAM o|--o{ ANC_CREDENTIAL_SUBJECT : represents
+    ANC_CREDENTIAL ||--o| ANC_CREDENTIAL_STATUS_EVENT : changes
+    ANC_CREDENTIAL o|--o{ ANC_CREDENTIAL_STATUS_EVENT : supersedes_with
+    USER o|--o{ ANC_CREDENTIAL_STATUS_EVENT : acts
+    ANC_ISSUER_KEY ||--o{ ANC_CREDENTIAL_STATUS_EVENT : approves
+    ANC_BATCH ||--|{ ANC_BATCH_ITEM : contains
+    ANC_CREDENTIAL ||--o| ANC_BATCH_ITEM : included_in
+    ANC_BATCH o|--o{ ANC_CHAIN_TRANSACTION : targets
+    ANC_CREDENTIAL_STATUS_EVENT o|--o{ ANC_CHAIN_TRANSACTION : targets
+    ANC_ISSUER_KEY o|--o{ ANC_CHAIN_TRANSACTION : targets
+    ORGANIZATION {
+        bigint id PK "학교/기관 PK"
+        string publicId UK "외부 issuer ID"
+        string name "학교/기관명"
+        string domain UK "학교 이메일 도메인"
+        string status "ACTIVE/INACTIVE"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    USER {
+        bigint id PK "사용자 PK"
+        bigint organizationId FK "현재 소속 학교"
+        string role "ADMIN/PARTICIPANT"
+        string memberType "STUDENT/STAFF/FACULTY"
+        string memberStatus "ACTIVE/GRADUATED/WITHDRAWN/TRANSFERRED/INACTIVE"
+        string name "사용자 이름"
+        string email UK "로그인 이메일"
+        string passwordHash "비밀번호 해시"
+        string studentId "학교 내 학번"
+        string major "학과/전공"
+        string department "교직원 부서"
+        string position "교직원 직책"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    CONTEST {
+        bigint id PK "대회 PK"
+        string publicId UK "대회 공개 ID"
+        bigint organizationId FK "운영 학교"
+        bigint ownerUserId FK "담당 관리자"
+        string title "대회명"
+        string department "주관 부서 스냅샷"
+        string status "DRAFT/PUBLISHED/COMPLETED/CANCELED"
+        string participationType "TEAM/INDIVIDUAL/MIXED"
+        int awardCount "예정 시상 수"
+        datetime applicationStartsAt "신청 시작"
+        datetime applicationEndsAt "신청 마감"
+        datetime submissionDueAt "제출 마감"
+        string posterUrl "대표 포스터 URL"
+        string summary "공개 한 줄 소개"
+        string target "참가 대상"
+        string applicationMethod "접수 방법"
+        string benefits "시상 및 혜택"
+        string tags "검색 태그"
+        text detailHtml "공고 상세 HTML"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    CONTEST_LIKE {
+        bigint id PK "좋아요 PK"
+        bigint contestId FK "대회 FK"
+        bigint userId FK "사용자 FK"
+        datetime createdAt "좋아요 시각"
+    }
+
+    REVIEW_ROUND {
+        bigint id PK "심사 라운드 PK"
+        bigint contestId FK "소속 대회"
+        int roundNo "대회 내 심사 순서"
+        string name "심사 라운드명"
+        string status "PREPARING/OPEN/FINALIZED"
+        datetime startsAt "심사 시작 시각"
+        datetime endsAt "심사 종료 시각"
+        string targetType "ALL_SUBMISSIONS/PREVIOUS_SELECTED/MANUAL"
+        string decisionRule "TOP_N/MIN_SCORE/MANUAL"
+        int selectCount "선정 팀 수"
+        decimal minScore "최소 선정 점수"
+        datetime finalizedAt "라운드 확정 시각"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    TEAM {
+        bigint id PK "팀 겸 참가 신청 PK"
+        string publicId UK "팀 공개 ID"
+        bigint contestId FK "신청 대회"
+        bigint leaderUserId FK "대표 참가자"
+        string name "팀명 또는 개인 참가자명"
+        string leaderName "대표자 이름 스냅샷"
+        string major "대표 소속 스냅샷"
+        int memberCount "현재 팀원 수 캐시"
+        string status "PENDING/APPROVED/REVISION_REQUESTED/REJECTED"
+        string contactEmail "신청 연락 이메일"
+        string phone "신청 연락처"
+        text motivation "지원 동기"
+        datetime participationFinalizedAt "명단 확정 및 잠금 시각"
+        datetime createdAt "신청 생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    TEAM_MEMBER {
+        bigint id PK "팀 구성원 PK"
+        bigint teamId FK "소속 팀"
+        bigint userId FK "구성 사용자"
+        string roleCode "LEADER/MEMBER"
+        datetime joinedAt "팀 참가 시각"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    SUBMISSION {
+        bigint id PK "최종 제출물 PK"
+        string publicId UK "제출물 공개 ID"
+        bigint teamId FK "제출 팀, 팀당 한 건"
+        string title "작품명"
+        string status "DRAFT/SUBMITTED/WITHDRAWN"
+        datetime finalizedAt "제출 수정 마감 시각"
+        datetime submittedAt "최근 제출 시각"
+        datetime createdAt "최초 제출 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    SUBMISSION_FILE {
+        bigint id PK "제출 파일 PK"
+        bigint submissionId FK "소속 제출물"
+        bigint uploadedByUserId FK "업로드 사용자"
+        string originalName "원본 파일명"
+        string contentType "MIME 타입"
+        bigint sizeBytes "파일 크기"
+        string storageKey UK "객체 저장소 키"
+        binary sha256 "서버 계산 SHA-256"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    REVIEW_ROUND_ENTRY {
+        bigint id PK "라운드 참가 및 공식 판정 PK"
+        bigint reviewRoundId FK "평가 라운드"
+        bigint submissionId FK "대상 제출물"
+        string status "ELIGIBLE/IN_REVIEW/SELECTED/NOT_SELECTED/WITHDRAWN/DISQUALIFIED"
+        decimal finalScore "확정 합산 점수"
+        int rankNo "라운드 확정 순위"
+        string decisionType "RULE/MANUAL"
+        bigint decidedByUserId FK "수동 판정 관리자"
+        text decisionReason "수동 판정 및 정정 사유"
+        datetime finalizedAt "판정 확정 시각"
+        datetime createdAt "라운드 진입 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    REVIEW_CRITERION {
+        bigint id PK "평가 기준 PK"
+        bigint reviewRoundId FK "적용 라운드"
+        string code "라운드 내 기준 코드"
+        string label "화면 표시명"
+        int maxScore "최대 점수"
+        int sortOrder "표시 순서"
+        bool active "사용 여부"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    CONTEST_JUDGE {
+        bigint id PK "대회 심사위원 PK"
+        bigint contestId FK "배정 대회"
+        bigint userId FK "연결 사용자, 외부 심사위원은 null"
+        string name "심사위원 이름 스냅샷"
+        string roleLabel "심사위원 역할명"
+        string reviewTokenHash UK "심사 링크 토큰 해시"
+        datetime tokenExpiresAt "심사 링크 만료"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    REVIEW_ASSIGNMENT {
+        bigint id PK "심사 배정 PK"
+        bigint contestJudgeId FK "배정 심사위원"
+        bigint reviewRoundEntryId FK "라운드별 심사 대상"
+        string status "ASSIGNED/COMPLETED/CANCELED"
+        datetime assignedAt "배정 시각"
+        datetime dueAt "심사 마감"
+        datetime completedAt "완료 시각"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    REVIEW {
+        bigint id PK "심사 결과 PK"
+        bigint assignmentId FK "심사 배정"
+        decimal totalScore "총점"
+        text comment "심사 의견"
+        datetime submittedAt "심사 제출 시각"
+        datetime createdAt "생성 시각"
+    }
+
+    REVIEW_SCORE_ITEM {
+        bigint id PK "항목별 점수 PK"
+        bigint reviewId FK "소속 심사 결과"
+        bigint criterionId FK "평가 기준"
+        decimal score "부여 점수"
+    }
+
+    AWARD {
+        bigint id PK "수상 결과 PK"
+        string publicId UK "수상 공개 ID"
+        bigint reviewRoundEntryId FK "수상 근거 공식 결과"
+        bigint teamId FK "수상 팀 및 조회용 FK"
+        int awardRankNo "수상 순위"
+        string prize "상격"
+        string status "CANDIDATE/CONFIRMED/HELD"
+        string certificateNo UK "팀 단위 상장 번호"
+        datetime confirmedAt "수상 확정 시각"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+    ANC_ISSUER_KEY {
+        bigint id PK "Issuer key PK"
+        bigint organizationId FK "발급 기관"
+        int keyVersion "기관 내 키 버전"
+        binary signerAddress "Kaia 주소 BINARY(20)"
+        string signerRef "KMS 또는 signer 참조"
+        string status "ACTIVE/RETIRED/COMPROMISED"
+        datetime validFrom "사용 시작"
+        datetime validUntil "사용 종료"
+        datetime compromisedAt "키 침해 시각"
+        datetime createdAt "생성 시각"
+    }
+
+    ANC_CREDENTIAL {
+        bigint id PK "Credential PK"
+        bigint issuerOrganizationId FK "발급 기관"
+        string publicId UK "무작위 공개 Credential ID"
+        binary credentialIdHash UK "온체인 식별 해시 BINARY(32)"
+        string credentialNo "기관 내 발급 번호"
+        string credentialType "PARTICIPATION/WORK/AWARD"
+        string schemaProfileId "payload와 정규화 규칙 식별자"
+        binary schemaVersionHash "프로필 Keccak-256 BINARY(32)"
+        text payloadJson "구조 조회용 payload"
+        blob canonicalBytes "해시에 사용한 불변 바이트"
+        blob fileManifestCanonicalBytes "파일 manifest 불변 바이트"
+        binary contentHash "SHA-256 BINARY(32)"
+        binary fileManifestHash "SHA-256 BINARY(32)"
+        string status "READY/BATCHED/ANCHORED/REVOKED/SUPERSEDED"
+        datetime issuedAt "발급 시각"
+        datetime expiresAt "만료 시각"
+        datetime createdAt "생성 시각"
+    }
+
+    ANC_CREDENTIAL_SOURCE {
+        bigint credentialId PK "Credential PK 겸 FK"
+        string sourceType "TEAM/SUBMISSION/AWARD"
+        bigint teamId FK "참여 원천"
+        bigint submissionId FK "작품 원천"
+        bigint awardId FK "수상 원천"
+        string sourcePublicId "원천 공개 ID 스냅샷"
+        binary sourceFingerprint UK "의미 기반 멱등 해시"
+        datetime sourceFinalizedAt "원천 확정 시각"
+    }
+
+    ANC_CREDENTIAL_SUBJECT {
+        bigint id PK "Credential subject PK"
+        bigint credentialId FK "Credential FK"
+        bigint userId FK "개인 subject"
+        bigint teamId FK "팀 subject"
+        string subjectRef "Credential 내 비식별 참조"
+        string subjectType "USER/TEAM"
+        string displayNameSnapshot "이름 스냅샷"
+        string majorSnapshot "학과 스냅샷"
+        string roleCode "TEAM/REPRESENTATIVE/PARTICIPANT/AWARDEE"
+        string disclosureClass "PUBLIC/PRIVATE/HASH_ONLY"
+        int subjectOrder "Credential 내 정렬 순서"
+        datetime createdAt "생성 시각"
+    }
+
+    ANC_CREDENTIAL_STATUS_EVENT {
+        bigint id PK "상태 변경 PK"
+        bigint credentialId FK "대상 Credential"
+        bigint issuerKeyId FK "승인에 사용한 학교 키"
+        string previousStatus "변경 전 상태"
+        string nextStatus "REVOKED/SUPERSEDED"
+        string reasonCode "표준 사유 코드"
+        text reasonDetail "내부 상세 사유"
+        bigint actorUserId FK "처리 관리자"
+        bigint supersedingCredentialId FK "대체 Credential"
+        bigint approvalNonce "학교별 승인 nonce"
+        datetime approvalDeadline "서명 만료 시각"
+        text approvalPayloadJson "EIP-712 typed data"
+        binary approvalDigest UK "EIP-712 digest BINARY(32)"
+        binary issuerSignature "학교 서명 VARBINARY(65)"
+        string idempotencyKey UK "중복 처리 방지 키"
+        datetime effectiveAt "효력 시각"
+        datetime createdAt "생성 시각"
+    }
+
+    ANC_BATCH {
+        bigint id PK "Merkle batch PK"
+        bigint issuerOrganizationId FK "발급 기관"
+        bigint issuerKeyId FK "승인 학교 키"
+        string publicId UK "무작위 공개 batch ID"
+        binary batchIdHash UK "온체인 batch 식별 해시"
+        binary schemaVersionHash "배치 Credential 프로필 해시"
+        int treeVersion "Merkle 규칙 버전"
+        int leafCount "leaf 수"
+        binary merkleRoot "Merkle root BINARY(32)"
+        bigint approvalNonce "학교별 승인 nonce"
+        datetime approvalDeadline "서명 만료 시각"
+        text approvalPayloadJson "EIP-712 typed data"
+        binary approvalDigest UK "EIP-712 digest BINARY(32)"
+        binary issuerSignature "학교 서명 VARBINARY(65)"
+        string status "SEALED/SIGNED/ANCHORING/ANCHORED/FAILED"
+        datetime sealedAt "배치 고정 시각"
+        datetime signedAt "서명 시각"
+        datetime createdAt "생성 시각"
+    }
+
+    ANC_BATCH_ITEM {
+        bigint id PK "Batch item PK"
+        bigint batchId FK "Batch FK"
+        bigint credentialId FK "Credential FK"
+        int leafIndex "Merkle leaf 인덱스"
+        binary credentialIdHash "Credential ID 해시"
+        binary leafHash "Merkle leaf 해시 BINARY(32)"
+        text merkleProofJson "Merkle proof"
+        datetime createdAt "생성 시각"
+    }
+
+    ANC_CHAIN_TRANSACTION {
+        bigint id PK "Kaia 트랜잭션 PK"
+        bigint batchId FK "배치 앵커 대상"
+        bigint credentialStatusEventId FK "폐기 및 대체 대상"
+        bigint issuerKeyId FK "키 등록 및 교체 대상"
+        string operationType "REGISTER_KEY/RETIRE_KEY/COMPROMISE_KEY/ANCHOR_BATCH/REVOKE/SUPERSEDE"
+        string idempotencyKey UK "재시도 멱등 키"
+        bigint chainId "Kaia chain ID"
+        binary contractAddress "계약 주소 BINARY(20)"
+        string contractVersion "계약 버전"
+        binary txHash "트랜잭션 해시 BINARY(32)"
+        bigint txNonce "relayer nonce"
+        binary relayerAddress "relayer 주소 BINARY(20)"
+        blob signedRawTransaction "재방송할 서명 raw transaction"
+        datetime preparedAt "raw transaction 선저장 시각"
+        bigint blockNumber "확정 블록 번호"
+        binary blockHash "확정 블록 해시 BINARY(32)"
+        int eventLogIndex "계약 이벤트 log index"
+        string status "PENDING/PREPARED/SUBMITTED/CONFIRMED/UNKNOWN/FAILED"
+        string lastErrorCode "마지막 오류 코드"
+        datetime submittedAt "전송 시각"
+        datetime confirmedAt "확정 시각"
+        datetime nextAttemptAt "다음 재시도 시각"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    ANC_OUTBOX_EVENT {
+        bigint id PK "Outbox event PK"
+        string aggregateType "Credential/Batch/StatusEvent/IssuerKey"
+        bigint aggregateId "대상 aggregate PK"
+        string eventType "처리할 도메인 이벤트"
+        string idempotencyKey UK "중복 발행 방지 키"
+        text payloadJson "Worker 메시지"
+        string status "PENDING/PROCESSING/PROCESSED/DEAD"
+        int attemptCount "처리 시도 횟수"
+        datetime availableAt "처리 가능 시각"
+        datetime lockedAt "Worker lock 시각"
+        string lockedBy "Worker ID"
+        datetime processedAt "처리 완료 시각"
+        string lastErrorCode "마지막 오류 코드"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+```

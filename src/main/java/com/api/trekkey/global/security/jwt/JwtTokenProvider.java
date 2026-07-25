@@ -27,6 +27,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class JwtTokenProvider implements InitializingBean {
 
+    private static final int HS512_MIN_KEY_BYTES = 64;
     private static final String AUTHORITIES_KEY = "auth";
     private static final String ID_KEY = "id";
     private static final String TYPE_KEY = "type";
@@ -42,7 +43,19 @@ public class JwtTokenProvider implements InitializingBean {
 
     @Override
     public void afterPropertiesSet() {
-        byte[] keyBytes = Decoders.BASE64.decode(jwtProperties.getSecretKey());
+        String encodedKey = jwtProperties.getSecretKey();
+        if (encodedKey == null || encodedKey.isBlank()) {
+            throw new IllegalStateException("JWT_SECRET is required");
+        }
+        byte[] keyBytes;
+        try {
+            keyBytes = Decoders.BASE64.decode(encodedKey);
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("JWT_SECRET must be valid Base64", exception);
+        }
+        if (keyBytes.length < HS512_MIN_KEY_BYTES) {
+            throw new IllegalStateException("JWT_SECRET must decode to at least 64 bytes for HS512");
+        }
         this.key = Keys.hmacShaKeyFor(keyBytes);
     }
 
