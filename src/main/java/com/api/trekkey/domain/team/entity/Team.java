@@ -13,8 +13,11 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.time.LocalDateTime;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -36,6 +39,10 @@ public class Team extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     // 팀/참가 신청 PK
     private Long id;
+
+    @Column(name = "public_id", nullable = false, updatable = false, unique = true, length = 36)
+    // 공개 URL과 API에서 사용할 불변 식별자
+    private String publicId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "contest_id", nullable = false)
@@ -79,4 +86,50 @@ public class Team extends BaseEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     // 참가 지원 동기
     private String motivation;
+
+    @Builder.Default
+    @Column(nullable = false)
+    // 신청 내용이 의미 있게 바뀔 때마다 증가 — Credential source 버전
+    private long sourceVersion = 1L;
+
+    // 팀원 명단 확정 시각. 확정 이후 신청 수정을 거부한다 (null이면 미확정, erd-mvp §5)
+    private LocalDateTime participationFinalizedAt;
+
+    @PrePersist
+    private void assignPublicId() {
+        if (publicId == null || publicId.isBlank()) {
+            publicId = UUID.randomUUID().toString();
+        }
+    }
+
+    // 참가자 신청 수정 — 보완요청 상태였다면 검토중으로 자동 전환하고 source 버전을 올린다.
+    public void updateApplication(
+            String name, String leaderName, String major, int memberCount,
+            String contactEmail, String phone, String motivation) {
+        this.name = name;
+        this.leaderName = leaderName;
+        this.major = major;
+        this.memberCount = memberCount;
+        this.contactEmail = contactEmail;
+        this.phone = phone;
+        this.motivation = motivation;
+        this.sourceVersion += 1;
+        if (this.status == TeamStatus.REVISION_REQUESTED) {
+            this.status = TeamStatus.PENDING;
+        }
+    }
+
+    // 관리자 신청 상태 변경
+    public void changeStatus(TeamStatus status) {
+        this.status = status;
+    }
+
+    // 팀원 명단 확정 — 이후 신청 변경 잠금 (erd-mvp §5)
+    public void finalizeParticipation(LocalDateTime now) {
+        this.participationFinalizedAt = now;
+    }
+
+    public boolean isFinalized() {
+        return participationFinalizedAt != null;
+    }
 }

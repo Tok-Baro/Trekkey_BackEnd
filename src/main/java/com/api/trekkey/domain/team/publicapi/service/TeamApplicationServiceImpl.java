@@ -9,11 +9,14 @@ import com.api.trekkey.domain.team.entity.Team;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
+import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationUpdateReq;
+import com.api.trekkey.domain.team.publicapi.web.dto.TeamRes;
 import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
+import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -73,5 +76,44 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
                 .phone(request.phone().trim())
                 .motivation(request.motivation().trim())
                 .build());
+    }
+
+    @Override
+    public List<TeamRes> getMyApplications(Long userId) {
+        return teamRepository.findAllByLeaderUserIdOrderByCreatedAtDesc(userId).stream()
+                .map(TeamRes::from)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public TeamRes updateApplication(Long userId, String teamPublicId, TeamApplicationUpdateReq request) {
+        Team team = teamRepository.findByPublicId(teamPublicId)
+                .orElseThrow(() -> new CustomException(TeamErrorResponseCode.TEAM_NOT_FOUND));
+
+        //대표자 본인만 수정할 수 있다 — JWT가 아닌 DB 기준으로 재검증
+        if (!team.getLeaderUser().getId().equals(userId)) {
+            throw new CustomException(TeamErrorResponseCode.TEAM_FORBIDDEN);
+        }
+        //명단 확정 이후에는 수정 거부 (erd-mvp §5)
+        if (team.isFinalized()) {
+            throw new CustomException(TeamErrorResponseCode.TEAM_ALREADY_FINALIZED);
+        }
+        //대회가 개인전이지만 참가자 수가 1명이 아니라면 예외처리 (신청과 동일 규칙)
+        if (team.getContest().getParticipationType() == ParticipationType.INDIVIDUAL
+                && request.memberCount() != 1) {
+            throw new CustomException(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_COUNT_INVALID);
+        }
+
+        team.updateApplication(
+                request.teamName().trim(),
+                request.leaderName().trim(),
+                request.major().trim(),
+                request.memberCount(),
+                request.contactEmail().trim(),
+                request.phone().trim(),
+                request.motivation().trim());
+
+        return TeamRes.from(team);
     }
 }
