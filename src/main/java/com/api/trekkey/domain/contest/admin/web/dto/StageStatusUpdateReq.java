@@ -1,4 +1,4 @@
-package com.api.trekkey.domain.contest.web.dto;
+package com.api.trekkey.domain.contest.admin.web.dto;
 
 import com.api.trekkey.domain.contest.entity.StageStatus;
 import jakarta.validation.constraints.NotNull;

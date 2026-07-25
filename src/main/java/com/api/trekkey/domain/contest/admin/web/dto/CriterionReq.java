@@ -1,4 +1,4 @@
-package com.api.trekkey.domain.contest.web.dto;
+package com.api.trekkey.domain.contest.admin.web.dto;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;

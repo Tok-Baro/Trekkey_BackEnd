@@ -1,14 +1,14 @@
-package com.api.trekkey.domain.contest.web.controller;
+package com.api.trekkey.domain.contest.admin.web.controller;
 
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
-import com.api.trekkey.domain.contest.service.ContestAdminQueryService;
-import com.api.trekkey.domain.contest.service.ContestCommandService;
-import com.api.trekkey.domain.contest.web.dto.ContestAdminSearchCond;
-import com.api.trekkey.domain.contest.web.dto.ContestAdminSummaryRes;
-import com.api.trekkey.domain.contest.web.dto.ContestCreateReq;
+import com.api.trekkey.domain.contest.admin.service.ContestAdminQueryService;
+import com.api.trekkey.domain.contest.admin.service.ContestCommandService;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSearchCond;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSummaryRes;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestCreateReq;
 import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
 import com.api.trekkey.domain.contest.web.dto.StageRes;
-import com.api.trekkey.domain.contest.web.dto.StageStatusUpdateReq;
+import com.api.trekkey.domain.contest.admin.web.dto.StageStatusUpdateReq;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.global.response.PageRes;
 import com.api.trekkey.global.response.SuccessResponse;
