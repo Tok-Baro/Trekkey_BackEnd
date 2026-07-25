@@ -48,7 +48,7 @@ public class AncBatchItem extends BaseEntity {
     private byte[] leafHash;
 
     @Lob
-    @Column(name = "merkle_proof_json", nullable = false, updatable = false)
+    @Column(columnDefinition = "MEDIUMTEXT", name = "merkle_proof_json", nullable = false, updatable = false)
     private String merkleProofJson;
 
     private AncBatchItem(

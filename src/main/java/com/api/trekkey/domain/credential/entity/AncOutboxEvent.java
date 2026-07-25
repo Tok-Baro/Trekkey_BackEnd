@@ -47,7 +47,7 @@ public class AncOutboxEvent extends BaseEntity {
     private String idempotencyKey;
 
     @Lob
-    @Column(name = "payload_json", nullable = false, updatable = false)
+    @Column(columnDefinition = "MEDIUMTEXT", name = "payload_json", nullable = false, updatable = false)
     private String payloadJson;
 
     @Enumerated(EnumType.STRING)

@@ -16,6 +16,7 @@ import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.web3j.abi.FunctionReturnDecoder;
 import org.web3j.abi.datatypes.Function;
@@ -58,6 +59,7 @@ public class Web3jKaiaBlockchainAnchorAdapter implements BlockchainAnchorPort {
     private volatile Web3j web3j;
     private volatile boolean chainIdVerified;
 
+    @Autowired
     public Web3jKaiaBlockchainAnchorAdapter(BlockchainProperties properties) {
         this(properties, null);
     }

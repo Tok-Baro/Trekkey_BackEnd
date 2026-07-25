@@ -128,7 +128,8 @@ public class AwardCredentialIssuer {
                         file.getOriginalName(),
                         file.getContentType(),
                         file.getSizeBytes(),
-                        file.getSha256()))
+                        //제출 도메인은 접두사 없는 hex로 저장, credential 암호화 계층은 0x 접두사를 요구
+                        "0x" + file.getSha256()))
                 .toList();
     }
 

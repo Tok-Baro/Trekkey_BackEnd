@@ -131,6 +131,6 @@ class AwardCredentialIssuerTest {
         assertThat(command.subjects().get(1).roleCode()).isEqualTo("REPRESENTATIVE");
 
         assertThat(command.files()).hasSize(1);
-        assertThat(command.files().get(0).sha256Hex()).hasSize(64);
+        assertThat(command.files().get(0).sha256Hex()).isEqualTo("0x" + "a".repeat(64));
     }
 }

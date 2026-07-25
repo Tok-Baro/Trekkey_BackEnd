@@ -71,7 +71,7 @@ public class AncBatch extends BaseEntity {
     private LocalDateTime approvalDeadline;
 
     @Lob
-    @Column(name = "approval_payload_json")
+    @Column(columnDefinition = "MEDIUMTEXT", name = "approval_payload_json")
     private String approvalPayloadJson;
 
     @Getter(AccessLevel.NONE)

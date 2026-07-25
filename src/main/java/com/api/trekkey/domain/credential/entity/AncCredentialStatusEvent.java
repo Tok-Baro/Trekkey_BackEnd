@@ -55,7 +55,7 @@ public class AncCredentialStatusEvent extends BaseEntity {
     private String reasonCode;
 
     @Lob
-    @Column(name = "reason_detail", updatable = false)
+    @Column(columnDefinition = "MEDIUMTEXT", name = "reason_detail", updatable = false)
     private String reasonDetail;
 
     @Column(name = "actor_user_id", nullable = false, updatable = false)
@@ -71,7 +71,7 @@ public class AncCredentialStatusEvent extends BaseEntity {
     private LocalDateTime approvalDeadline;
 
     @Lob
-    @Column(name = "approval_payload_json")
+    @Column(columnDefinition = "MEDIUMTEXT", name = "approval_payload_json")
     private String approvalPayloadJson;
 
     @Getter(AccessLevel.NONE)

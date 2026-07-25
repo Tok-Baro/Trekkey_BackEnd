@@ -66,19 +66,19 @@ public class AncCredential extends BaseEntity {
     private byte[] schemaVersionHash;
 
     @Lob
-    @Column(name = "payload_json", nullable = false, updatable = false)
+    @Column(columnDefinition = "MEDIUMTEXT", name = "payload_json", nullable = false, updatable = false)
     private String payloadJson;
 
     @Lob
     @Basic(fetch = FetchType.LAZY)
     @Getter(AccessLevel.NONE)
-    @Column(name = "canonical_bytes", nullable = false, updatable = false)
+    @Column(columnDefinition = "MEDIUMBLOB", name = "canonical_bytes", nullable = false, updatable = false)
     private byte[] canonicalBytes;
 
     @Lob
     @Basic(fetch = FetchType.LAZY)
     @Getter(AccessLevel.NONE)
-    @Column(name = "file_manifest_canonical_bytes", nullable = false, updatable = false)
+    @Column(columnDefinition = "MEDIUMBLOB", name = "file_manifest_canonical_bytes", nullable = false, updatable = false)
     private byte[] fileManifestCanonicalBytes;
 
     @Getter(AccessLevel.NONE)
