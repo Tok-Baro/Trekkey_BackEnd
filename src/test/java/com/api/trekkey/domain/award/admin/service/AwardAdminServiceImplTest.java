@@ -20,6 +20,7 @@ import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.StageStatus;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
+import com.api.trekkey.domain.credential.integration.AwardCredentialIssuer;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.review.entity.ContestStageEntry;
 import com.api.trekkey.domain.review.entity.DecisionType;
@@ -64,6 +65,9 @@ class AwardAdminServiceImplTest {
     private AwardRepository awardRepository;
 
     @Mock
+    private AwardCredentialIssuer awardCredentialIssuer;
+
+    @Mock
     private AdminAuditLogger adminAuditLogger;
 
     private AwardAdminServiceImpl awardAdminService;
@@ -77,7 +81,7 @@ class AwardAdminServiceImplTest {
     void setUp() {
         awardAdminService = new AwardAdminServiceImpl(
                 userRepository, contestRepository, contestStageRepository,
-                entryRepository, awardRepository, adminAuditLogger);
+                entryRepository, awardRepository, awardCredentialIssuer, adminAuditLogger);
 
         organization = mock(Organization.class);
         lenient().when(organization.getId()).thenReturn(1L);
@@ -167,6 +171,7 @@ class AwardAdminServiceImplTest {
         assertThat(result.get(0).status()).isEqualTo(AwardStatus.CONFIRMED);
         assertThat(result.get(0).confirmedAt()).isNotNull();
         verify(contest).changeStatus(ContestStatus.AWARDED);
+        verify(awardCredentialIssuer).issueForConfirmedAward(candidate); //확정과 같은 트랜잭션에서 Credential 발급
     }
 
     @Test

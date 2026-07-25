@@ -14,6 +14,7 @@ import com.api.trekkey.domain.contest.entity.StageStatus;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
+import com.api.trekkey.domain.credential.integration.AwardCredentialIssuer;
 import com.api.trekkey.domain.review.entity.ContestStageEntry;
 import com.api.trekkey.domain.review.entity.EntryStatus;
 import com.api.trekkey.domain.review.repository.ContestStageEntryRepository;
@@ -43,6 +44,7 @@ public class AwardAdminServiceImpl implements AwardAdminService {
     private final ContestStageRepository contestStageRepository;
     private final ContestStageEntryRepository entryRepository;
     private final AwardRepository awardRepository;
+    private final AwardCredentialIssuer awardCredentialIssuer;
     private final AdminAuditLogger adminAuditLogger;
 
     @Override
@@ -128,6 +130,8 @@ public class AwardAdminServiceImpl implements AwardAdminService {
         candidates.forEach(award -> award.confirm(now));
         //수상 확정 → 대회 종결 상태 (Credential 발급 원천 완성, erd-mvp §6)
         contest.changeStatus(ContestStatus.AWARDED);
+        //확정과 수상 Credential 발급을 한 트랜잭션으로 — 발급 실패 시 확정도 롤백 (erd-mvp §6 원자성)
+        candidates.forEach(awardCredentialIssuer::issueForConfirmedAward);
 
         adminAuditLogger.log(admin.getId(), admin.getOrganization().getId(), AuditAction.AWARD_CONFIRM,
                 TARGET_TYPE_CONTEST, contest.getId(), contest.getTitle() + " " + candidates.size() + "건 확정");
