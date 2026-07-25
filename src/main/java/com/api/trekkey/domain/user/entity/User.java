@@ -7,6 +7,11 @@ import java.time.LocalDateTime;
 import lombok.*;
 
 @Entity
+@Table(
+        name = "user",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_user_organization_student_id",
+                columnNames = {"organization_id", "student_id"})) //학교 안에서 학번 유일 (erd-mvp §4)
 @Getter
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

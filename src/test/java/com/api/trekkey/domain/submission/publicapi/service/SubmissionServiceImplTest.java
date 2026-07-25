@@ -104,7 +104,7 @@ class SubmissionServiceImplTest {
     @DisplayName("최초 제출 시 SHA-256이 확정되어 READY 상태로 저장된다")
     void submit_createsSubmissionWithReadyIntegrity() {
         givenSubmissionStageOpen();
-        given(submissionRepository.findByTeamId(1L)).willReturn(Optional.empty());
+        given(submissionRepository.findByTeamIdForUpdate(1L)).willReturn(Optional.empty());
         given(submissionRepository.save(any(Submission.class))).willAnswer(invocation -> {
             Submission submission = invocation.getArgument(0);
             ReflectionTestUtils.setField(submission, "id", 100L);
@@ -126,7 +126,7 @@ class SubmissionServiceImplTest {
     void submit_overwriteBumpsVersionAndCleansOldFiles() {
         givenSubmissionStageOpen();
         Submission existing = submissionFixture(null);
-        given(submissionRepository.findByTeamId(1L)).willReturn(Optional.of(existing));
+        given(submissionRepository.findByTeamIdForUpdate(1L)).willReturn(Optional.of(existing));
         SubmissionFile oldFile = mock(SubmissionFile.class);
         given(oldFile.getStorageKey()).willReturn("submissions/old/key.pdf");
         given(submissionFileRepository.findAllBySubmissionId(100L)).willReturn(List.of(oldFile));
@@ -145,7 +145,7 @@ class SubmissionServiceImplTest {
     void submit_throwsWhenFinalized() {
         givenSubmissionStageOpen();
         Submission finalized = submissionFixture(LocalDateTime.now());
-        given(submissionRepository.findByTeamId(1L)).willReturn(Optional.of(finalized));
+        given(submissionRepository.findByTeamIdForUpdate(1L)).willReturn(Optional.of(finalized));
 
         assertThatThrownBy(() -> submissionService.submit(10L, "team-pub-1", "작품", List.of(pdfFile())))
                 .isInstanceOf(CustomException.class)

@@ -66,7 +66,8 @@ public class SubmissionServiceImpl implements SubmissionService {
         validateFiles(files);
 
         LocalDateTime now = LocalDateTime.now();
-        Submission submission = submissionRepository.findByTeamId(team.getId()).orElse(null);
+        //row lock으로 동시 재제출 직렬화 (erd-mvp §5)
+        Submission submission = submissionRepository.findByTeamIdForUpdate(team.getId()).orElse(null);
         List<String> previousStorageKeys = new ArrayList<>();
 
         if (submission == null) {

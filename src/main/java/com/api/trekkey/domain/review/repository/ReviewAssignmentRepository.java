@@ -9,7 +9,17 @@ import org.springframework.data.repository.query.Param;
 
 public interface ReviewAssignmentRepository extends JpaRepository<ReviewAssignment, Long> {
 
-    List<ReviewAssignment> findAllByContestJudgeIdOrderByAssignedAtAsc(Long contestJudgeId);
+    // 심사위원 포털 목록 — entry→submission→team 체인을 한 번에 적재 (N+1 방지)
+    @Query("""
+            select ra
+            from ReviewAssignment ra
+            join fetch ra.contestStageEntry e
+            join fetch e.submission s
+            join fetch s.team
+            where ra.contestJudge.id = :contestJudgeId
+            order by ra.assignedAt asc
+            """)
+    List<ReviewAssignment> findAllByContestJudgeIdOrderByAssignedAtAsc(@Param("contestJudgeId") Long contestJudgeId);
 
     List<ReviewAssignment> findAllByContestStageEntryIdIn(Collection<Long> entryIds);
 
