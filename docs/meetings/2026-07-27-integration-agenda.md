@@ -44,12 +44,12 @@
 | 항목 | 상태 | 조치 |
 | --- | --- | --- |
 | 백엔드 `develop` | 대회·제출·심사·수상 코드가 합쳐짐 | 통합 PR의 base로 사용 |
-| 백엔드 통합 PR #9 | 업무 도메인·Credential, 보안·결정성·CI·문서 통합 | `develop` 대상 Draft, 팀 리뷰 필요 |
+| [백엔드 통합 PR #9](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/9) | 업무 도메인·Credential, 보안·결정성·CI·문서 통합 | `develop` 대상 Draft, 팀 리뷰 필요 |
 | 기존 백엔드 PR #7 | `feat/blockchain-anchoring → main`, Draft | 새 `develop` PR로 대체 후 종료 |
-| 보안 PR #8 | 추적된 로컬 설정 제거와 JWT 키 필수화 | 우선 리뷰·병합 |
-| 프론트 API 브랜치 | 로그인·대회·신청·내 수상 일부 연동 | 최신 `main` 충돌 해결 후 PR |
-| 백엔드 CI | 기존 workflow 없음 | Java·Solidity CI를 통합 PR에 추가 |
-| 프론트 CI | 기존 workflow 없음 | production build CI 추가 |
+| [보안 PR #8](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/8) | 추적된 로컬 설정 제거와 JWT 키 필수화 | 우선 리뷰·병합 |
+| [프론트 통합 PR #1](https://github.com/Tok-Baro/Trekkey/pull/1) | 최신 `main` UI와 참가자 API 연동 통합 | `main` 대상 Draft, 백엔드 PR #9 이후 병합 |
+| 백엔드 CI | Java·Solidity·TypeScript 검증 추가 | PR #9 결과 확인 후 병합 |
+| 프론트 CI | Node 22 production build 검증 추가 | PR #1 결과 확인 후 병합 |
 | 브랜치 보호 | Private Free 플랜에서 서버 강제 제한 | 팀 규칙과 CI로 우선 운영 |
 
 ## 4. 커밋 추적과 책임 구분
@@ -484,6 +484,7 @@ Kairos 완료 조건:
 
 - [ ] 보안 PR #8 병합 및 실제 키 교체
 - [ ] 백엔드 통합 PR #9 리뷰어 지정
+- [ ] 프론트 통합 PR #1 리뷰어 지정
 - [ ] Java 전체 테스트 통과
 - [ ] Solidity 12개 테스트 통과
 - [ ] TypeScript typecheck 통과
