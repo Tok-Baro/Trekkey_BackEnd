@@ -21,10 +21,12 @@ import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionFile;
 import com.api.trekkey.domain.submission.repository.SubmissionFileRepository;
 import com.api.trekkey.domain.team.entity.Team;
+import com.api.trekkey.domain.team.entity.TeamMember;
 import com.api.trekkey.domain.team.repository.TeamMemberRepository;
 import com.api.trekkey.domain.user.entity.User;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -67,6 +69,13 @@ class AwardCredentialIssuerTest {
         User leader = mock(User.class);
         lenient().when(leader.getId()).thenReturn(10L);
 
+        User member = mock(User.class);
+        lenient().when(member.getId()).thenReturn(11L);
+        lenient().when(member.getName()).thenReturn("김팀원");
+        lenient().when(member.getMajor()).thenReturn("컴퓨터공학과");
+        TeamMember teamMember = mock(TeamMember.class);
+        lenient().when(teamMember.getUser()).thenReturn(member);
+
         team = mock(Team.class);
         lenient().when(team.getId()).thenReturn(20L);
         lenient().when(team.getPublicId()).thenReturn("team-pub-1");
@@ -100,7 +109,8 @@ class AwardCredentialIssuerTest {
         lenient().when(file.getSizeBytes()).thenReturn(1024L);
         lenient().when(file.getSha256()).thenReturn("a".repeat(64));
         lenient().when(submissionFileRepository.findAllBySubmissionId(30L)).thenReturn(List.of(file));
-        lenient().when(teamMemberRepository.findAllByTeamId(20L)).thenReturn(List.of());
+        lenient().when(teamMemberRepository.findAllByTeamIdOrderByUserIdAsc(20L))
+                .thenReturn(List.of(teamMember));
     }
 
     @Test
@@ -123,14 +133,18 @@ class AwardCredentialIssuerTest {
         assertThat(command.source().snapshot().get("prize").asText()).isEqualTo("대상");
         assertThat(command.source().snapshot().get("finalScore").asText()).isEqualTo("87.5");
 
-        assertThat(command.subjects()).hasSize(2);
+        assertThat(command.issuedAt()).isEqualTo(Instant.parse("2026-07-20T12:00:00Z"));
+        assertThat(command.subjects()).hasSize(3);
         assertThat(command.subjects().get(0).subjectType()).isEqualTo(CredentialSubjectType.TEAM);
         assertThat(command.subjects().get(0).displayName()).isEqualTo("팀트레키");
         assertThat(command.subjects().get(1).subjectType()).isEqualTo(CredentialSubjectType.USER);
         assertThat(command.subjects().get(1).userId()).isEqualTo(10L);
         assertThat(command.subjects().get(1).roleCode()).isEqualTo("REPRESENTATIVE");
+        assertThat(command.subjects().get(2).userId()).isEqualTo(11L);
+        assertThat(command.subjects().get(2).roleCode()).isEqualTo("AWARDEE");
 
         assertThat(command.files()).hasSize(1);
         assertThat(command.files().get(0).sha256Hex()).isEqualTo("0x" + "a".repeat(64));
+        verify(teamMemberRepository).findAllByTeamIdOrderByUserIdAsc(20L);
     }
 }

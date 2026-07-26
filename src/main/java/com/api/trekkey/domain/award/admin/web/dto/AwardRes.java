@@ -8,6 +8,8 @@ import java.time.LocalDateTime;
 public record AwardRes(
         // 공개 식별자 — 내부 PK는 노출하지 않는다
         String id,
+        String contestPublicId,
+        String teamPublicId,
         int awardRankNo,
         String prize,
         String teamName,
@@ -20,6 +22,8 @@ public record AwardRes(
     public static AwardRes from(Award award) {
         return new AwardRes(
                 award.getPublicId(),
+                award.getTeam().getContest().getPublicId(),
+                award.getTeam().getPublicId(),
                 award.getAwardRankNo(),
                 award.getPrize(),
                 award.getTeam().getName(),

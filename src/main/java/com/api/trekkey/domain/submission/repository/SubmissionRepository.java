@@ -15,8 +15,8 @@ public interface SubmissionRepository extends JpaRepository<Submission, Long> {
 
     Optional<Submission> findByTeamId(Long teamId);
 
-    // 재제출 덮어쓰기용 row lock — 동시 제출 시 sourceVersion 유실·파일 정리 경합 방지 (erd-mvp §5)
-    // 최초 제출의 동시 insert는 team_id 유일 제약이 최종 방어선이다
+    // TEAM row를 먼저 잠근 뒤 기존 제출 행까지 잠가 파일 교체 순서를 유지한다.
+    // team_id 유일 제약은 잘못된 쓰기 경로에 대한 최종 방어선이다.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Submission s where s.team.id = :teamId")
     Optional<Submission> findByTeamIdForUpdate(@Param("teamId") Long teamId);

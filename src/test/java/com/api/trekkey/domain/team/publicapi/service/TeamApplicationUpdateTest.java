@@ -64,7 +64,7 @@ class TeamApplicationUpdateTest {
     }
 
     @Test
-    @DisplayName("보완요청 상태에서 수정하면 검토중으로 전환되고 source 버전이 증가한다")
+    @DisplayName("보완요청 상태에서 수정하면 검토중으로 전환된다")
     void updateApplication_revisionRequestedBecomesPending() {
         Team team = teamFixture(TeamStatus.REVISION_REQUESTED, null);
         given(teamRepository.findByPublicId("team-pub-1")).willReturn(Optional.of(team));
@@ -72,7 +72,6 @@ class TeamApplicationUpdateTest {
         TeamRes result = teamApplicationService.updateApplication(10L, "team-pub-1", updateReq(3));
 
         assertThat(result.status()).isEqualTo(TeamStatus.PENDING);
-        assertThat(team.getSourceVersion()).isEqualTo(2L);
         assertThat(result.name()).isEqualTo("수정된 팀명");
     }
 

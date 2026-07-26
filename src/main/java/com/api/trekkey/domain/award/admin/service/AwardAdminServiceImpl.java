@@ -22,7 +22,9 @@ import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -46,6 +48,7 @@ public class AwardAdminServiceImpl implements AwardAdminService {
     private final AwardRepository awardRepository;
     private final AwardCredentialIssuer awardCredentialIssuer;
     private final AdminAuditLogger adminAuditLogger;
+    private final Clock clock;
 
     @Override
     @Transactional
@@ -81,7 +84,7 @@ public class AwardAdminServiceImpl implements AwardAdminService {
         awardRepository.flush();
 
         int awardLimit = Math.min(contest.getAwardCount(), passedEntries.size());
-        int year = LocalDateTime.now().getYear();
+        int year = nowUtc().getYear();
         List<Award> awards = new ArrayList<>();
         for (int i = 0; i < awardLimit; i++) {
             ContestStageEntry entry = passedEntries.get(i);
@@ -126,7 +129,7 @@ public class AwardAdminServiceImpl implements AwardAdminService {
             throw new CustomException(AwardErrorResponseCode.AWARD_NO_CANDIDATE);
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = nowUtc();
         candidates.forEach(award -> award.confirm(now));
         //수상 확정 → 대회 종결 상태 (Credential 발급 원천 완성, erd-mvp §6)
         contest.changeStatus(ContestStatus.AWARDED);
@@ -157,5 +160,9 @@ public class AwardAdminServiceImpl implements AwardAdminService {
         if (!contest.getOrganization().getId().equals(admin.getOrganization().getId())) {
             throw new CustomException(ContestErrorResponseCode.CONTEST_FORBIDDEN);
         }
+    }
+
+    private LocalDateTime nowUtc() {
+        return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
     }
 }

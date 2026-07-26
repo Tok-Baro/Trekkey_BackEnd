@@ -51,16 +51,6 @@ public class Submission extends BaseEntity {
     // 제출 상태
     private SubmissionStatus status;
 
-    @Builder.Default
-    @Column(nullable = false)
-    // 재제출마다 증가 — Credential source 버전 (erd-mvp §5)
-    private long sourceVersion = 1L;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 10)
-    // 파일 해시 확정 여부
-    private IntegrityStatus integrityStatus;
-
     // 제출 수정 마감 시각 — 심사 시작 등으로 잠기면 기록 (null이면 수정 가능)
     private LocalDateTime finalizedAt;
 
@@ -75,21 +65,14 @@ public class Submission extends BaseEntity {
         }
     }
 
-    // 재제출(덮어쓰기) — 제목을 교체하고 source 버전을 올린다. 파일 교체는 서비스가 수행한다. (erd-mvp §5)
+    // 재제출은 현재 제출물의 제목과 파일을 교체한다. 별도 버전 이력은 만들지 않는다.
     public void overwrite(String title, LocalDateTime now) {
         this.title = title;
-        this.sourceVersion += 1;
-        this.integrityStatus = IntegrityStatus.STALE;
         this.status = SubmissionStatus.SUBMITTED;
         this.submittedAt = now;
     }
 
-    // 전체 파일 해시 확정 — Credential 발급 가능 상태로 전환
-    public void markIntegrityReady() {
-        this.integrityStatus = IntegrityStatus.READY;
-    }
-
-    // 제출 잠금 — 이후 덮어쓰기를 거부한다
+    // 제출을 확정한다. 심사가 시작되면 호출되며 이후 덮어쓰기를 거부한다.
     public void finalizeSubmission(LocalDateTime now) {
         this.finalizedAt = now;
     }

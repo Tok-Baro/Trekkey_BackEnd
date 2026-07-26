@@ -9,6 +9,7 @@ import com.api.trekkey.domain.credential.service.CredentialIssuanceService;
 import com.api.trekkey.domain.credential.service.CredentialSchemaProfiles;
 import com.api.trekkey.domain.credential.service.dto.CredentialIssueCommand;
 import com.api.trekkey.domain.credential.service.dto.IssuedCredential;
+import com.api.trekkey.domain.credential.service.support.UtcTime;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.repository.SubmissionFileRepository;
 import com.api.trekkey.domain.team.entity.Team;
@@ -17,7 +18,6 @@ import com.api.trekkey.domain.team.repository.TeamMemberRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -103,7 +103,7 @@ public class AwardCredentialIssuer {
                 1));
 
         int order = 2;
-        for (TeamMember member : teamMemberRepository.findAllByTeamId(team.getId())) {
+        for (TeamMember member : teamMemberRepository.findAllByTeamIdOrderByUserIdAsc(team.getId())) {
             //리더는 위에서 이미 추가됨
             if (member.getUser().getId().equals(team.getLeaderUser().getId())) {
                 continue;
@@ -134,6 +134,6 @@ public class AwardCredentialIssuer {
     }
 
     private Instant toInstant(Award award) {
-        return award.getConfirmedAt().atZone(ZoneId.systemDefault()).toInstant();
+        return UtcTime.toInstant(award.getConfirmedAt());
     }
 }

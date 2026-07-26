@@ -17,25 +17,35 @@ public interface AwardRepository extends JpaRepository<Award, Long> {
             select a
             from Award a
             join fetch a.team t
+            join fetch t.contest c
             join fetch a.contestStageEntry e
             join fetch e.submission
-            where t.contest.id = :contestId
+            where c.id = :contestId
             order by a.awardRankNo asc
             """)
     List<Award> findAllByTeamContestIdOrderByAwardRankNoAsc(@Param("contestId") Long contestId);
 
     boolean existsByTeamContestIdAndStatus(Long contestId, AwardStatus status);
 
-    // 리더 기준 내 수상 목록 (확정분)
+    // 대표자 또는 TEAM_MEMBER 기준 내 수상 목록 (확정분)
     @Query("""
             select a
             from Award a
             join fetch a.team t
+            join fetch t.contest
             join fetch a.contestStageEntry e
             join fetch e.submission
-            where t.leaderUser.id = :leaderUserId and a.status = :status
+            where a.status = :status
+              and (
+                t.leaderUser.id = :userId
+                or exists (
+                  select tm.id
+                  from TeamMember tm
+                  where tm.team = t and tm.user.id = :userId
+                )
+              )
             order by a.confirmedAt desc
             """)
-    List<Award> findAllByTeamLeaderUserIdAndStatusOrderByConfirmedAtDesc(
-            @Param("leaderUserId") Long leaderUserId, @Param("status") AwardStatus status);
+    List<Award> findAllVisibleToUserByStatusOrderByConfirmedAtDesc(
+            @Param("userId") Long userId, @Param("status") AwardStatus status);
 }

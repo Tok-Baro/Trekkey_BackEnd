@@ -43,8 +43,12 @@ public class LocalFileStorage implements FileStoragePort {
             }
             return new StoredFile(storageKey, size, HexFormat.of().formatHex(digest.digest()));
         } catch (IOException e) {
+            deletePartialFile(target, storageKey);
             log.error("파일 저장 실패: {}", storageKey, e);
             throw new CustomException(SubmissionErrorResponseCode.SUBMISSION_STORAGE_ERROR);
+        } catch (RuntimeException e) {
+            deletePartialFile(target, storageKey);
+            throw e;
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 algorithm is not available.", e);
         }
@@ -67,6 +71,14 @@ public class LocalFileStorage implements FileStoragePort {
             Files.deleteIfExists(resolveSafely(storageKey));
         } catch (IOException e) {
             log.warn("파일 삭제 실패 (수동 정리 필요): {}", storageKey, e);
+        }
+    }
+
+    private void deletePartialFile(Path target, String storageKey) {
+        try {
+            Files.deleteIfExists(target);
+        } catch (IOException cleanupException) {
+            log.warn("부분 저장 파일 정리 실패 (수동 정리 필요): {}", storageKey, cleanupException);
         }
     }
 
