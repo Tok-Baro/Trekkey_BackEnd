@@ -8,6 +8,8 @@
 
 팀 회의에서 업무 SQL과 앵커링 SQL을 한 캔버스로 보기 위한 통합 뷰다. `ANC_*`도 MySQL 테이블이며, Kaia에는 이 테이블이 생성되지 않는다. Kaia는 issuer key, Merkle root, Credential 폐기·대체 상태만 보관한다. 실제 컬럼과 제약을 수정할 때는 분리 원장인 `erd.md`를 먼저 갱신하고 이 뷰를 동기화한다.
 
+> 이 문서는 합의된 목표 스키마다. 2026-07-26 통합 코드의 심사 모델은 아직 `CONTEST_STAGE`/`CONTEST_STAGE_ENTRY`이므로, `REVIEW_ROUND` 전환 PR이 병합되기 전에는 현재 배포 스키마로 간주하지 않는다.
+
 ```mermaid
 erDiagram
     ORGANIZATION ||--o{ USER : has
@@ -152,9 +154,8 @@ erDiagram
     TEAM_MEMBER {
         bigint id PK "팀 구성원 PK"
         bigint teamId FK "소속 팀"
-        bigint userId FK "구성 사용자"
+        bigint userId FK "구성 사용자, 가입 후 삭제 금지"
         string roleCode "LEADER/MEMBER"
-        datetime joinedAt "팀 참가 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }

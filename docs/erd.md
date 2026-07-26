@@ -1,10 +1,12 @@
 # Trekkey 공모전·Credential 최종 ERD
 
 - 기준일: 2026-07-24
-- 상태: 블록체인 모듈 구현 완료, 업무 도메인 연결 전
+- 상태: 목표 ERD 확정, 통합 코드 정합성 작업 중
 - 통합 보기: [업무·블록체인 전체 ERD](./unified-erd.md)
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 상세 설계: [블록체인 앵커링 설계](./blockchain-anchoring-architecture.md)
+
+> 2026-07-26 통합 코드의 심사 모델은 아직 `CONTEST_STAGE`/`CONTEST_STAGE_ENTRY`다. 이 문서의 `REVIEW_ROUND` 모델은 합의된 목표이며, 전환 PR이 병합되기 전에는 현재 배포 스키마로 간주하지 않는다.
 
 ## 1. 범위
 
@@ -156,9 +158,8 @@ erDiagram
     TEAM_MEMBER {
         bigint id PK "팀 구성원 PK"
         bigint teamId FK "소속 팀"
-        bigint userId FK "구성 사용자"
+        bigint userId FK "구성 사용자, 가입 후 삭제 금지"
         string roleCode "LEADER/MEMBER"
-        datetime joinedAt "팀 참가 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
