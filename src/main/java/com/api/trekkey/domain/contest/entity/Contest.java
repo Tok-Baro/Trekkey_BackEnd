@@ -116,6 +116,11 @@ public class Contest extends BaseEntity {
         }
     }
 
+    // 수상 확정 등 운영 흐름에서 대회 상태만 전환한다.
+    public void changeStatus(ContestStatus status) {
+        this.status = status;
+    }
+
     // 관리자 대회 편집 — 공개 공고 정보 전체를 갱신한다. (setter 대신 도메인 메서드)
     public void update(
             String title,

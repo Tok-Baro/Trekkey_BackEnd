@@ -17,6 +17,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -46,5 +48,14 @@ public class ContestController {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(SuccessResponse.ok(contestService.getContestDetail(authPrincipal.getId(), publicId)));
+    }
+
+    // 좋아요 토글 — 응답은 현재 좋아요 수
+    @PostMapping("/{publicId}/like")
+    public ResponseEntity<SuccessResponse<Long>> toggleLike(
+            @AuthenticationPrincipal AuthPrincipal authPrincipal,
+            @PathVariable String publicId) {
+        return ResponseEntity.ok(SuccessResponse.ok(
+                contestService.toggleLike(authPrincipal.getId(), publicId)));
     }
 }

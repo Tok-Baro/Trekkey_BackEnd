@@ -4,6 +4,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -11,9 +12,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.api.trekkey.domain.contest.publicapi.service.ContestService;
 import com.api.trekkey.domain.contest.publicapi.web.controller.ContestController;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
+import com.api.trekkey.domain.team.admin.service.TeamAdminService;
+import com.api.trekkey.domain.team.admin.web.controller.TeamAdminController;
+import com.api.trekkey.domain.team.admin.web.dto.TeamAdminListRes;
 import com.api.trekkey.domain.team.publicapi.service.TeamApplicationService;
 import com.api.trekkey.domain.team.publicapi.web.controller.TeamApplicationController;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
+import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationUpdateReq;
 import com.api.trekkey.global.security.AuthPrincipal;
 import com.api.trekkey.global.security.handler.JwtAccessDeniedHandler;
 import com.api.trekkey.global.security.handler.JwtAuthenticationEntryPoint;
@@ -33,7 +38,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest({ContestController.class, TeamApplicationController.class})
+@WebMvcTest({ContestController.class, TeamApplicationController.class, TeamAdminController.class})
 @Import({
         SecurityConfig.class,
         JwtAuthenticationFilter.class,
@@ -55,6 +60,9 @@ class SecurityConfigTest {
 
     @MockitoBean
     private TeamApplicationService teamApplicationService;
+
+    @MockitoBean
+    private TeamAdminService teamAdminService;
 
     @MockitoBean(name = "jpaMappingContext")
     private JpaMetamodelMappingContext jpaMappingContext;
@@ -191,6 +199,54 @@ class SecurityConfigTest {
     }
 
     @Test
+    @DisplayName("내 참가 신청 수정은 인증 없이 요청할 수 없다")
+    void updateApplication_rejectsAnonymous() throws Exception {
+        mockMvc.perform(patch("/api/me/applications/{contestPublicId}", "contest-public-id")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validApplicationRequest()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(teamApplicationService);
+    }
+
+    @Test
+    @DisplayName("참가자는 본인의 참가 신청을 수정할 수 있다")
+    void updateApplication_permitsParticipant() throws Exception {
+        mockMvc.perform(patch("/api/me/applications/{contestPublicId}", "contest-public-id")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("PARTICIPANT"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validApplicationRequest()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"));
+
+        verify(teamApplicationService).updateApplication(
+                10L,
+                "contest-public-id",
+                new TeamApplicationUpdateReq(
+                        "트랙키 팀",
+                        "홍길동",
+                        "컴퓨터공학부",
+                        List.of(11L, 12L),
+                        "hong@example.com",
+                        "010-1234-5678",
+                        "AI 아이디어를 구현하고 싶습니다."));
+    }
+
+    @Test
+    @DisplayName("관리자는 참가자의 신청을 수정할 수 없다")
+    void updateApplication_rejectsAdmin() throws Exception {
+        mockMvc.perform(patch("/api/me/applications/{contestPublicId}", "contest-public-id")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validApplicationRequest()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GLOBAL_403"));
+
+        verifyNoInteractions(teamApplicationService);
+    }
+
+    @Test
     @DisplayName("참가자 검색은 인증 없이 요청할 수 없다")
     void participantSearch_rejectsAnonymous() throws Exception {
         mockMvc.perform(get("/api/participants/search")
@@ -226,6 +282,32 @@ class SecurityConfigTest {
                 .andExpect(jsonPath("$.code").value("GLOBAL_403"));
 
         verifyNoInteractions(teamApplicationService);
+    }
+
+    @Test
+    @DisplayName("참가자는 관리자 신청 목록에 접근할 수 없다")
+    void adminTeamList_rejectsParticipant() throws Exception {
+        mockMvc.perform(get("/api/admin/contests/{contestPublicId}/teams", "contest-public-id")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("PARTICIPANT")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GLOBAL_403"));
+
+        verifyNoInteractions(teamAdminService);
+    }
+
+    @Test
+    @DisplayName("관리자는 관리자 신청 목록에 접근할 수 있다")
+    void adminTeamList_permitsAdmin() throws Exception {
+        given(teamAdminService.getTeams(10L, "contest-public-id", null))
+                .willReturn(new TeamAdminListRes(List.of(), java.util.Map.of(), 0));
+
+        mockMvc.perform(get("/api/admin/contests/{contestPublicId}/teams", "contest-public-id")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").isArray())
+                .andExpect(jsonPath("$.data.content").isEmpty());
+
+        verify(teamAdminService).getTeams(10L, "contest-public-id", null);
     }
 
     private String validApplicationRequest() {

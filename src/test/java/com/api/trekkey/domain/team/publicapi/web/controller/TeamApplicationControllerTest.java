@@ -8,6 +8,7 @@ import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -19,6 +20,7 @@ import com.api.trekkey.domain.team.publicapi.service.TeamApplicationService;
 import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantSearchRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationRes;
+import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationUpdateReq;
 import com.api.trekkey.global.exception.CustomException;
 import com.api.trekkey.global.exception.GlobalExceptionHandler;
 import com.api.trekkey.global.security.AuthPrincipal;
@@ -130,6 +132,50 @@ class TeamApplicationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isArray())
                 .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    @DisplayName("유효한 신청 수정 요청을 처리하고 200을 반환한다")
+    void updateApplication_returnsOkResponse() throws Exception {
+        String contestPublicId = "contest-public-id";
+
+        mockMvc.perform(patch("/api/me/applications/{contestPublicId}", contestPublicId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validRequest()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"))
+                .andExpect(jsonPath("$.message").value("신청 정보를 수정했습니다."))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        verify(teamApplicationService).updateApplication(
+                10L,
+                contestPublicId,
+                new TeamApplicationUpdateReq(
+                        "트랙키 팀",
+                        "홍길동",
+                        "컴퓨터공학부",
+                        List.of(11L, 12L),
+                        "hong@example.com",
+                        "010-1234-5678",
+                        "AI 아이디어를 구현하고 싶습니다."));
+    }
+
+    @Test
+    @DisplayName("수정할 신청을 찾을 수 없으면 404를 반환한다")
+    void updateApplication_returnsNotFound() throws Exception {
+        willThrow(new CustomException(TeamErrorResponseCode.TEAM_NOT_FOUND))
+                .given(teamApplicationService)
+                .updateApplication(
+                        eq(10L),
+                        eq("unknown-contest"),
+                        any(TeamApplicationUpdateReq.class));
+
+        mockMvc.perform(patch("/api/me/applications/{contestPublicId}", "unknown-contest")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validRequest()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TEAM_NOT_FOUND"));
     }
 
     @Test

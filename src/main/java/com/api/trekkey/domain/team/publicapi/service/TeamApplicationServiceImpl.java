@@ -13,6 +13,7 @@ import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
 import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantSearchRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationRes;
+import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationUpdateReq;
 import com.api.trekkey.domain.team.repository.TeamMemberRepository;
 import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
@@ -63,12 +64,7 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
         if (contest.getStatus() != ContestStatus.APPLICATION_OPEN) {
             throw new CustomException(TeamErrorResponseCode.TEAM_APPLICATION_NOT_OPEN);
         }
-        //참가 인원이 최대를 초과하거나 개인전에 대표자 외 팀원이 있다면 예외처리
-        if (request.memberUserIds().size() > 4
-                || (contest.getParticipationType() == ParticipationType.INDIVIDUAL
-                        && !request.memberUserIds().isEmpty())) {
-            throw new CustomException(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_COUNT_INVALID);
-        }
+        validateMemberCount(contest, request.memberUserIds());
         //이미 대회id에 같은 대표자id가 있다면 예외처리
         if (teamRepository.existsByContestIdAndLeaderUserId(contest.getId(), user.getId())) {
             throw new CustomException(TeamErrorResponseCode.TEAM_APPLICATION_ALREADY_EXISTS);
@@ -146,6 +142,47 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
                 .toList();
     }
 
+    @Override
+    @Transactional
+    public void updateApplication(Long userId, String contestPublicId, TeamApplicationUpdateReq request) {
+        Team team = teamRepository.findByContestPublicIdAndLeaderUserId(contestPublicId, userId)
+                .orElseThrow(() -> new CustomException(TeamErrorResponseCode.TEAM_NOT_FOUND));
+
+        if (team.isFinalized()) {
+            throw new CustomException(TeamErrorResponseCode.TEAM_ALREADY_FINALIZED);
+        }
+
+        validateMemberCount(team.getContest(), request.memberUserIds());
+
+        User leader = team.getLeaderUser();
+        List<User> members = getValidMembers(leader, request.memberUserIds());
+        List<Long> participantUserIds = new ArrayList<>(request.memberUserIds());
+        participantUserIds.add(leader.getId());
+        if (teamMemberRepository.existsByContestIdAndUserIdInAndTeamIdNot(
+                team.getContest().getId(), participantUserIds, team.getId())) {
+            throw new CustomException(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_ALREADY_PARTICIPATING);
+        }
+
+        synchronizeMembers(team, leader, members);
+
+        team.updateApplication(
+                request.teamName().trim(),
+                request.leaderName().trim(),
+                request.major().trim(),
+                members.size() + 1,
+                request.contactEmail().trim(),
+                request.phone().trim(),
+                request.motivation().trim());
+    }
+
+    private void validateMemberCount(Contest contest, List<Long> memberUserIds) {
+        if (memberUserIds.size() > 4
+                || (contest.getParticipationType() == ParticipationType.INDIVIDUAL
+                        && !memberUserIds.isEmpty())) {
+            throw new CustomException(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_COUNT_INVALID);
+        }
+    }
+
     private List<User> getValidMembers(User leader, List<Long> memberUserIds) {
         if (memberUserIds.stream().anyMatch(id -> id == null || id <= 0)
                 || memberUserIds.contains(leader.getId())
@@ -165,5 +202,45 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
             throw new CustomException(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_INVALID);
         }
         return members;
+    }
+
+    private void synchronizeMembers(Team team, User leader, List<User> requestedMembers) {
+        if (!teamMemberRepository.existsByTeamIdAndUserId(team.getId(), leader.getId())) {
+            teamMemberRepository.save(TeamMember.builder()
+                    .team(team)
+                    .user(leader)
+                    .role(TeamMemberRole.LEADER)
+                    .build());
+        }
+
+        List<TeamMember> currentMembers =
+                teamMemberRepository.findAllByTeamIdAndRole(team.getId(), TeamMemberRole.MEMBER);
+        Set<Long> requestedUserIds = new HashSet<>();
+        for (User requestedMember : requestedMembers) {
+            requestedUserIds.add(requestedMember.getId());
+        }
+
+        Set<Long> currentUserIds = new HashSet<>();
+        List<TeamMember> membersToDelete = new ArrayList<>();
+        for (TeamMember currentMember : currentMembers) {
+            Long currentUserId = currentMember.getUser().getId();
+            currentUserIds.add(currentUserId);
+            if (!requestedUserIds.contains(currentUserId)) {
+                membersToDelete.add(currentMember);
+            }
+        }
+        teamMemberRepository.deleteAll(membersToDelete);
+
+        List<TeamMember> membersToAdd = new ArrayList<>();
+        for (User requestedMember : requestedMembers) {
+            if (!currentUserIds.contains(requestedMember.getId())) {
+                membersToAdd.add(TeamMember.builder()
+                        .team(team)
+                        .user(requestedMember)
+                        .role(TeamMemberRole.MEMBER)
+                        .build());
+            }
+        }
+        teamMemberRepository.saveAll(membersToAdd);
     }
 }
