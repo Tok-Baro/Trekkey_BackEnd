@@ -485,15 +485,15 @@ Kairos 완료 조건:
 - [ ] 보안 PR #8 병합 및 실제 키 교체
 - [ ] 백엔드 통합 PR #9 리뷰어 지정
 - [ ] 프론트 통합 PR #1 리뷰어 지정
-- [ ] Java 전체 테스트 통과
-- [ ] Solidity 12개 테스트 통과
-- [ ] TypeScript typecheck 통과
-- [ ] 프론트 production build 통과
-- [ ] `application-local.properties`와 `.DS_Store` 미추적 확인
-- [ ] `sourceVersion`·`integrityStatus` 잔존 참조 없음
-- [ ] 수상 응답 publicId 계약 프론트 반영
+- [x] Java 전체 테스트 통과
+- [x] Solidity 12개 테스트 통과
+- [x] TypeScript typecheck 통과
+- [x] 프론트 production build 통과
+- [x] `application-local.properties`와 `.DS_Store` 미추적 확인
+- [x] `sourceVersion`·`integrityStatus` 잔존 참조 없음
+- [x] 수상 응답 publicId 계약 프론트 반영
 - [ ] 팀원 저장 경로 구현 또는 별도 차단 Issue 생성
 - [ ] 혁모 심사관리 승인
 - [ ] ReviewRound 전환 Issue·담당·별도 PR 확정
 - [ ] Kairos 환경변수는 Git 밖에서 주입
-- [ ] 기존 PR #7 종료 및 대체 PR 연결
+- [x] 기존 PR #7 종료 및 대체 PR 연결
