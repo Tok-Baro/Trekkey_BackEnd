@@ -16,6 +16,7 @@ import com.api.trekkey.domain.team.admin.service.TeamAdminService;
 import com.api.trekkey.domain.team.admin.web.controller.TeamAdminController;
 import com.api.trekkey.domain.team.admin.web.dto.TeamAdminListRes;
 import com.api.trekkey.domain.team.publicapi.service.TeamApplicationService;
+import com.api.trekkey.domain.team.publicapi.web.controller.ParticipantTeamController;
 import com.api.trekkey.domain.team.publicapi.web.controller.TeamApplicationController;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationUpdateReq;
@@ -38,7 +39,12 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest({ContestController.class, TeamApplicationController.class, TeamAdminController.class})
+@WebMvcTest({
+        ContestController.class,
+        TeamApplicationController.class,
+        ParticipantTeamController.class,
+        TeamAdminController.class
+})
 @Import({
         SecurityConfig.class,
         JwtAuthenticationFilter.class,
@@ -240,6 +246,41 @@ class SecurityConfigTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validApplicationRequest()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GLOBAL_403"));
+
+        verifyNoInteractions(teamApplicationService);
+    }
+
+    @Test
+    @DisplayName("내 팀 목록은 인증 없이 조회할 수 없다")
+    void myTeams_rejectsAnonymous() throws Exception {
+        mockMvc.perform(get("/api/me/teams"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(teamApplicationService);
+    }
+
+    @Test
+    @DisplayName("참가자는 본인이 속한 팀 목록을 조회할 수 있다")
+    void myTeams_permitsParticipant() throws Exception {
+        given(teamApplicationService.getMyTeams(10L)).willReturn(List.of());
+
+        mockMvc.perform(get("/api/me/teams")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("PARTICIPANT")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data").isEmpty());
+
+        verify(teamApplicationService).getMyTeams(10L);
+    }
+
+    @Test
+    @DisplayName("관리자는 참가자의 팀 목록을 조회할 수 없다")
+    void myTeams_rejectsAdmin() throws Exception {
+        mockMvc.perform(get("/api/me/teams")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("ADMIN")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GLOBAL_403"));
 

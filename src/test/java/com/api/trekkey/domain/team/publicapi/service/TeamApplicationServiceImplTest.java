@@ -21,6 +21,7 @@ import com.api.trekkey.domain.team.entity.TeamMemberRole;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
 import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantSearchRes;
+import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantTeamRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationRes;
 import com.api.trekkey.domain.team.repository.TeamMemberRepository;
@@ -159,6 +160,41 @@ class TeamApplicationServiceImplTest {
                 .isEqualTo(UserErrorResponseCode.USER_NOT_FOUND);
 
         verifyNoInteractions(teamRepository, teamMemberRepository);
+    }
+
+    @Test
+    @DisplayName("본인이 속한 팀을 참가자 팀 관리 응답으로 매핑한다")
+    void getMyTeams_returnsParticipantTeamResponses() {
+        given(userRepository.findById(10L))
+                .willReturn(Optional.of(org.mockito.Mockito.mock(User.class)));
+        Team team = application(
+                "contest-public-id",
+                "AI 창의 경진대회",
+                "SW중심대학사업단",
+                ParticipationType.TEAM,
+                "트랙키 팀",
+                TeamStatus.APPROVED,
+                LocalDateTime.of(2026, 7, 24, 15, 30),
+                LocalDateTime.of(2026, 7, 24, 16, 10));
+        ReflectionTestUtils.setField(team, "publicId", "team-public-id");
+        TeamMember membership = teamMember(
+                team,
+                org.mockito.Mockito.mock(User.class),
+                TeamMemberRole.LEADER);
+        given(teamMemberRepository.findAllWithTeamAndContestByUserId(10L))
+                .willReturn(List.of(membership));
+
+        List<ParticipantTeamRes> result = teamApplicationService.getMyTeams(10L);
+
+        assertThat(result).containsExactly(new ParticipantTeamRes(
+                "team-public-id",
+                "contest-public-id",
+                "AI 창의 경진대회",
+                "트랙키 팀",
+                TeamMemberRole.LEADER,
+                3,
+                TeamStatus.APPROVED,
+                null));
     }
 
     @Test

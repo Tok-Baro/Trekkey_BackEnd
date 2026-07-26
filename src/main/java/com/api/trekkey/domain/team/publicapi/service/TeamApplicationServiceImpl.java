@@ -11,6 +11,7 @@ import com.api.trekkey.domain.team.entity.TeamMemberRole;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
 import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantSearchRes;
+import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantTeamRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationUpdateReq;
@@ -139,6 +140,16 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
                         keyword.trim(),
                         PageRequest.of(0, 20)).stream()
                 .map(ParticipantSearchRes::from)
+                .toList();
+    }
+
+    @Override
+    public List<ParticipantTeamRes> getMyTeams(Long userId) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(UserErrorResponseCode.USER_NOT_FOUND));
+
+        return teamMemberRepository.findAllWithTeamAndContestByUserId(userId).stream()
+                .map(ParticipantTeamRes::from)
                 .toList();
     }
 

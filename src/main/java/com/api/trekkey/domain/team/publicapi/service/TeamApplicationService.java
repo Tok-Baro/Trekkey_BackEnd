@@ -1,6 +1,7 @@
 package com.api.trekkey.domain.team.publicapi.service;
 
 import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantSearchRes;
+import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantTeamRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationUpdateReq;
@@ -13,6 +14,8 @@ public interface TeamApplicationService {
     List<TeamApplicationRes> getMyApplications(Long userId);
 
     List<ParticipantSearchRes> searchParticipants(Long userId, String keyword);
+
+    List<ParticipantTeamRes> getMyTeams(Long userId);
 
     void updateApplication(Long userId, String contestPublicId, TeamApplicationUpdateReq request);
 }
