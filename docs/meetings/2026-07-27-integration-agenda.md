@@ -1,7 +1,7 @@
 # 2026-07-27 Trekkey 통합 회의 안건
 
 - 회의 목적: 업무 도메인과 Credential·Kaia 앵커링의 연결 계약 확정
-- 기준 브랜치: `origin/feat/anchoring-integration`
+- 기준 브랜치: `fix/anchoring-integration-readiness`
 - 병합 목표: 백엔드 `develop`, 프론트 `main`
 - 심사관리 기능 책임자: **혁모**
 - 작성자와 기능 책임자: 반드시 구분
@@ -44,7 +44,7 @@
 | 항목 | 상태 | 조치 |
 | --- | --- | --- |
 | 백엔드 `develop` | 대회·제출·심사·수상 코드가 합쳐짐 | 통합 PR의 base로 사용 |
-| 앵커링 통합 브랜치 | 업무 도메인과 Credential 코드를 합친 상태 | 보안·결정성·API 계약 정리 후 새 PR |
+| 백엔드 통합 PR #9 | 업무 도메인·Credential, 보안·결정성·CI·문서 통합 | `develop` 대상 Draft, 팀 리뷰 필요 |
 | 기존 백엔드 PR #7 | `feat/blockchain-anchoring → main`, Draft | 새 `develop` PR로 대체 후 종료 |
 | 보안 PR #8 | 추적된 로컬 설정 제거와 JWT 키 필수화 | 우선 리뷰·병합 |
 | 프론트 API 브랜치 | 로그인·대회·신청·내 수상 일부 연동 | 최신 `main` 충돌 해결 후 PR |
@@ -483,6 +483,7 @@ Kairos 완료 조건:
 ## 18. 병합 승인 체크리스트
 
 - [ ] 보안 PR #8 병합 및 실제 키 교체
+- [ ] 백엔드 통합 PR #9 리뷰어 지정
 - [ ] Java 전체 테스트 통과
 - [ ] Solidity 12개 테스트 통과
 - [ ] TypeScript typecheck 통과
