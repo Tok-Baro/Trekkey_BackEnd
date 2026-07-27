@@ -7,6 +7,9 @@ erDiagram
     CONTEST ||--o{ REVIEW_ROUND : has_rounds
     CONTEST ||--o{ TEAM : accepts
     USER ||--o{ TEAM : leads
+    ORGANIZATION ||--o{ ADMIN_INVITATION : issues_invite
+    USER ||--o{ ADMIN_INVITATION : invited_by
+    USER ||--o{ REFRESH_TOKEN : holds
     TEAM ||--|{ TEAM_MEMBER : has_members
     USER ||--o{ TEAM_MEMBER : joins
     TEAM ||--o| SUBMISSION : submits
@@ -404,6 +407,42 @@ erDiagram
         string lockedBy "Worker ID"
         datetime processedAt "처리 완료 시각"
         string lastErrorCode "마지막 오류 코드"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    ADMIN_INVITATION {
+        bigint id PK "관리자 초대 PK"
+        bigint organizationId FK "초대 발급 학교"
+        bigint invitedByUserId FK "발급한 ROOT_ADMIN"
+        string email "초대 대상 이메일, 가입 시 일치 검증"
+        string tokenHash UK "초대 토큰 SHA-256, 원문 미저장"
+        string status "ISSUED/USED/EXPIRED/REVOKED"
+        datetime expiresAt "초대 만료, 발급+7일"
+        datetime usedAt "가입 사용 시각"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    ADMIN_AUDIT_LOG {
+        bigint id PK "관리자 감사 로그 PK"
+        bigint userId "행위자 사용자 ID, FK 아님 - 삭제돼도 로그 보존"
+        bigint organizationId "행위 조직 ID, FK 아님"
+        string action "카테고리.행위 예: contest.create"
+        string targetType "대상 유형 CONTEST/STAGE/USER/INVITATION"
+        bigint targetId "대상 PK"
+        string detail "변경 요약, 토큰·개인정보 미포함"
+        string clientIp "요청 IP"
+        datetime createdAt "기록 시각"
+    }
+
+    REFRESH_TOKEN {
+        bigint id PK "리프레시 토큰 PK"
+        bigint userId FK "토큰 소유 사용자"
+        string tokenHash UK "토큰 SHA-256, 원문 미저장"
+        string familyId "로그인 세션 계보, 재사용 감지 시 전체 폐기"
+        bool revoked "폐기 여부"
+        datetime expiresAt "토큰 만료"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
