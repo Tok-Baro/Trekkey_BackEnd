@@ -9,6 +9,7 @@ import com.api.trekkey.domain.contest.web.dto.ContestCreateReq;
 import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
 import com.api.trekkey.domain.contest.web.dto.StageRes;
 import com.api.trekkey.domain.contest.web.dto.StageStatusUpdateReq;
+import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.global.response.PageRes;
 import com.api.trekkey.global.response.SuccessResponse;
@@ -38,7 +39,19 @@ public class ContestAdminController {
     private final ContestCommandService contestCommandService;
     private final ContestAdminQueryService contestAdminQueryService;
 
-    @ApiErrorCodeExamples(value = UserErrorResponseCode.class, codes = {"USER_NOT_FOUND"})
+    @ApiErrorCodeExamples(value = UserErrorResponseCode.class, codes = {
+            "USER_NOT_FOUND",
+            "USER_INVALID_TOKEN"
+    })
+    @ApiErrorCodeExamples(
+            value = ContestErrorResponseCode.class,
+            codes = {
+                    "INVALID_STAGE_STATUS_TRANSITION",
+                    "REVIEW_CRITERION_NOT_FOUND",
+                    "REVIEW_CRITERION_NOT_ALLOWED",
+                    "REVIEW_CRITERION_INVALID",
+                    "REVIEW_CRITERION_DUPLICATED"
+            })
     @PostMapping("/api/contests")
     public ResponseEntity<SuccessResponse<ContestDetailRes>> createContest(
             @AuthenticationPrincipal AuthPrincipal principal,
@@ -52,7 +65,23 @@ public class ContestAdminController {
 
     @ApiErrorCodeExamples(
             value = ContestErrorResponseCode.class,
-            codes = {"CONTEST_NOT_FOUND", "CONTEST_FORBIDDEN", "STAGE_NOT_FOUND"})
+            codes = {
+                    "CONTEST_NOT_FOUND",
+                    "CONTEST_FORBIDDEN",
+                    "STAGE_NOT_FOUND",
+                    "STAGE_DUPLICATED",
+                    "STAGE_CONFIGURATION_LOCKED",
+                    "INVALID_STAGE_STATUS_TRANSITION",
+                    "REVIEW_CRITERION_NOT_FOUND",
+                    "REVIEW_CRITERION_NOT_ALLOWED",
+                    "REVIEW_CRITERION_INVALID",
+                    "REVIEW_CRITERION_CODE_IMMUTABLE",
+                    "REVIEW_CRITERION_DUPLICATED"
+            })
+    @ApiErrorCodeExamples(value = UserErrorResponseCode.class, codes = {
+            "USER_NOT_FOUND",
+            "USER_INVALID_TOKEN"
+    })
     @PutMapping("/api/contests/{publicId}")
     public ResponseEntity<SuccessResponse<ContestDetailRes>> updateContest(
             @AuthenticationPrincipal AuthPrincipal principal,
@@ -66,7 +95,23 @@ public class ContestAdminController {
 
     @ApiErrorCodeExamples(
             value = ContestErrorResponseCode.class,
-            codes = {"STAGE_NOT_FOUND", "CONTEST_FORBIDDEN"})
+            codes = {
+                    "STAGE_NOT_FOUND",
+                    "CONTEST_FORBIDDEN",
+                    "INVALID_STAGE_STATUS_TRANSITION",
+                    "STAGE_CONFIGURATION_INVALID",
+                    "REVIEW_CRITERION_REQUIRED"
+            })
+    @ApiErrorCodeExamples(value = UserErrorResponseCode.class, codes = {
+            "USER_NOT_FOUND",
+            "USER_INVALID_TOKEN"
+    })
+    @ApiErrorCodeExamples(
+            value = ReviewErrorResponseCode.class,
+            codes = {
+                    "REVIEW_ENTRY_REQUIRED",
+                    "REVIEW_ENTRY_CONTEST_NOT_REVIEWING"
+            })
     @PatchMapping("/api/stages/{stageId}/status")
     public ResponseEntity<SuccessResponse<StageRes>> updateStageStatus(
             @AuthenticationPrincipal AuthPrincipal principal,

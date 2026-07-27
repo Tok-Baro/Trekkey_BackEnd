@@ -5,12 +5,26 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.api.trekkey.domain.contest.publicapi.service.ContestService;
 import com.api.trekkey.domain.contest.publicapi.web.controller.ContestController;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
+import com.api.trekkey.domain.review.service.ReviewAccessService;
+import com.api.trekkey.domain.review.service.ReviewAssignmentAdminService;
+import com.api.trekkey.domain.review.service.ReviewRoundEntryAdminService;
+import com.api.trekkey.domain.review.service.ReviewSheetService;
+import com.api.trekkey.domain.review.web.controller.ReviewAccessController;
+import com.api.trekkey.domain.review.web.controller.ReviewAssignmentAdminController;
+import com.api.trekkey.domain.review.web.controller.ReviewRoundEntryAdminController;
+import com.api.trekkey.domain.review.web.controller.ReviewSheetController;
+import com.api.trekkey.domain.review.web.dto.request.ReviewAccessReq;
+import com.api.trekkey.domain.review.web.dto.request.ReviewAssignmentPrepareReq;
+import com.api.trekkey.domain.submission.publicapi.service.SubmissionService;
+import com.api.trekkey.domain.submission.publicapi.web.controller.SubmissionController;
+import com.api.trekkey.domain.submission.publicapi.web.dto.SubmissionSaveReq;
 import com.api.trekkey.domain.team.publicapi.service.TeamApplicationService;
 import com.api.trekkey.domain.team.publicapi.web.controller.TeamApplicationController;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
@@ -33,7 +47,15 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest({ContestController.class, TeamApplicationController.class})
+@WebMvcTest({
+        ContestController.class,
+        TeamApplicationController.class,
+        ReviewAccessController.class,
+        ReviewAssignmentAdminController.class,
+        ReviewRoundEntryAdminController.class,
+        ReviewSheetController.class,
+        SubmissionController.class
+})
 @Import({
         SecurityConfig.class,
         JwtAuthenticationFilter.class,
@@ -55,6 +77,21 @@ class SecurityConfigTest {
 
     @MockitoBean
     private TeamApplicationService teamApplicationService;
+
+    @MockitoBean
+    private ReviewAccessService reviewAccessService;
+
+    @MockitoBean
+    private ReviewSheetService reviewSheetService;
+
+    @MockitoBean
+    private ReviewAssignmentAdminService reviewAssignmentAdminService;
+
+    @MockitoBean
+    private ReviewRoundEntryAdminService reviewRoundEntryAdminService;
+
+    @MockitoBean
+    private SubmissionService submissionService;
 
     @MockitoBean(name = "jpaMappingContext")
     private JpaMetamodelMappingContext jpaMappingContext;
@@ -155,6 +192,298 @@ class SecurityConfigTest {
         verifyNoInteractions(teamApplicationService);
     }
 
+    @Test
+    @DisplayName("심사 링크 확인 진입점은 인증 없이 요청할 수 있다")
+    void reviewAccess_permitsAnonymous() throws Exception {
+        String rawToken = "a".repeat(43);
+
+        mockMvc.perform(post("/api/review/access")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"" + rawToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"));
+
+        verify(reviewAccessService)
+                .verifyAccess(new ReviewAccessReq(rawToken));
+    }
+
+    @Test
+    @DisplayName("심사 평가표 POST는 토큰 검증을 위해 인증 없이 진입할 수 있다")
+    void reviewAssignments_permitsAnonymousPost() throws Exception {
+        String rawToken = "a".repeat(43);
+        given(reviewSheetService.getReviewSheet(
+                new ReviewAccessReq(rawToken)
+        )).willReturn(null);
+
+        mockMvc.perform(post("/api/review/assignments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"" + rawToken + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"));
+
+        verify(reviewSheetService)
+                .getReviewSheet(new ReviewAccessReq(rawToken));
+    }
+
+    @Test
+    @DisplayName("심사 평가표의 GET 요청은 인증 없이 사용할 수 없다")
+    void reviewAssignmentsGet_rejectsAnonymous() throws Exception {
+        mockMvc.perform(get("/api/review/assignments"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(reviewSheetService);
+    }
+
+    @Test
+    @DisplayName("심사위원 배정 API는 인증 없이 요청할 수 없다")
+    void reviewAssignmentPreparation_rejectsAnonymous() throws Exception {
+        mockMvc.perform(post(
+                        "/api/admin/contests/{publicId}/review-stages/{stageId}"
+                                + "/judges/{judgeId}/assignments/prepare",
+                        "public-id",
+                        20L,
+                        30L
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(reviewAssignmentAdminService);
+    }
+
+    @Test
+    @DisplayName("참가자는 심사위원 배정 API를 사용할 수 없다")
+    void reviewAssignmentPreparation_rejectsParticipant() throws Exception {
+        mockMvc.perform(post(
+                        "/api/admin/contests/{publicId}/review-stages/{stageId}"
+                                + "/judges/{judgeId}/assignments/prepare",
+                        "public-id",
+                        20L,
+                        30L
+                ).header(
+                        HttpHeaders.AUTHORIZATION,
+                        "Bearer " + accessToken("PARTICIPANT")
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GLOBAL_403"));
+
+        verifyNoInteractions(reviewAssignmentAdminService);
+    }
+
+    @Test
+    @DisplayName("관리자는 심사위원 평가표를 준비할 수 있다")
+    void reviewAssignmentPreparation_permitsAdmin() throws Exception {
+        ReviewAssignmentPrepareReq req =
+                new ReviewAssignmentPrepareReq(null);
+        given(reviewAssignmentAdminService.prepareAssignments(
+                10L,
+                "public-id",
+                20L,
+                30L,
+                req
+        )).willReturn(List.of());
+
+        mockMvc.perform(post(
+                        "/api/admin/contests/{publicId}/review-stages/{stageId}"
+                                + "/judges/{judgeId}/assignments/prepare",
+                        "public-id",
+                        20L,
+                        30L
+                ).header(
+                        HttpHeaders.AUTHORIZATION,
+                        "Bearer " + accessToken("ADMIN")
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"));
+
+        verify(reviewAssignmentAdminService).prepareAssignments(
+                10L,
+                "public-id",
+                20L,
+                30L,
+                req
+        );
+    }
+
+    @Test
+    @DisplayName("최고 관리자는 역할 계층을 통해 심사위원 평가표를 준비할 수 있다")
+    void reviewAssignmentPreparation_permitsRootAdmin() throws Exception {
+        ReviewAssignmentPrepareReq req =
+                new ReviewAssignmentPrepareReq(null);
+        given(reviewAssignmentAdminService.prepareAssignments(
+                10L,
+                "public-id",
+                20L,
+                30L,
+                req
+        )).willReturn(List.of());
+
+        mockMvc.perform(post(
+                        "/api/admin/contests/{publicId}/review-stages/{stageId}"
+                                + "/judges/{judgeId}/assignments/prepare",
+                        "public-id",
+                        20L,
+                        30L
+                ).header(
+                        HttpHeaders.AUTHORIZATION,
+                        "Bearer " + accessToken("ROOT_ADMIN")
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"));
+
+        verify(reviewAssignmentAdminService).prepareAssignments(
+                10L,
+                "public-id",
+                20L,
+                30L,
+                req
+        );
+    }
+
+    @Test
+    @DisplayName("심사 대상 준비 API는 인증 없이 요청할 수 없다")
+    void reviewEntryPreparation_rejectsAnonymous() throws Exception {
+        mockMvc.perform(post(
+                        "/api/admin/contests/{publicId}/review-stages/{stageId}/entries/prepare",
+                        "public-id",
+                        20L
+                ))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(reviewRoundEntryAdminService);
+    }
+
+    @Test
+    @DisplayName("참가자는 심사 대상 준비 API를 사용할 수 없다")
+    void reviewEntryPreparation_rejectsParticipant() throws Exception {
+        mockMvc.perform(post(
+                        "/api/admin/contests/{publicId}/review-stages/{stageId}/entries/prepare",
+                        "public-id",
+                        20L
+                ).header(
+                        HttpHeaders.AUTHORIZATION,
+                        "Bearer " + accessToken("PARTICIPANT")
+                ))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GLOBAL_403"));
+
+        verifyNoInteractions(reviewRoundEntryAdminService);
+    }
+
+    @Test
+    @DisplayName("관리자는 심사 대상 준비 API를 사용할 수 있다")
+    void reviewEntryPreparation_permitsAdmin() throws Exception {
+        given(reviewRoundEntryAdminService.prepareEntries(
+                10L,
+                "public-id",
+                20L
+        )).willReturn(List.of());
+
+        mockMvc.perform(post(
+                        "/api/admin/contests/{publicId}/review-stages/{stageId}/entries/prepare",
+                        "public-id",
+                        20L
+                ).header(
+                        HttpHeaders.AUTHORIZATION,
+                        "Bearer " + accessToken("ADMIN")
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"));
+
+        verify(reviewRoundEntryAdminService)
+                .prepareEntries(10L, "public-id", 20L);
+    }
+
+    @Test
+    @DisplayName("최고 관리자는 역할 계층을 통해 심사 대상 준비 API를 사용할 수 있다")
+    void reviewEntryPreparation_permitsRootAdmin() throws Exception {
+        given(reviewRoundEntryAdminService.prepareEntries(
+                10L,
+                "public-id",
+                20L
+        )).willReturn(List.of());
+
+        mockMvc.perform(post(
+                        "/api/admin/contests/{publicId}/review-stages/{stageId}/entries/prepare",
+                        "public-id",
+                        20L
+                ).header(
+                        HttpHeaders.AUTHORIZATION,
+                        "Bearer " + accessToken("ROOT_ADMIN")
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"));
+
+        verify(reviewRoundEntryAdminService)
+                .prepareEntries(10L, "public-id", 20L);
+    }
+
+    @Test
+    @DisplayName("제출물 API는 인증 없이 요청할 수 없다")
+    void submission_rejectsAnonymous() throws Exception {
+        mockMvc.perform(put("/api/contests/{publicId}/submission", "public-id")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validSubmissionRequest()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(submissionService);
+    }
+
+    @Test
+    @DisplayName("제출물 하위 작업 경로도 인증 없이 요청할 수 없다")
+    void submissionAction_rejectsAnonymous() throws Exception {
+        mockMvc.perform(post(
+                        "/api/contests/{publicId}/submission/submit",
+                        "public-id"
+                ))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(submissionService);
+    }
+
+    @Test
+    @DisplayName("참가자는 자신의 제출물 초안을 저장할 수 있다")
+    void submission_permitsParticipant() throws Exception {
+        mockMvc.perform(put("/api/contests/{publicId}/submission", "public-id")
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                "Bearer " + accessToken("PARTICIPANT")
+                        )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validSubmissionRequest()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"));
+
+        verify(submissionService).saveDraft(
+                10L,
+                "public-id",
+                new SubmissionSaveReq("AI 캠퍼스")
+        );
+    }
+
+    @Test
+    @DisplayName("관리자는 참가자 제출물 API를 사용할 수 없다")
+    void submission_rejectsAdmin() throws Exception {
+        mockMvc.perform(put("/api/contests/{publicId}/submission", "public-id")
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                "Bearer " + accessToken("ADMIN")
+                        )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validSubmissionRequest()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GLOBAL_403"));
+
+        verifyNoInteractions(submissionService);
+    }
+
     private String validApplicationRequest() {
         return """
                 {
@@ -165,6 +494,14 @@ class SecurityConfigTest {
                   "contactEmail": "hong@example.com",
                   "phone": "010-1234-5678",
                   "motivation": "AI 아이디어를 구현하고 싶습니다."
+                }
+                """;
+    }
+
+    private String validSubmissionRequest() {
+        return """
+                {
+                  "title": "AI 캠퍼스"
                 }
                 """;
     }

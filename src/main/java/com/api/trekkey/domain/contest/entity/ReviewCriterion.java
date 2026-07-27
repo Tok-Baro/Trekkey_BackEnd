@@ -58,4 +58,25 @@ public class ReviewCriterion extends BaseEntity {
     @Column(nullable = false)
     // 사용 여부
     private boolean active = true;
+
+    public void update(String label, int maxScore, int sortOrder) {
+        this.label = label;
+        this.maxScore = maxScore;
+        this.sortOrder = sortOrder;
+    }
+
+    public void activate() {
+        this.active = true;
+    }
+
+    public void deactivate() {
+        this.active = false;
+    }
+
+    public boolean hasSameConfiguration(String code, String label, int maxScore, int sortOrder) {
+        return this.code.equals(code)
+                && this.label.equals(label)
+                && this.maxScore == maxScore
+                && this.sortOrder == sortOrder;
+    }
 }
