@@ -6,11 +6,11 @@ import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.team.admin.web.dto.TeamAdminListRes;
+import com.api.trekkey.domain.team.admin.web.dto.TeamAdminRes;
 import com.api.trekkey.domain.team.admin.web.dto.TeamStatusUpdateReq;
 import com.api.trekkey.domain.team.entity.Team;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
-import com.api.trekkey.domain.team.publicapi.web.dto.TeamRes;
 import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
@@ -54,14 +54,14 @@ public class TeamAdminServiceImpl implements TeamAdminService {
                 : allTeams.stream().filter(team -> team.getStatus() == status).toList();
 
         return new TeamAdminListRes(
-                visibleTeams.stream().map(TeamRes::from).toList(),
+                visibleTeams.stream().map(TeamAdminRes::from).toList(),
                 statusCounts,
                 allTeams.size());
     }
 
     @Override
     @Transactional
-    public TeamRes changeStatus(Long adminUserId, String teamPublicId, TeamStatusUpdateReq request) {
+    public TeamAdminRes changeStatus(Long adminUserId, String teamPublicId, TeamStatusUpdateReq request) {
         User admin = findAdmin(adminUserId);
         Team team = findTeamInAdminOrganization(teamPublicId, admin);
 
@@ -71,12 +71,12 @@ public class TeamAdminServiceImpl implements TeamAdminService {
         adminAuditLogger.log(admin.getId(), admin.getOrganization().getId(), AuditAction.TEAM_STATUS_CHANGE,
                 TARGET_TYPE_TEAM, team.getId(), "status: " + previousStatus + "→" + request.status());
 
-        return TeamRes.from(team);
+        return TeamAdminRes.from(team);
     }
 
     @Override
     @Transactional
-    public TeamRes finalizeParticipation(Long adminUserId, String teamPublicId) {
+    public TeamAdminRes finalizeParticipation(Long adminUserId, String teamPublicId) {
         User admin = findAdmin(adminUserId);
         Team team = findTeamInAdminOrganization(teamPublicId, admin);
 
@@ -93,7 +93,7 @@ public class TeamAdminServiceImpl implements TeamAdminService {
         adminAuditLogger.log(admin.getId(), admin.getOrganization().getId(), AuditAction.TEAM_FINALIZE,
                 TARGET_TYPE_TEAM, team.getId(), team.getName());
 
-        return TeamRes.from(team);
+        return TeamAdminRes.from(team);
     }
 
     //======= 헬퍼 메서드 ==========

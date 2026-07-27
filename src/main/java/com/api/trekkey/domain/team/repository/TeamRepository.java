@@ -22,6 +22,8 @@ public interface TeamRepository extends JpaRepository<Team, Long> {
 
     List<Team> findAllByLeaderUserIdOrderByCreatedAtDesc(Long leaderUserId);
 
+    Optional<Team> findByContestPublicIdAndLeaderUserId(String contestPublicId, Long leaderUserId);
+
     List<Team> findAllByContestIdOrderByCreatedAtDesc(Long contestId);
 
     List<Team> findAllByContestIdAndStatusOrderByCreatedAtDesc(Long contestId, TeamStatus status);

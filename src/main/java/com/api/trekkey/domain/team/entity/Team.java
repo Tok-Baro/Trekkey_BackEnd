@@ -67,7 +67,7 @@ public class Team extends BaseEntity {
     private String major;
 
     @Column(nullable = false)
-    // 현재 프론트에서 입력하는 참가 인원 수
+    // TEAM_MEMBER에 저장된 대표자와 팀원의 실제 인원 수
     private int memberCount;
 
     @Enumerated(EnumType.STRING)

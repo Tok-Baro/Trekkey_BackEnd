@@ -43,11 +43,12 @@
 
 | 항목 | 상태 | 조치 |
 | --- | --- | --- |
-| 백엔드 `develop` | 대회·제출·심사·수상 코드가 합쳐짐 | 통합 PR의 base로 사용 |
-| [백엔드 통합 PR #9](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/9) | CI 성공, 리뷰·댓글 0건, GitHub mergeability 재계산 필요 | `develop` 대상 Draft, 다음 push 후 충돌 판정 재확인 |
+| 백엔드 `develop` | PR #10까지 병합, 팀원 기반 참가 신청 추가 | 통합 PR의 base로 사용 |
+| [백엔드 통합 PR #9](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/9) | 최신 `develop` 통합·충돌 해결·MySQL 회귀 성공 | 새 CI와 GitHub mergeability 재확인 |
 | 기존 백엔드 PR #7 | 종료됨 | PR #9로 대체 완료 |
 | [보안 PR #8](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/8) | mergeable, 리뷰·댓글 0건, GitHub CI 없음 | 우선 리뷰·실제 키 교체·병합 |
 | [프론트 통합 PR #1](https://github.com/Tok-Baro/Trekkey/pull/1) | CI 성공·mergeable, 리뷰·댓글 0건 | `main` 대상 Draft, 백엔드 PR #9 계약 뒤 병합 |
+| [백엔드 PR #10](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/10) | 팀원 기반 참가 신청, 리뷰·CI 없이 작성자가 병합 | 사후 코드 리뷰와 프론트 계약 반영 필요 |
 | `feat/review-scoring` | `2d62dcd`, PR 없음, `develop`보다 12커밋 뒤 | 통째 병합하지 않고 심사 코드만 선별 이식 |
 | 백엔드 CI | Java·Solidity·TypeScript 검증 추가 | PR #9 결과 확인 후 병합 |
 | 프론트 CI | Node 22 production build 검증 추가 | PR #1 결과 확인 후 병합 |
@@ -62,6 +63,7 @@
 | 제출 덮어쓰기·SHA-256 | `cbd88e6`, `ijunsu` | 제출 담당자와 통합 PR 리뷰어 |
 | 심사 도메인 구현 | `5ce57cc`, `ijunsu` | **기능 승인·인수 책임자는 혁모** |
 | 제출~심사위원 배정 대안 구현 | `2d62dcd`, `구혁모` | 최신 `develop` 기준으로 선별 이식·동시성 수정 |
+| 팀원 기반 참가 신청 | `9ae9180`~`0ae333c`, `naeunmin` | PR #10 사후 리뷰·프론트 계약·동시성 보완 |
 | 수상 도메인 구현 | `a4d23c9`, `ijunsu` | 수상 담당자 확정 필요 |
 | 업무·앵커링 통합 | `011f36e`, `69d531a`, `e1df66f`, `1ad4f8c`, `ijunsu` | 통합 PR 리뷰어 공동 책임 |
 | 블록체인 초안의 `main` 직접 반영 | Codex 작업 후 revert | 새 PR은 `develop` 대상으로 교체 |
@@ -105,42 +107,45 @@
 3. 팀 작업 브랜치 정리
 4. 이력 재작성 필요성 재평가
 
-## 6. P0 업무·Credential 연결 공백
+## 6. P0 업무·Credential 연결 인수
 
-### 6.1 `TEAM_MEMBER` 저장 경로 부재
+### 6.1 `TEAM_MEMBER` 저장 경로
 
-현재 확인:
+PR #10 반영:
 
-- `TEAM_MEMBER` 엔티티와 repository는 존재
-- 팀 신청 요청은 `memberCount`만 받음
-- 학번으로 사용자를 검색해 팀원 행을 만드는 API는 없음
-- 수상 Credential 발급기는 현재 `TEAM_MEMBER`를 조회함
+- 참가 신청 요청이 `memberUserIds`를 받음
+- 대표자와 일반 팀원을 모두 `TEAM_MEMBER`에 저장
+- `/api/participants/search?keyword=`에서 같은 학교의 활성 참가자를 이름·학번으로 검색
+- `/api/me/applications`, `/api/me/teams`로 일반 팀원도 참가 이력을 조회
+- 수상 Credential 발급기는 `TEAM_MEMBER` 전원을 안정된 사용자 ID 순서로 조회
 
-위험:
+통합 PR #9에서 추가로 반영:
 
-- 실제 팀원이 DB에 없으면 대표자만 개인 수상 이력에 연결됨
-- `memberCount` 숫자만으로는 누가 수상자인지 증명할 수 없음
-- 발급 뒤 팀을 다시 조회해 복구할 수 없음
+- 팀 수정 시 기존 팀원 삭제 금지
+- 요청에 포함된 새 팀원만 추가
+- 기존 팀원과 새 팀원의 합계가 최대 인원을 넘으면 거부
+- 제거하기로 합의한 `TEAM.sourceVersion`은 다시 도입하지 않음
 
-회의 결정:
+남은 위험:
 
-- [ ] 같은 학교 안에서 `studentId`로 사용자 조회
-- [ ] 대표자 포함 전원을 `TEAM_MEMBER`에 저장
-- [ ] `(teamId, userId)` 유일 제약 유지
-- [ ] 대표자는 `roleCode=LEADER` 한 명만 허용
-- [ ] 명단 확정 전 추가만 허용
-- [ ] 팀원 이탈·삭제 API는 만들지 않음
-- [ ] 개인전도 대표자 1명을 `TEAM_MEMBER`에 저장
-- [ ] `TEAM.memberCount`를 실제 행 수로 검증 또는 파생값으로 전환
+- 프론트 PR #1은 아직 `memberCount`와 자유 입력 명단을 보내므로 새 백엔드 요청과 호환되지 않음
+- 프론트 조회 경로도 `/api/users/me/applications`에서 `/api/me/applications`로 변경 필요
+- 동일 대회의 여러 팀이 같은 사용자를 동시에 추가할 때 서비스 선조회만으로는 완전한 유일성을 보장하지 못함
+- 기존 개발 DB에 `TEAM`만 있고 `TEAM_MEMBER`가 없는 신청은 backfill 또는 DB 재생성이 필요
+- PR #10은 리뷰·CI 없이 작성자가 직접 병합했으므로 사후 인수 리뷰가 필요
 
 완료 조건:
 
-- 팀 생성 직후 대표자 `TEAM_MEMBER` 생성
-- 학번 검색으로 팀원 추가 가능
-- 다른 학교 학번 추가 거부
-- 중복 팀원 추가 거부
-- 명단 확정 후 추가·역할 변경 거부
-- 수상 발급 테스트에 대표자와 일반 팀원 모두 포함
+- [x] 팀 생성 직후 대표자 `TEAM_MEMBER` 생성
+- [x] 학번 검색으로 같은 학교 팀원 선택
+- [x] 다른 학교·비활성·비참가자 추가 거부
+- [x] `(teamId, userId)` 중복 금지
+- [x] 팀 수정 시 기존 팀원 삭제 금지
+- [x] 명단 확정 후 신청 수정 거부
+- [ ] 동시 요청에서도 동일 대회 중복 참가 방지
+- [ ] 프론트 팀원 검색·선택 UI와 새 요청·응답 계약 반영
+- [ ] 기존 데이터 처리 방식 확정
+- [ ] 대표자와 일반 팀원 모두 수상 조회·Credential subject E2E 성공
 
 ### 6.2 최종 ERD와 심사 코드 불일치
 
@@ -524,7 +529,7 @@ Kairos 완료 조건:
 | --- | --- | --- |
 | 0~10분 | 보안 PR #8과 키 교체 | 담당자·완료 시각 |
 | 10~20분 | 최종 ERD와 실제 코드 차이 | 혁모 H1 범위·마감일 |
-| 20~35분 | 팀원 원장과 학번 조회 | API·잠금 시점 |
+| 20~35분 | PR #10 팀원 원장 사후 인수 | 프론트 계약·동시성·기존 DB |
 | 35~55분 | 심사관리 인수 | 혁모 H2 규칙·테스트 |
 | 55~65분 | 제출·수상 API 계약 | publicId·예외 |
 | 65~80분 | Credential·Kairos 운영 | 배포·키 담당 |
@@ -537,7 +542,8 @@ Kairos 완료 조건:
 | ReviewRound 백엔드 전환(H1) | **혁모** | 대회·제출 담당 | 모델·API·migration 일치 |
 | 심사 마감 무결성(H2) | **혁모** | 백엔드 1명 | 7절 체크·테스트 통과 |
 | 심사 프론트 계약 인계 | **혁모** | 프론트 담당 | `roundId`·enum·오류 계약 확정 |
-| 팀원 학번 조회·추가 API | 회의 지정 | 블록체인 담당 | subject 전원 발급 |
+| 팀원 API 사후 인수·동시성 | **은민** | 블록체인 담당 | 중복 참가·Credential E2E |
+| 팀원 검색·선택 UI/API 연동 | 프론트 담당 | **은민** | `memberUserIds`·새 경로 반영 |
 | 제출 동시성·파일 정리 | 회의 지정 | 통합 담당 | commit/rollback 테스트 |
 | 수상 응답 publicId | 백엔드 통합 담당 | 프론트 담당 | 이름 역매칭 제거 |
 | Credential·Merkle·Kaia | 블록체인 담당 | 백엔드 1명 | Kairos E2E |
@@ -550,7 +556,7 @@ Kairos 완료 조건:
 | 안건 | 결정 | 담당 | 기한 | PR/Issue |
 | --- | --- | --- | --- | --- |
 | ReviewRound 전환 범위 | H1/H2 분리 | 혁모 |  |  |
-| 팀원 등록 |  |  |  |  |
+| PR #10 팀원 원장 인수 | 추가만 허용·삭제 금지 | 은민 |  | #10 후속 |
 | 심사 마감 |  | 혁모 |  |  |
 | 동점 규칙 |  | 혁모 |  |  |
 | 미제출 심사 |  | 혁모 |  |  |
@@ -571,7 +577,9 @@ Kairos 완료 조건:
 - [x] `application-local.properties`와 `.DS_Store` 미추적 확인
 - [x] `sourceVersion`·`integrityStatus` 잔존 참조 없음
 - [x] 수상 응답 publicId 계약 프론트 반영
-- [ ] 팀원 저장 경로 구현 또는 별도 차단 Issue 생성
+- [x] 팀원 저장·학번 검색 경로 구현
+- [ ] PR #10 사후 리뷰와 동시 중복 참가 테스트
+- [ ] 프론트 `memberUserIds`·`/api/me/applications` 계약 반영
 - [ ] 혁모 H1 ReviewRound Draft PR
 - [ ] 혁모 H2 심사 무결성 Draft PR
 - [ ] 혁모 심사관리 시연·인수 완료
