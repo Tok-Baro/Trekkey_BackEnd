@@ -47,7 +47,10 @@ public class TeamAdminServiceImpl implements TeamAdminService {
 
         Contest contest = contestRepository.findByPublicId(contestPublicId)
                 .orElseThrow(() -> new CustomException(ContestErrorResponseCode.CONTEST_NOT_FOUND));
-        validateSameOrganization(contest, admin);
+        //타 조직 대회는 존재 자체를 비노출한다 — 403이 아니라 404 (보안 방침 일관성)
+        if (!contest.getOrganization().getId().equals(admin.getOrganization().getId())) {
+            throw new CustomException(ContestErrorResponseCode.CONTEST_NOT_FOUND);
+        }
 
         // 상태별 카운트는 필터와 무관하게 전체 기준으로 제공한다 (관리자 화면 요약)
         List<Team> allTeams = teamRepository.findAllByContestIdOrderByCreatedAtDesc(contest.getId());

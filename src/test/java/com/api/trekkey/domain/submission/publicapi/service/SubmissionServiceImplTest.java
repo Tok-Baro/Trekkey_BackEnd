@@ -131,12 +131,12 @@ class SubmissionServiceImplTest {
         given(submissionRepository.findByTeamIdForUpdate(1L)).willReturn(Optional.of(existing));
         SubmissionFile oldFile = mock(SubmissionFile.class);
         given(oldFile.getStorageKey()).willReturn("submissions/old/key.pdf");
-        given(submissionFileRepository.findAllBySubmissionId(100L)).willReturn(List.of(oldFile));
+        given(submissionFileRepository.findAllBySubmissionIdForUpdate(100L)).willReturn(List.of(oldFile));
 
         SubmissionRes result = submissionService.submit(10L, "team-pub-1", "수정된 작품", List.of(pdfFile()));
 
         assertThat(result.title()).isEqualTo("수정된 작품");
-        verify(submissionFileRepository).deleteAllBySubmissionId(100L);
+        verify(submissionFileRepository).deleteAllBySubmissionIdBulk(100L);
         verify(fileStoragePort).delete("submissions/old/key.pdf");
     }
 
@@ -148,7 +148,7 @@ class SubmissionServiceImplTest {
         given(submissionRepository.findByTeamIdForUpdate(1L)).willReturn(Optional.of(existing));
         SubmissionFile oldFile = mock(SubmissionFile.class);
         given(oldFile.getStorageKey()).willReturn("submissions/old/key.pdf");
-        given(submissionFileRepository.findAllBySubmissionId(100L)).willReturn(List.of(oldFile));
+        given(submissionFileRepository.findAllBySubmissionIdForUpdate(100L)).willReturn(List.of(oldFile));
 
         TransactionSynchronizationManager.initSynchronization();
         try {
@@ -177,7 +177,7 @@ class SubmissionServiceImplTest {
         given(submissionRepository.findByTeamIdForUpdate(1L)).willReturn(Optional.of(existing));
         SubmissionFile oldFile = mock(SubmissionFile.class);
         given(oldFile.getStorageKey()).willReturn("submissions/old/key.pdf");
-        given(submissionFileRepository.findAllBySubmissionId(100L)).willReturn(List.of(oldFile));
+        given(submissionFileRepository.findAllBySubmissionIdForUpdate(100L)).willReturn(List.of(oldFile));
 
         TransactionSynchronizationManager.initSynchronization();
         try {
