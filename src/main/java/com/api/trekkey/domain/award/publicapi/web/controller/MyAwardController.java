@@ -22,7 +22,7 @@ public class MyAwardController {
     private final AwardRepository awardRepository;
 
     // 내 수상 목록 — 확정된 수상만 (참가자 포털 결과 화면)
-    @GetMapping("/api/users/me/awards")
+    @GetMapping("/api/me/awards") //develop 채택 컨벤션(/api/me/*)으로 통일
     @Transactional(readOnly = true)
     public ResponseEntity<SuccessResponse<List<AwardRes>>> getMyAwards(
             @AuthenticationPrincipal AuthPrincipal authPrincipal) {

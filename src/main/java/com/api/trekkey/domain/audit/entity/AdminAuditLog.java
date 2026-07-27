@@ -5,6 +5,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
+import jakarta.persistence.Index;
+import jakarta.persistence.Table;
 import jakarta.persistence.Id;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -13,6 +15,12 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
+@Table(
+        name = "admin_audit_log",
+        indexes = {
+                @Index(name = "idx_admin_audit_log_org_created", columnList = "organization_id, created_at"), //조직별 최근 감사 조회
+                @Index(name = "idx_admin_audit_log_user", columnList = "user_id") //행위자별 추적
+        })
 @Getter
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
