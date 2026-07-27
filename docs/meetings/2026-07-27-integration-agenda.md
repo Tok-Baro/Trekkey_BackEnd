@@ -49,7 +49,7 @@
 | [보안 PR #8](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/8) | mergeable, 리뷰·댓글 0건, GitHub CI 없음 | 우선 리뷰·실제 키 교체·병합 |
 | [프론트 통합 PR #1](https://github.com/Tok-Baro/Trekkey/pull/1) | CI 성공·mergeable, 리뷰·댓글 0건 | `main` 대상 Draft, 백엔드 PR #9 계약 뒤 병합 |
 | [백엔드 PR #10](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/10) | 팀원 기반 참가 신청, 리뷰·CI 없이 작성자가 병합 | 사후 코드 리뷰와 프론트 계약 반영 필요 |
-| `feat/review-scoring` | `2d62dcd`, PR 없음, `develop`보다 12커밋 뒤 | 통째 병합하지 않고 심사 코드만 선별 이식 |
+| `feat/review-scoring` | `2d62dcd`, PR 없음, `develop`보다 22커밋 뒤 | 통째 병합하지 않고 심사 코드만 선별 이식 |
 | 백엔드 CI | Java·Solidity·TypeScript 검증 추가 | PR #9 결과 확인 후 병합 |
 | 프론트 CI | Node 22 production build 검증 추가 | PR #1 결과 확인 후 병합 |
 | 브랜치 보호 | Private Free 플랜에서 서버 강제 제한 | 팀 규칙과 CI로 우선 운영 |
@@ -257,7 +257,7 @@ PR #10 반영:
 
 ### 7.5 기존 `feat/review-scoring` 감사 결과
 
-확인한 커밋은 `2d62dcd` 한 건이며 88개 파일, 11,929줄 추가·90줄 삭제 규모다. 브랜치는 `develop`보다 12커밋 뒤에서 갈라져 현재 코드와 20개 파일이 충돌하므로 이 커밋을 통째로 cherry-pick하거나 바로 PR로 올리지 않는다.
+확인한 커밋은 `2d62dcd` 한 건이며 88개 파일, 11,929줄 추가·90줄 삭제 규모다. 최신 `develop`보다 22커밋 뒤이고 현재 코드와 21개 파일이 충돌하므로 이 커밋을 통째로 cherry-pick하거나 바로 PR로 올리지 않는다.
 
 살릴 구현:
 
