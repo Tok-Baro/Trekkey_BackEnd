@@ -1,10 +1,17 @@
 # 2026-07-27 Trekkey 통합 회의 안건
 
 - 회의 목적: 업무 도메인과 Credential·Kaia 앵커링의 연결 계약 확정
-- 기준 브랜치: `fix/anchoring-integration-readiness`
+- 기준 브랜치: `develop` (`9d8959d`)
 - 병합 목표: 백엔드 `develop`, 프론트 `main`
 - 심사관리 기능 책임자: **혁모**
 - 작성자와 기능 책임자: 반드시 구분
+
+## 0. 병합 결과
+
+- [백엔드 보안 PR #8](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/8): `main` 병합 완료 (`5213121`)
+- [백엔드 통합 PR #9](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/9): `develop` 병합 완료 (`9d8959d`)
+- [프론트 통합 PR #1](https://github.com/Tok-Baro/Trekkey/pull/1): 최신 팀원 API 계약 불일치로 Draft 유지
+- 실제 JWT·DB 비밀값 교체, ReviewRound 전환, 공유 DB migration은 후속 작업
 
 ## 1. 회의가 끝날 때 남아야 하는 결과
 
@@ -24,8 +31,8 @@
 | --- | --- |
 | 상장 단위 | 팀당 `AWARD`와 수상 Credential 각 1건 |
 | 개인 이력 | 발급 당시 팀원 전원을 `ANC_CREDENTIAL_SUBJECT`에 snapshot으로 저장 |
-| 팀원 정책 | 가입한 팀원은 이탈·삭제하지 않음, 현재 API 미구현 |
-| 팀원 변경 | 명단 확정 전 추가만 허용, 잘못 만든 팀은 반려 후 재신청, 현재 API 미구현 |
+| 팀원 정책 | 가입한 팀원은 이탈·삭제하지 않음, 백엔드 저장·조회 API 구현 |
+| 팀원 변경 | 명단 확정 전 추가만 허용, 잘못 만든 팀은 반려 후 재신청 |
 | 제출물 | 팀당 `SUBMISSION` 1행, 마감 전 현재 내용을 덮어씀 |
 | 제출 이력 | 별도 제출 버전 테이블과 `sourceVersion`을 만들지 않음 |
 | 파일 해시 | 업로드 스트림에서 SHA-256을 동기 계산 |
@@ -43,14 +50,14 @@
 
 | 항목 | 상태 | 조치 |
 | --- | --- | --- |
-| 백엔드 `develop` | PR #10까지 병합, 팀원 기반 참가 신청 추가 | 통합 PR의 base로 사용 |
-| [백엔드 통합 PR #9](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/9) | 최신 `develop` 통합, mergeable, CI·MySQL 회귀 성공, 리뷰·댓글 0건 | 팀 리뷰어 지정·승인 |
+| 백엔드 `develop` | PR #9까지 병합, 업무 원장·Credential·Kaia adapter·팀원 API 포함 | ReviewRound 전환과 DB migration 진행 |
+| [백엔드 통합 PR #9](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/9) | 2026-07-27 `develop` 병합 완료 (`9d8959d`) | 후속 작업을 별도 PR로 분리 |
 | 기존 백엔드 PR #7 | 종료됨 | PR #9로 대체 완료 |
-| [보안 PR #8](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/8) | mergeable, 리뷰·댓글 0건, GitHub CI 없음 | 우선 리뷰·실제 키 교체·병합 |
-| [프론트 통합 PR #1](https://github.com/Tok-Baro/Trekkey/pull/1) | CI 성공·mergeable, 리뷰·댓글 0건 | `main` 대상 Draft, 백엔드 PR #9 계약 뒤 병합 |
+| [보안 PR #8](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/8) | 2026-07-27 `main` 병합 완료 (`5213121`) | 실제 JWT·DB 비밀값 교체 |
+| [프론트 통합 PR #1](https://github.com/Tok-Baro/Trekkey/pull/1) | CI 성공·mergeable, 최신 팀원 API 계약 불일치 | Draft 유지, 계약 수정과 smoke test 뒤 병합 |
 | [백엔드 PR #10](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/10) | 팀원 기반 참가 신청, 리뷰·CI 없이 작성자가 병합 | 사후 코드 리뷰와 프론트 계약 반영 필요 |
 | `feat/review-scoring` | `2d62dcd`, PR 없음, `develop`보다 22커밋 뒤 | 통째 병합하지 않고 심사 코드만 선별 이식 |
-| 백엔드 CI | Java·Solidity·TypeScript 검증 추가 | PR #9 결과 확인 후 병합 |
+| 백엔드 CI | Java·Solidity·TypeScript 검증 성공 | `develop` 후속 PR에도 유지 |
 | 프론트 CI | Node 22 production build 검증 추가 | PR #1 결과 확인 후 병합 |
 | 브랜치 보호 | Private Free 플랜에서 서버 강제 제한 | 팀 규칙과 CI로 우선 운영 |
 
@@ -567,8 +574,9 @@ Kairos 완료 조건:
 
 ## 18. 병합 승인 체크리스트
 
-- [ ] 보안 PR #8 병합 및 실제 키 교체
-- [ ] 백엔드 통합 PR #9 리뷰어 지정
+- [x] 보안 PR #8 `main` 병합
+- [ ] 실제 JWT·DB 비밀값 교체
+- [x] 백엔드 통합 PR #9 `develop` 병합
 - [ ] 프론트 통합 PR #1 리뷰어 지정
 - [x] Java 전체 테스트 통과
 - [x] Solidity 12개 테스트 통과

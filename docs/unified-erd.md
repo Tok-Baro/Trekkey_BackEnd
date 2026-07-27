@@ -1,14 +1,15 @@
 # Trekkey 통합 ERD
 
-- 기준일: 2026-07-24
-- 범위: 업무 SQL 16개 + Credential·앵커링 SQL 9개
+- 기준일: 2026-07-27
+- 상태: 합의된 목표 ERD. 현재 `develop` 구현과의 차이는 아래 전환 경계를 따른다.
+- 범위: 업무 SQL 16개 + 인증·관리 SQL 3개 + Credential·앵커링 SQL 9개 = 총 28개
 - [확대용 SVG 열기](./assets/trekkey-unified-erd.svg)
 - [Raw Mermaid 원본](./trekkey-unified-erd.mmd)
 - 분리 원장: [공모전·Credential 최종 ERD](./erd.md)
 
 팀 회의에서 업무 SQL과 앵커링 SQL을 한 캔버스로 보기 위한 통합 뷰다. `ANC_*`도 MySQL 테이블이며, Kaia에는 이 테이블이 생성되지 않는다. Kaia는 issuer key, Merkle root, Credential 폐기·대체 상태만 보관한다. 실제 컬럼과 제약을 수정할 때는 분리 원장인 `erd.md`를 먼저 갱신하고 이 뷰를 동기화한다.
 
-> 이 문서는 합의된 목표 스키마다. 2026-07-26 통합 코드의 심사 모델은 아직 `CONTEST_STAGE`/`CONTEST_STAGE_ENTRY`이므로, `REVIEW_ROUND` 전환 PR이 병합되기 전에는 현재 배포 스키마로 간주하지 않는다.
+> 이 문서는 합의된 **목표 스키마**다. 2026-07-27 PR #9가 `develop`에 병합됐지만 실행 코드는 아직 `CONTEST_STAGE`/`CONTEST_STAGE_ENTRY`를 사용한다. `REVIEW_ROUND`/`REVIEW_ROUND_ENTRY`는 후속 심사 모델 전환 PR이 병합되기 전까지 현재 DB 스키마가 아니다. 현재 코드 검증에는 `develop`을, 다음 모델 구현에는 이 문서를 사용한다.
 
 ```mermaid
 erDiagram
@@ -38,6 +39,9 @@ erDiagram
     REVIEW_CRITERION ||--o{ REVIEW_SCORE_ITEM : scores
     REVIEW_ROUND_ENTRY ||--o| AWARD : supports
     TEAM ||--o| AWARD : receives
+    ORGANIZATION ||--o{ ADMIN_INVITATION : issues_invite
+    USER ||--o{ ADMIN_INVITATION : invited_by
+    USER ||--o{ REFRESH_TOKEN : holds
     ORGANIZATION ||--o{ ANC_ISSUER_KEY : owns
     ORGANIZATION ||--o{ ANC_CREDENTIAL : issues
     ORGANIZATION ||--o{ ANC_BATCH : creates
@@ -71,16 +75,18 @@ erDiagram
     USER {
         bigint id PK "사용자 PK"
         bigint organizationId FK "현재 소속 학교"
-        string role "ADMIN/PARTICIPANT"
+        string role "ROOT_ADMIN/ADMIN/PARTICIPANT"
         string memberType "STUDENT/STAFF/FACULTY"
-        string memberStatus "ACTIVE/GRADUATED/WITHDRAWN/TRANSFERRED/INACTIVE"
+        string memberStatus "PENDING_APPROVAL/ACTIVE/GRADUATED/WITHDRAWN/TRANSFERRED/INACTIVE"
         string name "사용자 이름"
         string email UK "로그인 이메일"
         string passwordHash "비밀번호 해시"
-        string studentId "학교 내 학번"
+        string studentId "학교 내 학번, 조직 내 유일"
         string major "학과/전공"
         string department "교직원 부서"
         string position "교직원 직책"
+        int failedLoginCount "로그인 연속 실패 횟수"
+        datetime lockedUntil "로그인 잠금 해제 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -265,6 +271,44 @@ erDiagram
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
+
+    ADMIN_INVITATION {
+        bigint id PK "관리자 초대 PK"
+        bigint organizationId FK "초대 발급 학교"
+        bigint invitedByUserId FK "발급한 ROOT_ADMIN"
+        string email "초대 대상 이메일, 가입 시 일치 검증"
+        string tokenHash UK "초대 토큰 SHA-256, 원문 미저장"
+        string status "ISSUED/USED/EXPIRED/REVOKED"
+        datetime expiresAt "초대 만료, 발급+7일"
+        datetime usedAt "가입 사용 시각"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    ADMIN_AUDIT_LOG {
+        bigint id PK "관리자 감사 로그 PK"
+        bigint userId "행위자 사용자 ID, 의도적으로 FK 미사용"
+        bigint organizationId "행위 조직 ID, 의도적으로 FK 미사용"
+        string action "카테고리.행위 예: contest.create"
+        string targetType "대상 유형"
+        bigint targetId "대상 PK"
+        string detail "변경 요약, 토큰과 개인정보 미포함"
+        string clientIp "요청 IP"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    REFRESH_TOKEN {
+        bigint id PK "리프레시 토큰 PK"
+        bigint userId FK "토큰 소유 사용자"
+        string tokenHash UK "토큰 SHA-256, 원문 미저장"
+        string familyId "로그인 세션 계보"
+        bool revoked "폐기 여부"
+        datetime expiresAt "토큰 만료"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
     ANC_ISSUER_KEY {
         bigint id PK "Issuer key PK"
         bigint organizationId FK "발급 기관"

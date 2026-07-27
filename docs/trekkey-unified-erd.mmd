@@ -61,16 +61,18 @@ erDiagram
     USER {
         bigint id PK "사용자 PK"
         bigint organizationId FK "현재 소속 학교"
-        string role "ADMIN/PARTICIPANT"
+        string role "ROOT_ADMIN/ADMIN/PARTICIPANT"
         string memberType "STUDENT/STAFF/FACULTY"
-        string memberStatus "ACTIVE/GRADUATED/WITHDRAWN/TRANSFERRED/INACTIVE"
+        string memberStatus "PENDING_APPROVAL/ACTIVE/GRADUATED/WITHDRAWN/TRANSFERRED/INACTIVE"
         string name "사용자 이름"
         string email UK "로그인 이메일"
         string passwordHash "비밀번호 해시"
-        string studentId "학교 내 학번"
+        string studentId "학교 내 학번, 조직 내 유일"
         string major "학과/전공"
         string department "교직원 부서"
         string position "교직원 직책"
+        int failedLoginCount "로그인 연속 실패 횟수"
+        datetime lockedUntil "로그인 잠금 해제 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -255,6 +257,44 @@ erDiagram
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
+
+    ADMIN_INVITATION {
+        bigint id PK "관리자 초대 PK"
+        bigint organizationId FK "초대 발급 학교"
+        bigint invitedByUserId FK "발급한 ROOT_ADMIN"
+        string email "초대 대상 이메일, 가입 시 일치 검증"
+        string tokenHash UK "초대 토큰 SHA-256, 원문 미저장"
+        string status "ISSUED/USED/EXPIRED/REVOKED"
+        datetime expiresAt "초대 만료, 발급+7일"
+        datetime usedAt "가입 사용 시각"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    ADMIN_AUDIT_LOG {
+        bigint id PK "관리자 감사 로그 PK"
+        bigint userId "행위자 사용자 ID, 의도적으로 FK 미사용"
+        bigint organizationId "행위 조직 ID, 의도적으로 FK 미사용"
+        string action "카테고리.행위 예: contest.create"
+        string targetType "대상 유형"
+        bigint targetId "대상 PK"
+        string detail "변경 요약, 토큰과 개인정보 미포함"
+        string clientIp "요청 IP"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    REFRESH_TOKEN {
+        bigint id PK "리프레시 토큰 PK"
+        bigint userId FK "토큰 소유 사용자"
+        string tokenHash UK "토큰 SHA-256, 원문 미저장"
+        string familyId "로그인 세션 계보"
+        bool revoked "폐기 여부"
+        datetime expiresAt "토큰 만료"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
     ANC_ISSUER_KEY {
         bigint id PK "Issuer key PK"
         bigint organizationId FK "발급 기관"
@@ -411,38 +451,5 @@ erDiagram
         datetime updatedAt "수정 시각"
     }
 
-    ADMIN_INVITATION {
-        bigint id PK "관리자 초대 PK"
-        bigint organizationId FK "초대 발급 학교"
-        bigint invitedByUserId FK "발급한 ROOT_ADMIN"
-        string email "초대 대상 이메일, 가입 시 일치 검증"
-        string tokenHash UK "초대 토큰 SHA-256, 원문 미저장"
-        string status "ISSUED/USED/EXPIRED/REVOKED"
-        datetime expiresAt "초대 만료, 발급+7일"
-        datetime usedAt "가입 사용 시각"
-        datetime createdAt "생성 시각"
-        datetime updatedAt "수정 시각"
-    }
 
-    ADMIN_AUDIT_LOG {
-        bigint id PK "관리자 감사 로그 PK"
-        bigint userId "행위자 사용자 ID, FK 아님 - 삭제돼도 로그 보존"
-        bigint organizationId "행위 조직 ID, FK 아님"
-        string action "카테고리.행위 예: contest.create"
-        string targetType "대상 유형 CONTEST/STAGE/USER/INVITATION"
-        bigint targetId "대상 PK"
-        string detail "변경 요약, 토큰·개인정보 미포함"
-        string clientIp "요청 IP"
-        datetime createdAt "기록 시각"
-    }
 
-    REFRESH_TOKEN {
-        bigint id PK "리프레시 토큰 PK"
-        bigint userId FK "토큰 소유 사용자"
-        string tokenHash UK "토큰 SHA-256, 원문 미저장"
-        string familyId "로그인 세션 계보, 재사용 감지 시 전체 폐기"
-        bool revoked "폐기 여부"
-        datetime expiresAt "토큰 만료"
-        datetime createdAt "생성 시각"
-        datetime updatedAt "수정 시각"
-    }

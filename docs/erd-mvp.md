@@ -1,8 +1,8 @@
 <aside>
 
-**최종 구현 기준 · 2026-07-21**
+**합의된 목표 구현 기준 · 2026-07-27**
 
-이 페이지를 Trekkey 업무 DB와 Kaia 앵커링의 팀 공통 기준으로 사용한다. 기존 v1·v2 문서는 의사결정 이력이며, 구현이 충돌하면 이 페이지와 최종 ERD를 먼저 갱신한다.
+이 페이지는 `REVIEW_ROUND` 전환 이후의 목표 모델이다. PR #9가 `develop`에 병합됐지만 실행 코드는 아직 `CONTEST_STAGE` 기반이므로, 후속 심사 모델 전환 PR이 병합되기 전에는 현재 DB 스키마로 간주하지 않는다.
 
 </aside>
 
@@ -92,13 +92,14 @@ flowchart LR
 
 ## 4. 전체 통합 ERD
 
-전체 ERD는 **업무 SQL 16개 + 인증·관리자 3개(USER 확장, ADMIN_INVITATION, ADMIN_AUDIT_LOG, REFRESH_TOKEN) + Credential·앵커링 SQL 9개**, 총 28개 테이블로 구성한다. 컬럼까지 포함한 전체 원본은 repo의 [`docs/trekkey-unified-erd.mmd`](./trekkey-unified-erd.mmd)가 정본이다.
+전체 ERD는 **업무 SQL 16개 + 인증·관리 SQL 3개 + Credential·앵커링 SQL 9개**, 총 28개 테이블로 구성한다. `USER`에는 ROOT_ADMIN, 승인 대기, 로그인 잠금 필드를 포함한다. 컬럼까지 포함한 전체 원본은 repo의 [`docs/trekkey-unified-erd.mmd`](./trekkey-unified-erd.mmd)가 정본이다.
 
 ### 엔터티 묶음
 
 | 도메인 | 테이블 | 역할 |
 | --- | --- | --- |
 | 기관·사용자 | ORGANIZATION, USER | 학교 tenant와 사용자 식별 |
+| 인증·관리 | ADMIN_INVITATION, ADMIN_AUDIT_LOG, REFRESH_TOKEN | 관리자 초대, 감사 추적, 로그인 세션 |
 | 대회·참가 | CONTEST, REVIEW_ROUND, TEAM, TEAM_MEMBER | 대회 구조와 확정 참가자 명단 |
 | 작품·심사 | SUBMISSION, SUBMISSION_FILE, REVIEW_ROUND_ENTRY, REVIEW 계열 | 최종 작품, 원점수, 공식 라운드 판정 |
 | 수상 | AWARD | 공식 ENTRY를 근거로 한 팀 단위 상장 |

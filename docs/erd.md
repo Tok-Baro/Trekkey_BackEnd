@@ -1,18 +1,19 @@
 # Trekkey 공모전·Credential 최종 ERD
 
-- 기준일: 2026-07-24
-- 상태: 목표 ERD 확정, 통합 코드 정합성 작업 중
+- 기준일: 2026-07-27
+- 상태: 목표 ERD 확정. 현재 `develop`은 `CONTEST_STAGE` 기반이며 Review Round 전환 전이다.
 - 통합 보기: [업무·블록체인 전체 ERD](./unified-erd.md)
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 상세 설계: [블록체인 앵커링 설계](./blockchain-anchoring-architecture.md)
 
-> 2026-07-26 통합 코드의 심사 모델은 아직 `CONTEST_STAGE`/`CONTEST_STAGE_ENTRY`다. 이 문서의 `REVIEW_ROUND` 모델은 합의된 목표이며, 전환 PR이 병합되기 전에는 현재 배포 스키마로 간주하지 않는다.
+> 2026-07-27 PR #9가 `develop`에 병합됐지만 실행 코드는 아직 `CONTEST_STAGE`/`CONTEST_STAGE_ENTRY`다. 이 문서의 `REVIEW_ROUND` 모델은 합의된 목표이며, 후속 심사 모델 전환 PR이 병합되기 전에는 현재 DB 스키마로 간주하지 않는다.
 
 ## 1. 범위
 
 현재 ERD는 다음 기능을 구현 범위로 고정한다.
 
 - 학교/기관별 사용자와 대회 관리
+- 관리자 초대, 로그인 세션, 관리자 감사 로그
 - 팀 및 확정 팀원 명단 관리
 - 팀당 최종 제출물 한 건 관리
 - 0..N개의 Review Round와 라운드별 공식 결과 관리
@@ -75,16 +76,18 @@ erDiagram
     USER {
         bigint id PK "사용자 PK"
         bigint organizationId FK "현재 소속 학교"
-        string role "ADMIN/PARTICIPANT"
+        string role "ROOT_ADMIN/ADMIN/PARTICIPANT"
         string memberType "STUDENT/STAFF/FACULTY"
-        string memberStatus "ACTIVE/GRADUATED/WITHDRAWN/TRANSFERRED/INACTIVE"
+        string memberStatus "PENDING_APPROVAL/ACTIVE/GRADUATED/WITHDRAWN/TRANSFERRED/INACTIVE"
         string name "사용자 이름"
         string email UK "로그인 이메일"
         string passwordHash "비밀번호 해시"
-        string studentId "학교 내 학번"
+        string studentId "학교 내 학번, 조직 내 유일"
         string major "학과/전공"
         string department "교직원 부서"
         string position "교직원 직책"
+        int failedLoginCount "로그인 연속 실패 횟수"
+        datetime lockedUntil "로그인 잠금 해제 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -271,7 +274,65 @@ erDiagram
     }
 ```
 
-## 3. Credential 및 앵커링 SQL ERD
+## 3. 인증 및 관리 SQL ERD
+
+`ADMIN_INVITATION`과 `REFRESH_TOKEN`은 실제 인증 흐름에 참여하는 원장이다. `ADMIN_AUDIT_LOG`는 사용자나 조직이 삭제돼도 감사 증거를 남기기 위해 의도적으로 FK를 사용하지 않는다.
+
+```mermaid
+erDiagram
+    ORGANIZATION ||--o{ ADMIN_INVITATION : issues_invite
+    USER ||--o{ ADMIN_INVITATION : invited_by
+    USER ||--o{ REFRESH_TOKEN : holds
+
+    ORGANIZATION {
+        bigint id PK "학교/기관 PK"
+    }
+
+    USER {
+        bigint id PK "사용자 PK"
+    }
+
+    ADMIN_INVITATION {
+        bigint id PK "관리자 초대 PK"
+        bigint organizationId FK "초대 발급 학교"
+        bigint invitedByUserId FK "발급한 ROOT_ADMIN"
+        string email "초대 대상 이메일"
+        string tokenHash UK "초대 토큰 SHA-256"
+        string status "ISSUED/USED/EXPIRED/REVOKED"
+        datetime expiresAt "초대 만료"
+        datetime usedAt "가입 사용 시각"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    ADMIN_AUDIT_LOG {
+        bigint id PK "관리자 감사 로그 PK"
+        bigint userId "행위자 ID, FK 미사용"
+        bigint organizationId "행위 조직 ID, FK 미사용"
+        string action "카테고리.행위"
+        string targetType "대상 유형"
+        bigint targetId "대상 PK"
+        string detail "비민감 변경 요약"
+        string clientIp "요청 IP"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+
+    REFRESH_TOKEN {
+        bigint id PK "리프레시 토큰 PK"
+        bigint userId FK "토큰 소유 사용자"
+        string tokenHash UK "토큰 SHA-256"
+        string familyId "로그인 세션 계보"
+        bool revoked "폐기 여부"
+        datetime expiresAt "토큰 만료"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
+    }
+```
+
+상세 인증·관리 정책은 [`ADMIN_SECURITY.md`](./ADMIN_SECURITY.md)를 따른다.
+
+## 4. Credential 및 앵커링 SQL ERD
 
 온체인 mapping은 SQL 테이블이 아니다. 아래 `ANC_*` 테이블은 Credential 스냅샷, Merkle proof, 학교 승인 서명, Kaia 트랜잭션 영수증을 저장하는 off-chain 원장이다.
 
@@ -482,7 +543,7 @@ erDiagram
     }
 ```
 
-## 4. 업무 원장 규칙
+## 5. 업무 원장 규칙
 
 ### 사용자 조회
 
@@ -549,7 +610,7 @@ erDiagram
 - AWARD가 하나라도 `CONFIRMED`된 뒤에는 Review Round를 추가, 삭제, 재정렬할 수 없다.
 - `NOT_SELECTED`, `WITHDRAWN`, `DISQUALIFIED` ENTRY에는 수상을 확정할 수 없다.
 
-## 5. Credential 및 앵커 원장 규칙
+## 6. Credential 및 앵커 원장 규칙
 
 ### 다형성 FK
 
@@ -592,7 +653,7 @@ erDiagram
 - V1은 batch 전체 revoke를 지원하지 않고 개별 Credential `REVOKED`와 `SUPERSEDED`만 지원한다.
 - 대체 발급은 새 Credential 앵커 확인 후 기존 Credential을 `SUPERSEDED` 처리한다.
 
-## 6. JPA 및 구현 기준
+## 7. JPA 및 구현 기준
 
 - 업무 도메인은 단방향 `ManyToOne(fetch = FetchType.LAZY)`를 우선한다. 앵커링 모듈은 장기 증거의 불변성과 모듈 경계를 위해 FK ID를 scalar로 보관한다.
 - 초기 구현에서는 `@ManyToMany`와 부모 컬렉션 양방향 매핑을 사용하지 않는다.
@@ -602,7 +663,7 @@ erDiagram
 - 학교 승인 서명 저장과 chain transaction·anchor outbox 생성은 한 DB 트랜잭션으로 처리한다.
 - 학교 issuer private key는 백엔드에 저장하지 않는다. Kairos 개발용 relayer만 환경변수를 사용하고 운영 relayer는 KMS/HSM adapter로 교체한다.
 
-## 7. 후속 확장
+## 8. 후속 확장
 
 | 요구사항 | 확장 시 추가할 모델 |
 | --- | --- |

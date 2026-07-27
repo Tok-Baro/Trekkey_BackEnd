@@ -140,7 +140,7 @@ flowchart LR
 
 개인전도 구성원 한 명을 가진 팀으로 처리한다. 따라서 팀전과 개인전이 같은 참가·수상·Credential 파이프라인을 사용한다.
 
-## 4. 업무 SQL 축약 ERD
+## 4. 업무·인증관리 SQL 축약 ERD
 
 ```mermaid
 erDiagram
@@ -170,9 +170,12 @@ erDiagram
     REVIEW_CRITERION ||--o{ REVIEW_SCORE_ITEM : scores
     REVIEW_ROUND_ENTRY ||--o| AWARD : supports
     TEAM ||--o| AWARD : receives
+    ORGANIZATION ||--o{ ADMIN_INVITATION : issues_invite
+    USER ||--o{ ADMIN_INVITATION : invited_by
+    USER ||--o{ REFRESH_TOKEN : holds
 ```
 
-상세 컬럼, `UNIQUE`, `CHECK`, 잠금 규칙은 [최종 ERD의 업무 SQL](./erd.md#2-업무-sql-erd)을 따른다.
+`ADMIN_AUDIT_LOG`는 삭제 이후에도 증거를 보존하기 위해 사용자·조직 FK 없이 독립 저장한다. 상세 컬럼, `UNIQUE`, `CHECK`, 잠금 규칙은 [최종 ERD의 업무 SQL](./erd.md#2-업무-sql-erd)과 [인증·관리 SQL](./erd.md#3-인증-및-관리-sql-erd)을 따른다.
 
 ## 5. Credential·앵커링 SQL 축약 ERD
 
