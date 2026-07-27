@@ -6,7 +6,7 @@
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 상세 설계: [블록체인 앵커링 설계](./blockchain-anchoring-architecture.md)
 
-> 2026-07-27 `develop`과 PR #9의 실행 코드는 아직 `CONTEST_STAGE`/`CONTEST_STAGE_ENTRY`다. 이 문서의 `REVIEW_ROUND` 모델은 합의된 목표이며, 후속 심사 모델 전환 PR이 병합되기 전에는 현재 DB 스키마로 간주하지 않는다.
+> 2026-07-27 PR #9가 `develop`에 병합됐지만 실행 코드는 아직 `CONTEST_STAGE`/`CONTEST_STAGE_ENTRY`다. 이 문서의 `REVIEW_ROUND` 모델은 합의된 목표이며, 후속 심사 모델 전환 PR이 병합되기 전에는 현재 DB 스키마로 간주하지 않는다.
 
 ## 1. 범위
 
