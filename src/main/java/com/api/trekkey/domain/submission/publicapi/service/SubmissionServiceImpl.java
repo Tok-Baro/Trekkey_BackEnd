@@ -84,9 +84,10 @@ public class SubmissionServiceImpl implements SubmissionService {
                 throw new CustomException(SubmissionErrorResponseCode.SUBMISSION_FINALIZED);
             }
             // 기존 DB 행은 현재 트랜잭션에서 교체하고 객체는 커밋 후 삭제한다.
-            submissionFileRepository.findAllBySubmissionId(submission.getId())
+            //현재읽기(FOR UPDATE)로 조회해야 잠금 대기 중 커밋된 직전 파일도 보인다 (RR 스냅샷 누락 방지)
+            submissionFileRepository.findAllBySubmissionIdForUpdate(submission.getId())
                     .forEach(file -> previousStorageKeys.add(file.getStorageKey()));
-            submissionFileRepository.deleteAllBySubmissionId(submission.getId());
+            submissionFileRepository.deleteAllBySubmissionIdBulk(submission.getId());
             submission.overwrite(title.trim(), now);
         }
 

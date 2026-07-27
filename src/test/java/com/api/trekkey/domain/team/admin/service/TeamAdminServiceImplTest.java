@@ -119,7 +119,7 @@ class TeamAdminServiceImplTest {
         assertThatThrownBy(() -> teamAdminService.getTeams(100L, "contest-pub-1", null))
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(ContestErrorResponseCode.CONTEST_FORBIDDEN);
+                .isEqualTo(ContestErrorResponseCode.CONTEST_NOT_FOUND);
     }
 
     @Test
