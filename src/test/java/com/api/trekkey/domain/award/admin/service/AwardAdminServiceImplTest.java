@@ -20,12 +20,12 @@ import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.StageStatus;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
+import com.api.trekkey.domain.credential.integration.AwardCredentialIssuer;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.review.entity.ContestStageEntry;
 import com.api.trekkey.domain.review.entity.DecisionType;
 import com.api.trekkey.domain.review.entity.EntryStatus;
 import com.api.trekkey.domain.review.repository.ContestStageEntryRepository;
-import com.api.trekkey.domain.submission.entity.IntegrityStatus;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
 import com.api.trekkey.domain.team.entity.Team;
@@ -33,7 +33,10 @@ import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
@@ -64,6 +67,9 @@ class AwardAdminServiceImplTest {
     private AwardRepository awardRepository;
 
     @Mock
+    private AwardCredentialIssuer awardCredentialIssuer;
+
+    @Mock
     private AdminAuditLogger adminAuditLogger;
 
     private AwardAdminServiceImpl awardAdminService;
@@ -77,7 +83,8 @@ class AwardAdminServiceImplTest {
     void setUp() {
         awardAdminService = new AwardAdminServiceImpl(
                 userRepository, contestRepository, contestStageRepository,
-                entryRepository, awardRepository, adminAuditLogger);
+                entryRepository, awardRepository, awardCredentialIssuer, adminAuditLogger,
+                Clock.fixed(Instant.parse("2026-07-26T12:00:00Z"), ZoneOffset.UTC));
 
         organization = mock(Organization.class);
         lenient().when(organization.getId()).thenReturn(1L);
@@ -127,6 +134,8 @@ class AwardAdminServiceImplTest {
         assertThat(result).hasSize(2);
         assertThat(result.get(0).prize()).isEqualTo("대상");
         assertThat(result.get(0).teamName()).isEqualTo("팀A");
+        assertThat(result.get(0).contestPublicId()).isEqualTo("contest-pub-1");
+        assertThat(result.get(0).teamPublicId()).isEqualTo("team-팀A");
         assertThat(result.get(1).prize()).isEqualTo("최우수상");
         assertThat(result.get(1).teamName()).isEqualTo("팀B");
         assertThat(result.get(0).certificateNo()).matches("\\d{4}-C200-001");
@@ -165,8 +174,10 @@ class AwardAdminServiceImplTest {
         List<AwardRes> result = awardAdminService.confirmAwards(100L, "contest-pub-1");
 
         assertThat(result.get(0).status()).isEqualTo(AwardStatus.CONFIRMED);
-        assertThat(result.get(0).confirmedAt()).isNotNull();
+        assertThat(result.get(0).confirmedAt())
+                .isEqualTo(LocalDateTime.of(2026, 7, 26, 12, 0));
         verify(contest).changeStatus(ContestStatus.AWARDED);
+        verify(awardCredentialIssuer).issueForConfirmedAward(candidate); //확정과 같은 트랜잭션에서 Credential 발급
     }
 
     @Test
@@ -186,13 +197,14 @@ class AwardAdminServiceImplTest {
 
     private ContestStageEntry entryFixture(int rankNo, String teamName) {
         Team team = mock(Team.class);
+        lenient().when(team.getPublicId()).thenReturn("team-" + teamName);
         lenient().when(team.getName()).thenReturn(teamName);
+        lenient().when(team.getContest()).thenReturn(contest);
         Submission submission = Submission.builder()
                 .publicId("sub-" + teamName)
                 .team(team)
                 .title(teamName + " 작품")
                 .status(SubmissionStatus.SUBMITTED)
-                .integrityStatus(IntegrityStatus.READY)
                 .submittedAt(LocalDateTime.now())
                 .build();
         ContestStageEntry entry = ContestStageEntry.builder()
@@ -207,10 +219,11 @@ class AwardAdminServiceImplTest {
     }
 
     private Award awardFixture(AwardStatus status) {
+        ContestStageEntry entry = entryFixture(1, "팀A");
         return Award.builder()
                 .publicId("award-pub-1")
-                .contestStageEntry(entryFixture(1, "팀A"))
-                .team(entryFixture(1, "팀A").getSubmission().getTeam())
+                .contestStageEntry(entry)
+                .team(entry.getSubmission().getTeam())
                 .awardRankNo(1)
                 .prize("대상")
                 .status(status)

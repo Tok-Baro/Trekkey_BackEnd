@@ -14,6 +14,7 @@ import com.api.trekkey.domain.contest.entity.StageStatus;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
+import com.api.trekkey.domain.credential.integration.AwardCredentialIssuer;
 import com.api.trekkey.domain.review.entity.ContestStageEntry;
 import com.api.trekkey.domain.review.entity.EntryStatus;
 import com.api.trekkey.domain.review.repository.ContestStageEntryRepository;
@@ -21,7 +22,9 @@ import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -43,7 +46,9 @@ public class AwardAdminServiceImpl implements AwardAdminService {
     private final ContestStageRepository contestStageRepository;
     private final ContestStageEntryRepository entryRepository;
     private final AwardRepository awardRepository;
+    private final AwardCredentialIssuer awardCredentialIssuer;
     private final AdminAuditLogger adminAuditLogger;
+    private final Clock clock;
 
     @Override
     @Transactional
@@ -79,7 +84,7 @@ public class AwardAdminServiceImpl implements AwardAdminService {
         awardRepository.flush();
 
         int awardLimit = Math.min(contest.getAwardCount(), passedEntries.size());
-        int year = LocalDateTime.now().getYear();
+        int year = nowUtc().getYear();
         List<Award> awards = new ArrayList<>();
         for (int i = 0; i < awardLimit; i++) {
             ContestStageEntry entry = passedEntries.get(i);
@@ -124,10 +129,12 @@ public class AwardAdminServiceImpl implements AwardAdminService {
             throw new CustomException(AwardErrorResponseCode.AWARD_NO_CANDIDATE);
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = nowUtc();
         candidates.forEach(award -> award.confirm(now));
         //수상 확정 → 대회 종결 상태 (Credential 발급 원천 완성, erd-mvp §6)
         contest.changeStatus(ContestStatus.AWARDED);
+        //확정과 수상 Credential 발급을 한 트랜잭션으로 — 발급 실패 시 확정도 롤백 (erd-mvp §6 원자성)
+        candidates.forEach(awardCredentialIssuer::issueForConfirmedAward);
 
         adminAuditLogger.log(admin.getId(), admin.getOrganization().getId(), AuditAction.AWARD_CONFIRM,
                 TARGET_TYPE_CONTEST, contest.getId(), contest.getTitle() + " " + candidates.size() + "건 확정");
@@ -153,5 +160,9 @@ public class AwardAdminServiceImpl implements AwardAdminService {
         if (!contest.getOrganization().getId().equals(admin.getOrganization().getId())) {
             throw new CustomException(ContestErrorResponseCode.CONTEST_FORBIDDEN);
         }
+    }
+
+    private LocalDateTime nowUtc() {
+        return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
     }
 }

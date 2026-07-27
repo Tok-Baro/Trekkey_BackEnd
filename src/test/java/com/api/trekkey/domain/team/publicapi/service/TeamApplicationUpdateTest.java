@@ -80,7 +80,7 @@ class TeamApplicationUpdateTest {
     }
 
     @Test
-    @DisplayName("보완 요청 상태의 신청을 수정하면 검토 중으로 전환되고 버전이 증가한다")
+    @DisplayName("보완요청 상태에서 수정하면 검토중으로 전환된다")
     void updateApplication_revisionRequestedBecomesPending() {
         Team team = teamFixture(TeamStatus.REVISION_REQUESTED, null);
         given(teamRepository.findByContestPublicIdAndLeaderUserId("contest-public-id", 10L))
@@ -92,7 +92,6 @@ class TeamApplicationUpdateTest {
                 updateReq(List.of()));
 
         assertThat(team.getStatus()).isEqualTo(TeamStatus.PENDING);
-        assertThat(team.getSourceVersion()).isEqualTo(2L);
         assertThat(team.getName()).isEqualTo("수정된 팀명");
         assertThat(team.getMemberCount()).isEqualTo(1);
     }
@@ -156,14 +155,14 @@ class TeamApplicationUpdateTest {
     }
 
     @Test
-    @DisplayName("팀원 변경 시 제외된 팀원은 삭제하고 새 팀원은 추가하며 인원수를 동기화한다")
+    @DisplayName("팀원 수정은 기존 팀원을 유지하고 새 팀원만 추가한다")
     @SuppressWarnings("unchecked")
-    void updateApplication_synchronizesMembersAndMemberCount() {
+    void updateApplication_addsMembersWithoutRemovingExistingMembers() {
         Team team = teamFixture(TeamStatus.PENDING, null);
-        User removedUser = User.builder().id(11L).build();
+        User omittedUser = User.builder().id(11L).build();
         User retainedUser = User.builder().id(12L).build();
         User addedUser = User.builder().id(13L).build();
-        TeamMember removedMember = teamMember(team, removedUser);
+        TeamMember omittedMember = teamMember(team, omittedUser);
         TeamMember retainedMember = teamMember(team, retainedUser);
         given(organization.getId()).willReturn(2L);
         given(teamRepository.findByContestPublicIdAndLeaderUserId("contest-public-id", 10L))
@@ -176,7 +175,7 @@ class TeamApplicationUpdateTest {
                 .willReturn(List.of(retainedUser, addedUser));
         given(teamMemberRepository.existsByTeamIdAndUserId(1L, 10L)).willReturn(true);
         given(teamMemberRepository.findAllByTeamIdAndRole(1L, TeamMemberRole.MEMBER))
-                .willReturn(List.of(removedMember, retainedMember));
+                .willReturn(List.of(omittedMember, retainedMember));
 
         teamApplicationService.updateApplication(
                 10L,
@@ -187,7 +186,7 @@ class TeamApplicationUpdateTest {
                 20L,
                 List.of(12L, 13L, 10L),
                 1L);
-        verify(teamMemberRepository).deleteAll(List.of(removedMember));
+        verify(teamMemberRepository, never()).deleteAll(any());
         ArgumentCaptor<List<TeamMember>> addedMembersCaptor =
                 ArgumentCaptor.forClass(List.class);
         verify(teamMemberRepository).saveAll(addedMembersCaptor.capture());
@@ -197,6 +196,40 @@ class TeamApplicationUpdateTest {
             assertThat(addedMember.getRole()).isEqualTo(TeamMemberRole.MEMBER);
         });
         verify(teamMemberRepository, never()).save(any(TeamMember.class));
+        assertThat(team.getMemberCount()).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("기존 팀원과 추가 요청의 합계가 최대 인원을 넘으면 거부한다")
+    void updateApplication_throwsWhenFinalMemberCountExceedsLimit() {
+        Team team = teamFixture(TeamStatus.PENDING, null);
+        User addedUser = User.builder().id(15L).build();
+        given(organization.getId()).willReturn(2L);
+        given(teamRepository.findByContestPublicIdAndLeaderUserId("contest-public-id", 10L))
+                .willReturn(Optional.of(team));
+        given(userRepository.findAllByIdInAndOrganizationIdAndRoleAndStatus(
+                List.of(15L),
+                2L,
+                UserRole.PARTICIPANT,
+                UserStatus.ACTIVE))
+                .willReturn(List.of(addedUser));
+        given(teamMemberRepository.findAllByTeamIdAndRole(1L, TeamMemberRole.MEMBER))
+                .willReturn(List.of(
+                        teamMember(team, User.builder().id(11L).build()),
+                        teamMember(team, User.builder().id(12L).build()),
+                        teamMember(team, User.builder().id(13L).build()),
+                        teamMember(team, User.builder().id(14L).build())));
+
+        assertThatThrownBy(() -> teamApplicationService.updateApplication(
+                10L,
+                "contest-public-id",
+                updateReq(List.of(15L))))
+                .isInstanceOf(CustomException.class)
+                .extracting("baseResponseCode")
+                .isEqualTo(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_COUNT_INVALID);
+
+        verify(teamMemberRepository, never()).save(any(TeamMember.class));
+        verify(teamMemberRepository, never()).saveAll(any());
         assertThat(team.getMemberCount()).isEqualTo(3);
     }
 

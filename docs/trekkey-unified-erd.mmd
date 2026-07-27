@@ -4,7 +4,7 @@ erDiagram
     USER ||--o{ CONTEST : owns
     CONTEST ||--o{ CONTEST_LIKE : receives
     USER ||--o{ CONTEST_LIKE : likes
-    CONTEST ||--|{ CONTEST_STAGE : has_stages
+    CONTEST ||--o{ REVIEW_ROUND : has_rounds
     CONTEST ||--o{ TEAM : accepts
     USER ||--o{ TEAM : leads
     TEAM ||--|{ TEAM_MEMBER : has_members
@@ -12,18 +12,18 @@ erDiagram
     TEAM ||--o| SUBMISSION : submits
     SUBMISSION ||--o{ SUBMISSION_FILE : contains
     USER ||--o{ SUBMISSION_FILE : uploads
-    CONTEST_STAGE ||--o{ CONTEST_STAGE_ENTRY : records
-    SUBMISSION ||--o{ CONTEST_STAGE_ENTRY : enters
-    USER o|--o{ CONTEST_STAGE_ENTRY : decides
-    CONTEST_STAGE ||--o{ REVIEW_CRITERION : defines
+    REVIEW_ROUND ||--o{ REVIEW_ROUND_ENTRY : records
+    SUBMISSION ||--o{ REVIEW_ROUND_ENTRY : enters
+    USER o|--o{ REVIEW_ROUND_ENTRY : decides
+    REVIEW_ROUND ||--o{ REVIEW_CRITERION : defines
     CONTEST ||--o{ CONTEST_JUDGE : assigns
     USER o|--o{ CONTEST_JUDGE : links
     CONTEST_JUDGE ||--o{ REVIEW_ASSIGNMENT : receives
-    CONTEST_STAGE_ENTRY ||--o{ REVIEW_ASSIGNMENT : is_reviewed
+    REVIEW_ROUND_ENTRY ||--o{ REVIEW_ASSIGNMENT : is_reviewed
     REVIEW_ASSIGNMENT ||--o| REVIEW : completes
     REVIEW ||--|{ REVIEW_SCORE_ITEM : contains
     REVIEW_CRITERION ||--o{ REVIEW_SCORE_ITEM : scores
-    CONTEST_STAGE_ENTRY ||--o| AWARD : supports
+    REVIEW_ROUND_ENTRY ||--o| AWARD : supports
     TEAM ||--o| AWARD : receives
     ORGANIZATION ||--o{ ADMIN_INVITATION : issues_invite
     USER ||--o{ ADMIN_INVITATION : invited_by
@@ -39,7 +39,7 @@ erDiagram
     ANC_CREDENTIAL ||--|{ ANC_CREDENTIAL_SUBJECT : snapshots
     USER o|--o{ ANC_CREDENTIAL_SUBJECT : identifies
     TEAM o|--o{ ANC_CREDENTIAL_SUBJECT : represents
-    ANC_CREDENTIAL ||--o{ ANC_CREDENTIAL_STATUS_EVENT : changes
+    ANC_CREDENTIAL ||--o| ANC_CREDENTIAL_STATUS_EVENT : changes
     ANC_CREDENTIAL o|--o{ ANC_CREDENTIAL_STATUS_EVENT : supersedes_with
     USER o|--o{ ANC_CREDENTIAL_STATUS_EVENT : acts
     ANC_ISSUER_KEY ||--o{ ANC_CREDENTIAL_STATUS_EVENT : approves
@@ -84,7 +84,7 @@ erDiagram
         bigint ownerUserId FK "담당 관리자"
         string title "대회명"
         string department "주관 부서 스냅샷"
-        string status "DRAFT/OPEN/IN_PROGRESS/COMPLETED/CANCELED"
+        string status "DRAFT/PUBLISHED/COMPLETED/CANCELED"
         string participationType "TEAM/INDIVIDUAL/MIXED"
         int awardCount "예정 시상 수"
         datetime applicationStartsAt "신청 시작"
@@ -108,21 +108,19 @@ erDiagram
         datetime createdAt "좋아요 시각"
     }
 
-    CONTEST_STAGE {
-        bigint id PK "대회 단계 PK"
+    REVIEW_ROUND {
+        bigint id PK "심사 라운드 PK"
         bigint contestId FK "소속 대회"
-        string name "단계명"
-        string stageType "APPLY/SUBMISSION/REVIEW/PRESENTATION/AWARD/CUSTOM"
-        int sequenceNo "대회 내 순서"
-        string status "WAITING/OPEN/IN_REVIEW/FINALIZED"
-        string targetType "ALL_SUBMISSIONS/PREVIOUS_PASSED/MANUAL"
-        string passRule "TOP_N/MIN_SCORE/MANUAL/FINAL"
-        int passCount "통과 팀 수"
-        decimal minScore "최소 통과 점수"
-        datetime startAt "단계 시작"
-        datetime endAt "단계 종료"
-        datetime dueAt "단계 마감"
-        text description "단계 설명"
+        int roundNo "대회 내 심사 순서"
+        string name "심사 라운드명"
+        string status "PREPARING/OPEN/FINALIZED"
+        datetime startsAt "심사 시작 시각"
+        datetime endsAt "심사 종료 시각"
+        string targetType "ALL_SUBMISSIONS/PREVIOUS_SELECTED/MANUAL"
+        string decisionRule "TOP_N/MIN_SCORE/MANUAL"
+        int selectCount "선정 팀 수"
+        decimal minScore "최소 선정 점수"
+        datetime finalizedAt "라운드 확정 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -140,7 +138,6 @@ erDiagram
         string contactEmail "신청 연락 이메일"
         string phone "신청 연락처"
         text motivation "지원 동기"
-        bigint sourceVersion "Credential source 버전"
         datetime participationFinalizedAt "명단 확정 및 잠금 시각"
         datetime createdAt "신청 생성 시각"
         datetime updatedAt "수정 시각"
@@ -149,9 +146,8 @@ erDiagram
     TEAM_MEMBER {
         bigint id PK "팀 구성원 PK"
         bigint teamId FK "소속 팀"
-        bigint userId FK "구성 사용자, 팀 내 유일 - 탈퇴는 행 삭제, 이력은 Credential snapshot 담당"
+        bigint userId FK "구성 사용자, 가입 후 삭제 금지"
         string roleCode "LEADER/MEMBER"
-        datetime joinedAt "팀 참가 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -162,8 +158,6 @@ erDiagram
         bigint teamId FK "제출 팀, 팀당 한 건"
         string title "작품명"
         string status "DRAFT/SUBMITTED/WITHDRAWN"
-        bigint sourceVersion "재제출마다 증가, Credential source 버전"
-        string integrityStatus "STALE/READY, 해시 워커 최신 버전 확인용"
         datetime finalizedAt "제출 수정 마감 시각"
         datetime submittedAt "최근 제출 시각"
         datetime createdAt "최초 제출 시각"
@@ -183,11 +177,11 @@ erDiagram
         datetime updatedAt "수정 시각"
     }
 
-    CONTEST_STAGE_ENTRY {
+    REVIEW_ROUND_ENTRY {
         bigint id PK "라운드 참가 및 공식 판정 PK"
-        bigint contestStageId FK "평가 라운드"
+        bigint reviewRoundId FK "평가 라운드"
         bigint submissionId FK "대상 제출물"
-        string status "ELIGIBLE/IN_REVIEW/PASSED/FAILED/WITHDRAWN/DISQUALIFIED"
+        string status "ELIGIBLE/IN_REVIEW/SELECTED/NOT_SELECTED/WITHDRAWN/DISQUALIFIED"
         decimal finalScore "확정 합산 점수"
         int rankNo "라운드 확정 순위"
         string decisionType "RULE/MANUAL"
@@ -200,7 +194,7 @@ erDiagram
 
     REVIEW_CRITERION {
         bigint id PK "평가 기준 PK"
-        bigint contestStageId FK "적용 라운드"
+        bigint reviewRoundId FK "적용 라운드"
         string code "라운드 내 기준 코드"
         string label "화면 표시명"
         int maxScore "최대 점수"
@@ -225,7 +219,7 @@ erDiagram
     REVIEW_ASSIGNMENT {
         bigint id PK "심사 배정 PK"
         bigint contestJudgeId FK "배정 심사위원"
-        bigint contestStageEntryId FK "라운드별 심사 대상"
+        bigint reviewRoundEntryId FK "라운드별 심사 대상"
         string status "ASSIGNED/COMPLETED/CANCELED"
         datetime assignedAt "배정 시각"
         datetime dueAt "심사 마감"
@@ -253,17 +247,17 @@ erDiagram
     AWARD {
         bigint id PK "수상 결과 PK"
         string publicId UK "수상 공개 ID"
-        bigint contestStageEntryId FK "수상 근거 공식 결과"
+        bigint reviewRoundEntryId FK "수상 근거 공식 결과"
         bigint teamId FK "수상 팀 및 조회용 FK"
         int awardRankNo "수상 순위"
         string prize "상격"
         string status "CANDIDATE/CONFIRMED/HELD"
         string certificateNo UK "팀 단위 상장 번호"
-        bigint sourceVersion "Credential source 버전"
         datetime confirmedAt "수상 확정 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
+
     ADMIN_INVITATION {
         bigint id PK "관리자 초대 PK"
         bigint organizationId FK "초대 발급 학교"
@@ -279,21 +273,22 @@ erDiagram
 
     ADMIN_AUDIT_LOG {
         bigint id PK "관리자 감사 로그 PK"
-        bigint userId "행위자 사용자 ID, FK 아님 - 삭제돼도 로그 보존"
-        bigint organizationId "행위 조직 ID, FK 아님"
+        bigint userId "행위자 사용자 ID, 의도적으로 FK 미사용"
+        bigint organizationId "행위 조직 ID, 의도적으로 FK 미사용"
         string action "카테고리.행위 예: contest.create"
-        string targetType "대상 유형 CONTEST/STAGE/USER/INVITATION"
+        string targetType "대상 유형"
         bigint targetId "대상 PK"
-        string detail "변경 요약, 토큰·개인정보 미포함"
+        string detail "변경 요약, 토큰과 개인정보 미포함"
         string clientIp "요청 IP"
-        datetime createdAt "기록 시각"
+        datetime createdAt "생성 시각"
+        datetime updatedAt "수정 시각"
     }
 
     REFRESH_TOKEN {
         bigint id PK "리프레시 토큰 PK"
         bigint userId FK "토큰 소유 사용자"
         string tokenHash UK "토큰 SHA-256, 원문 미저장"
-        string familyId "로그인 세션 계보, 재사용 감지 시 전체 폐기"
+        string familyId "로그인 세션 계보"
         bool revoked "폐기 여부"
         datetime expiresAt "토큰 만료"
         datetime createdAt "생성 시각"
@@ -340,7 +335,6 @@ erDiagram
         bigint submissionId FK "작품 원천"
         bigint awardId FK "수상 원천"
         string sourcePublicId "원천 공개 ID 스냅샷"
-        bigint sourceVersion "발급에 사용한 원천 버전"
         binary sourceFingerprint UK "의미 기반 멱등 해시"
         datetime sourceFinalizedAt "원천 확정 시각"
     }
@@ -424,10 +418,13 @@ erDiagram
         string contractVersion "계약 버전"
         binary txHash "트랜잭션 해시 BINARY(32)"
         bigint txNonce "relayer nonce"
+        binary relayerAddress "relayer 주소 BINARY(20)"
+        blob signedRawTransaction "재방송할 서명 raw transaction"
+        datetime preparedAt "raw transaction 선저장 시각"
         bigint blockNumber "확정 블록 번호"
         binary blockHash "확정 블록 해시 BINARY(32)"
         int eventLogIndex "계약 이벤트 log index"
-        string status "PENDING/SUBMITTED/CONFIRMED/UNKNOWN/FAILED"
+        string status "PENDING/PREPARED/SUBMITTED/CONFIRMED/UNKNOWN/FAILED"
         string lastErrorCode "마지막 오류 코드"
         datetime submittedAt "전송 시각"
         datetime confirmedAt "확정 시각"
