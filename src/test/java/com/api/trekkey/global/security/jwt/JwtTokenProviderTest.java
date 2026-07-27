@@ -138,6 +138,18 @@ class JwtTokenProviderTest {
     }
 
     @Test
+    @DisplayName("Base64 형식이 아닌 JWT secret은 애플리케이션 초기화를 거부한다")
+    void initialization_rejectsInvalidBase64Secret() {
+        JwtProperties invalidProperties = new JwtProperties();
+        invalidProperties.setSecretKey("not-valid-base64%%%");
+        JwtTokenProvider insecureProvider = new JwtTokenProvider(invalidProperties);
+
+        assertThatThrownBy(insecureProvider::afterPropertiesSet)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("valid Base64");
+    }
+
+    @Test
     @DisplayName("HS512에 부족한 JWT secret은 애플리케이션 초기화를 거부한다")
     void initialization_rejectsWeakSecret() {
         JwtProperties weakProperties = new JwtProperties();

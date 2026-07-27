@@ -39,12 +39,15 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest({
-        ContestController.class,
-        TeamApplicationController.class,
-        ParticipantTeamController.class,
-        TeamAdminController.class
-})
+@WebMvcTest(
+        controllers = {
+                ContestController.class,
+                TeamApplicationController.class,
+                ParticipantTeamController.class,
+                TeamAdminController.class
+        },
+        properties = "security.jwt.secret-key="
+                + "c2VjdXJpdHktY29uZmlnLXRlc3Qtc2VjcmV0LW11c3QtYmUtNjQtYnl0ZXMtbG9uZy0xMjM0NTY3ODkwYWJjZGVm")
 @Import({
         SecurityConfig.class,
         JwtAuthenticationFilter.class,

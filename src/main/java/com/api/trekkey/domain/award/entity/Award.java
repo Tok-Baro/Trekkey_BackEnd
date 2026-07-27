@@ -70,11 +70,6 @@ public class Award extends BaseEntity {
     // 팀 단위 상장 번호 — 팀원들이 공유한다
     private String certificateNo;
 
-    @Builder.Default
-    @Column(name = "source_version", nullable = false)
-    // Credential source 버전 — 정정 재발급 시 증가
-    private long sourceVersion = 1L;
-
     @Column(name = "confirmed_at")
     // 수상 확정 시각
     private LocalDateTime confirmedAt;

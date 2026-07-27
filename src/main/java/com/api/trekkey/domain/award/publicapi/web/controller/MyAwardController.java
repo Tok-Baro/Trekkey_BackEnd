@@ -27,7 +27,7 @@ public class MyAwardController {
     public ResponseEntity<SuccessResponse<List<AwardRes>>> getMyAwards(
             @AuthenticationPrincipal AuthPrincipal authPrincipal) {
         List<AwardRes> response = awardRepository
-                .findAllByTeamLeaderUserIdAndStatusOrderByConfirmedAtDesc(
+                .findAllVisibleToUserByStatusOrderByConfirmedAtDesc(
                         authPrincipal.getId(), AwardStatus.CONFIRMED).stream()
                 .map(AwardRes::from)
                 .toList();

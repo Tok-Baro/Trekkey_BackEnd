@@ -119,6 +119,8 @@ export JWT_SECRET="$(openssl rand -base64 64)"
 ```
 
 애플리케이션은 기본적으로 `http://localhost:8080`에서 실행됩니다.
+로컬 파일을 사용할 때는 `application-local.properties.example`을
+`application-local.properties`로 복사하고 실제 값은 Git에 커밋하지 않습니다.
 
 ## 테스트
 
@@ -126,7 +128,7 @@ export JWT_SECRET="$(openssl rand -base64 64)"
 ./gradlew test
 
 cd contracts
-npm install
+npm ci
 npm run fixture:merkle
 npm test
 npx tsc --noEmit
@@ -141,4 +143,5 @@ Java 단위·JPA 테스트는 H2를 사용한다. 별도의 MySQL 통합 테스�
 - [공모전·Credential 최종 ERD](docs/erd.md)
 - [Credential 및 Kaia 앵커링 설계](docs/blockchain-anchoring-architecture.md)
 - [블록체인 구현 및 Kairos 실행 가이드](docs/blockchain-implementation-runbook.md)
+- [2026-07-27 통합 회의 안건](docs/meetings/2026-07-27-integration-agenda.md)
 - [설계 문서 인덱스](docs/README.md)

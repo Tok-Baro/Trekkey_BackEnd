@@ -99,8 +99,8 @@ flowchart LR
 | 도메인 | 테이블 | 역할 |
 | --- | --- | --- |
 | 기관·사용자 | ORGANIZATION, USER | 학교 tenant와 사용자 식별 |
-| 대회·참가 | CONTEST, CONTEST_STAGE, TEAM, TEAM_MEMBER | 대회 구조와 확정 참가자 명단 |
-| 작품·심사 | SUBMISSION, SUBMISSION_FILE, CONTEST_STAGE_ENTRY, REVIEW 계열 | 최종 작품, 원점수, 공식 라운드 판정 |
+| 대회·참가 | CONTEST, REVIEW_ROUND, TEAM, TEAM_MEMBER | 대회 구조와 확정 참가자 명단 |
+| 작품·심사 | SUBMISSION, SUBMISSION_FILE, REVIEW_ROUND_ENTRY, REVIEW 계열 | 최종 작품, 원점수, 공식 라운드 판정 |
 | 수상 | AWARD | 공식 ENTRY를 근거로 한 팀 단위 상장 |
 | Credential | ANC_CREDENTIAL, SOURCE, SUBJECT, STATUS_EVENT | 발급 시점 불변 원문과 주체·상태 snapshot |
 | Merkle·Chain | ANC_BATCH, BATCH_ITEM, CHAIN_TRANSACTION, OUTBOX_EVENT | 배치, proof, Kaia 전송, 장애 복구 |
@@ -110,7 +110,7 @@ flowchart LR
 - USER: 학교 안에서 학번 유일
 - TEAM_MEMBER: 팀과 사용자 조합 유일
 - SUBMISSION: 팀당 한 건
-- CONTEST_STAGE_ENTRY: 라운드와 제출물 조합 유일
+- REVIEW_ROUND_ENTRY: 라운드와 제출물 조합 유일
 - REVIEW_ASSIGNMENT: 심사위원과 ENTRY 조합 유일
 - REVIEW: 배정당 한 건
 - REVIEW_SCORE_ITEM: 심사와 기준 조합 유일
@@ -154,27 +154,25 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    request(["재제출 요청"]) --> upload["새 storageKey로 먼저 업로드"]
-    upload --> lock["SUBMISSION row 잠금"]
-    lock --> immutable{"finalizedAt 존재 또는 심사 시작?"}
-    immutable -->|"예"| reject["수정 거부"]
-    reject --> cleanupNew["새 업로드 객체 정리"]
-    immutable -->|"아니오"| replace["제목과 파일 목록 교체"]
-    replace --> increment["sourceVersion 증가"]
-    increment --> stale["integrityStatus = STALE"]
-    stale --> commit["DB transaction commit"]
+    request(["제출 요청"]) --> open{"제출 기간이 열려 있는가?"}
+    open -->|"아니오"| reject["제출 거부"]
+    open -->|"예"| lock["TEAM과 기존 SUBMISSION row 조회 (FOR UPDATE)"]
+    lock --> finalized{"심사 시작으로 제출이 확정됐는가?"}
+    finalized -->|"예"| reject
+    finalized -->|"아니오"| upload["새 파일 저장과 SHA-256 계산"]
+    upload --> replace["현재 제목과 DB 파일 목록 교체"]
+    replace --> commit["DB transaction commit"]
     commit --> cleanupOld["이전 객체 비동기 정리"]
-    commit --> hashWorker["파일 hash worker"]
-    hashWorker --> versionCheck{"읽은 sourceVersion이 최신인가?"}
-    versionCheck -->|"아니오"| discard["오래된 계산 결과 폐기"]
-    versionCheck -->|"예"| ready["SHA-256 저장 및 READY"]
+    upload -. "저장 또는 DB 실패" .-> cleanupNew["새 업로드 객체 정리"]
+    replace -. "DB rollback" .-> cleanupNew
 ```
 
 - 재제출 이력 테이블은 현재 만들지 않는다.
-- 새 객체를 먼저 업로드하고, DB row lock 또는 optimistic version 확인 후 파일 목록을 교체한다.
-- sourceVersion을 증가시키고 integrityStatus를 STALE로 바꾼다.
-- hash worker는 자신이 읽은 sourceVersion이 최신일 때만 READY를 반영한다.
-- 제출 마감 또는 첫 심사 시작 이후에는 수정할 수 없다.
+- 같은 `SUBMISSION` 행의 제목과 파일 목록을 덮어쓴다.
+- TEAM row lock은 최초 제출과 덮어쓰기를 팀 단위로 직렬화하며, 기존 SUBMISSION도 같은 순서로 잠근다.
+- SHA-256은 업로드 스트림에서 계산하며 별도 hash worker나 `STALE/READY` 상태를 두지 않는다.
+- DB 커밋 뒤 기존 객체를 삭제하고, 롤백되면 새 객체를 삭제한다.
+- 제출 마감 또는 첫 심사 시작으로 확정된 뒤에는 수정할 수 없다.
 
 ### 라운드 심사와 공식 판정
 
@@ -188,7 +186,7 @@ sequenceDiagram
 
     Admin->>API: 라운드 시작
     API->>DB: 대상 제출물 조회
-    API->>DB: CONTEST_STAGE_ENTRY 생성
+    API->>DB: REVIEW_ROUND_ENTRY 생성
     API->>DB: REVIEW_ASSIGNMENT 생성
     Judge->>API: 기준별 점수와 의견 제출
     API->>DB: REVIEW와 SCORE_ITEM 저장
@@ -202,7 +200,7 @@ sequenceDiagram
 ```
 
 - REVIEW와 REVIEW_SCORE_ITEM은 심사위원별 원점수다.
-- CONTEST_STAGE_ENTRY는 학교가 확정한 공식 점수·순위·통과·탈락 원장이다.
+- REVIEW_ROUND_ENTRY는 학교가 확정한 공식 점수·순위·통과·탈락 원장이다.
 - FINALIZED 라운드의 ENTRY, 평가 기준, 배정, 제출된 REVIEW는 수정·삭제할 수 없다.
 - AWARD.teamId는 조회용 비정규화 FK이며 ENTRY에서 도달한 TEAM과 같아야 한다.
 
@@ -222,47 +220,50 @@ sequenceDiagram
     actor Admin as 학교 관리자
     participant Domain as 업무 API
     participant DB as MySQL
-    participant Worker as Credential Worker
+    participant Issue as Credential Issuance Service
     participant Canon as Canonicalizer
 
     Admin->>Domain: 참여·작품·수상 확정
-    Domain->>DB: 원천 확정과 outbox 원자적 저장
-    Worker->>DB: 확정 원천과 팀원 조회
-    Worker->>Worker: sourceFingerprint 계산
-    Worker->>DB: 기존 Credential 조회
+    Domain->>DB: 확정 원천과 팀원 조회
+    Domain->>Issue: 발급 명령
+    Issue->>Issue: sourceFingerprint 계산
+    Issue->>DB: 기존 Credential 조회
     alt 기존 Credential 존재
-        DB-->>Worker: 기존 결과 반환
+        DB-->>Issue: 기존 결과 반환
     else 신규 Credential
-        Worker->>Worker: publicId와 issuedAt 생성
-        Worker->>Canon: payload와 file manifest 정규화
-        Canon-->>Worker: canonical bytes와 hash
-        Worker->>DB: Credential, source, subjects 원자적 저장
-        Worker->>DB: READY 상태와 batch outbox 저장
+        Issue->>Issue: publicId와 issuedAt 생성
+        Issue->>Canon: payload와 file manifest 정규화
+        Canon-->>Issue: canonical bytes와 hash
+        Issue->>DB: Credential, source, subjects 원자적 저장
     end
+    Domain->>DB: 업무 확정과 Credential 함께 commit
 ```
 
 ### 중복 발급 방지
 
 ```
 subjectSetHash = SHA-256(
-  JCS([{userId, roleCode}, ...] sorted by userId then roleCode)
+  JCS([{subjectPublicId, roleCode, snapshot}, ...]
+      sorted by subjectPublicId then roleCode)
 )
+
+sourceSnapshotHash = SHA-256(JCS(sourceSnapshot))
 
 sourceFingerprint = SHA-256(
   JCS({
-    fingerprintVersion,
+    fingerprintProfileId,
     issuerPublicId,
     credentialType,
     sourceType,
     sourcePublicId,
-    sourceVersion,
+    sourceSnapshotHash,
     subjectSetHash,
     schemaProfileId
   })
 )
 ```
 
-같은 원천과 버전으로 재시도하면 기존 Credential을 반환한다. 원문 의미가 바뀌면 먼저 sourceVersion을 증가시킨다.
+같은 확정 원천 snapshot과 subject snapshot으로 재시도하면 기존 Credential을 반환한다. 사실을 정정해야 하면 기존 Credential을 수정하지 않고, 정정된 snapshot으로 새 Credential을 발급한 뒤 기존 Credential을 `SUPERSEDED` 처리한다.
 
 ## 7. Canonical JSON과 Merkle V1
 
@@ -451,8 +452,8 @@ flowchart TD
     revokeSign --> revokeChain["revokeCredential 온체인 확정"]
     revokeChain --> revokedState(["기존 Credential REVOKED"])
 
-    action -->|"대체"| sourceVersion["새 sourceVersion 확정"]
-    sourceVersion --> newCredential["새 Credential 생성"]
+    action -->|"대체"| correctedSource["정정된 원천 snapshot 확정"]
+    correctedSource --> newCredential["새 sourceFingerprint와 Credential 생성"]
     newCredential --> newAnchor["새 batch ANCHORED"]
     newAnchor --> supersedeEvent["기존 Credential status event"]
     supersedeEvent --> supersedeSign["StatusApproval 서명"]

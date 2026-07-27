@@ -30,7 +30,6 @@ import com.api.trekkey.domain.review.repository.ContestStageEntryRepository;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewRepository;
 import com.api.trekkey.domain.review.support.ReviewTokenSupport;
-import com.api.trekkey.domain.submission.entity.IntegrityStatus;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
 import com.api.trekkey.domain.submission.repository.SubmissionRepository;
@@ -232,7 +231,6 @@ class ReviewAdminServiceImplTest {
                 .team(team)
                 .title("작품")
                 .status(SubmissionStatus.SUBMITTED)
-                .integrityStatus(IntegrityStatus.READY)
                 .submittedAt(LocalDateTime.now())
                 .build();
         ReflectionTestUtils.setField(submission, "id", 500L);

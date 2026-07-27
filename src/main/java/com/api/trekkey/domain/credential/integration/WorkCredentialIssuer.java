@@ -6,12 +6,12 @@ import com.api.trekkey.domain.credential.service.CredentialIssuanceService;
 import com.api.trekkey.domain.credential.service.CredentialSchemaProfiles;
 import com.api.trekkey.domain.credential.service.dto.CredentialIssueCommand;
 import com.api.trekkey.domain.credential.service.dto.IssuedCredential;
+import com.api.trekkey.domain.credential.service.support.UtcTime;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.team.entity.Team;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Instant;
-import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -30,8 +30,7 @@ public class WorkCredentialIssuer {
 
     public IssuedCredential issueForFinalizedSubmission(Submission submission) {
         Team team = submission.getTeam();
-        Instant finalizedAt = submission.getFinalizedAt()
-                .atZone(ZoneId.systemDefault()).toInstant();
+        Instant finalizedAt = UtcTime.toInstant(submission.getFinalizedAt());
 
         //발급 시점 사실을 snapshot 원문으로 고정 — 이후 업무 데이터가 바뀌어도 Credential은 불변
         ObjectNode snapshot = objectMapper.createObjectNode();

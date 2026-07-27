@@ -49,7 +49,7 @@ public class CredentialSubjectAssembler {
                 1));
 
         int order = 2;
-        for (TeamMember member : teamMemberRepository.findAllByTeamId(team.getId())) {
+        for (TeamMember member : teamMemberRepository.findAllByTeamIdOrderByUserIdAsc(team.getId())) {
             //리더는 위에서 이미 추가됨
             if (member.getUser().getId().equals(team.getLeaderUser().getId())) {
                 continue;

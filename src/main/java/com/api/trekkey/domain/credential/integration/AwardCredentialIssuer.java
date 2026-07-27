@@ -7,12 +7,12 @@ import com.api.trekkey.domain.credential.service.CredentialIssuanceService;
 import com.api.trekkey.domain.credential.service.CredentialSchemaProfiles;
 import com.api.trekkey.domain.credential.service.dto.CredentialIssueCommand;
 import com.api.trekkey.domain.credential.service.dto.IssuedCredential;
+import com.api.trekkey.domain.credential.service.support.UtcTime;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.team.entity.Team;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Instant;
-import java.time.ZoneId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -72,6 +72,6 @@ public class AwardCredentialIssuer {
 
 
     private Instant toInstant(Award award) {
-        return award.getConfirmedAt().atZone(ZoneId.systemDefault()).toInstant();
+        return UtcTime.toInstant(award.getConfirmedAt());
     }
 }

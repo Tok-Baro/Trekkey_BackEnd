@@ -87,11 +87,6 @@ public class Team extends BaseEntity {
     // 참가 지원 동기
     private String motivation;
 
-    @Builder.Default
-    @Column(nullable = false)
-    // 신청 내용이 의미 있게 바뀔 때마다 증가 — Credential source 버전
-    private long sourceVersion = 1L;
-
     // 팀원 명단 확정 시각. 확정 이후 신청 수정을 거부한다 (null이면 미확정, erd-mvp §5)
     private LocalDateTime participationFinalizedAt;
 
@@ -102,7 +97,7 @@ public class Team extends BaseEntity {
         }
     }
 
-    // 참가자 신청 수정 — 보완요청 상태였다면 검토중으로 자동 전환하고 source 버전을 올린다.
+    // 참가자 신청 수정 — 보완요청 상태였다면 검토중으로 자동 전환한다.
     public void updateApplication(
             String name, String leaderName, String major, int memberCount,
             String contactEmail, String phone, String motivation) {
@@ -113,7 +108,6 @@ public class Team extends BaseEntity {
         this.contactEmail = contactEmail;
         this.phone = phone;
         this.motivation = motivation;
-        this.sourceVersion += 1;
         if (this.status == TeamStatus.REVISION_REQUESTED) {
             this.status = TeamStatus.PENDING;
         }

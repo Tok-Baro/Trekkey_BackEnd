@@ -1,6 +1,6 @@
 # Trekkey 설계 문서
 
-팀 구현 기준 문서는 다음 다섯 개다.
+팀 구현 기준 문서는 다음 여섯 개다.
 
 1. [업무·블록체인 전체 통합 ERD](./unified-erd.md)
    - 업무 SQL 16개와 앵커링 SQL 9개를 한 캔버스에 표시
@@ -36,8 +36,14 @@
    - 팀 업무 서비스가 연결할 `CredentialIssuanceService`
    - 운영 전 필수 체크리스트
 
+6. [2026-07-27 통합 회의 안건](./meetings/2026-07-27-integration-agenda.md)
+   - 보안 조치와 커밋 추적
+   - 팀원·제출·심사·수상 인수 기준
+   - Credential·Kairos 운영 결정
+   - 담당자·회의 순서·병합 체크리스트
+
 ## 현재 구현 범위
 
-MVP 설계는 공모전 참여, 최종 제출 작품, 0..N개의 Review Round, 팀 수상 Credential을 대상으로 한다. 현재 저장소에는 Credential·Merkle·Solidity·Kaia adapter와 검증 API가 구현됐고, 대회·팀·제출·수상 업무 엔티티와 호출 연결은 팀 구현이 합쳐진 뒤 진행한다. 졸업요건, 학적 이력, 공모전 외 독립 작품, 제출 버전은 실제 업무 요구가 확정될 때 확장한다.
+MVP 설계는 공모전 참여, 최종 제출 작품, 0..N개의 Review Round, 팀 수상 Credential을 대상으로 한다. 현재 통합 브랜치에는 대회·팀·제출·심사·수상과 Credential·Merkle·Solidity·Kaia adapter가 함께 있고, 수상 확정에서 Credential 발급까지 연결돼 있다. 팀원 등록 API와 최종 ERD의 `REVIEW_ROUND`를 실제 코드에 맞추는 작업은 2026-07-27 회의의 병합 전 안건이다. 졸업요건, 학적 이력, 공모전 외 독립 작품, 제출 버전은 실제 업무 요구가 확정될 때 확장한다.
 
 문서와 구현이 충돌하면 임의로 해석하지 말고 ERD 결정사항을 먼저 갱신한다. 특히 hash 입력, schema profile, Merkle tree version은 배포 후 조용히 변경하면 안 된다.

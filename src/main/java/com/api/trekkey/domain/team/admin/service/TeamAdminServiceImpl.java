@@ -17,7 +17,9 @@ import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -36,6 +38,7 @@ public class TeamAdminServiceImpl implements TeamAdminService {
     private final ContestRepository contestRepository;
     private final TeamRepository teamRepository;
     private final ParticipationCredentialIssuer participationCredentialIssuer;
+    private final Clock clock;
     private final AdminAuditLogger adminAuditLogger;
 
     @Override
@@ -90,7 +93,8 @@ public class TeamAdminServiceImpl implements TeamAdminService {
             throw new CustomException(TeamErrorResponseCode.TEAM_NOT_APPROVED);
         }
 
-        team.finalizeParticipation(LocalDateTime.now());
+        //Credential 원문에 들어가는 확정 시각은 UTC 기준으로 고정한다 (award 확정과 동일 규약)
+        team.finalizeParticipation(LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC));
         //명단 확정과 참여 Credential 발급을 한 트랜잭션으로 (erd-mvp §6 — 원천: 확정 TEAM)
         participationCredentialIssuer.issueForFinalizedTeam(team);
 

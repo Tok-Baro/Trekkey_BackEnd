@@ -4,7 +4,6 @@ import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.StageStatus;
 import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
-import com.api.trekkey.domain.submission.entity.IntegrityStatus;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionFile;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
@@ -33,6 +32,8 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
@@ -56,7 +57,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     @Transactional
     public SubmissionRes submit(Long userId, String teamPublicId, String title, List<MultipartFile> files) {
         User user = findUser(userId);
-        Team team = findLeaderTeam(teamPublicId, user.getId());
+        Team team = findLeaderTeamForUpdate(teamPublicId, user.getId());
 
         //검토중·승인 상태의 팀만 제출할 수 있다 (보완요청·반려 팀은 불가)
         if (team.getStatus() != TeamStatus.PENDING && team.getStatus() != TeamStatus.APPROVED) {
@@ -66,7 +67,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         validateFiles(files);
 
         LocalDateTime now = LocalDateTime.now();
-        //row lock으로 동시 재제출 직렬화 (erd-mvp §5)
+        // 동시 덮어쓰기를 직렬화해 DB 파일 목록과 저장소 객체 교체 순서를 보호한다.
         Submission submission = submissionRepository.findByTeamIdForUpdate(team.getId()).orElse(null);
         List<String> previousStorageKeys = new ArrayList<>();
 
@@ -75,28 +76,31 @@ public class SubmissionServiceImpl implements SubmissionService {
                     .team(team)
                     .title(title.trim())
                     .status(SubmissionStatus.SUBMITTED)
-                    .integrityStatus(IntegrityStatus.STALE)
                     .submittedAt(now)
                     .build());
         } else {
-            //제출 잠금 이후에는 덮어쓰기를 거부한다 (erd-mvp §5)
+            // 심사 시작으로 이미 확정된 제출물은 덮어쓸 수 없다.
             if (submission.isFinalized()) {
                 throw new CustomException(SubmissionErrorResponseCode.SUBMISSION_FINALIZED);
             }
-            //기존 파일은 DB에서 제거하고, 객체는 commit 이후 정리 대상으로 모아둔다
+            // 기존 DB 행은 현재 트랜잭션에서 교체하고 객체는 커밋 후 삭제한다.
             submissionFileRepository.findAllBySubmissionId(submission.getId())
                     .forEach(file -> previousStorageKeys.add(file.getStorageKey()));
             submissionFileRepository.deleteAllBySubmissionId(submission.getId());
             submission.overwrite(title.trim(), now);
         }
 
-        //새 객체를 저장하며 스트림에서 SHA-256을 함께 계산한다 — 별도 해시 워커 불필요
-        List<SubmissionFile> savedFiles = storeFiles(submission, user, files);
-        submissionFileRepository.saveAll(savedFiles);
-        submission.markIntegrityReady();
-
-        //이전 객체 정리 — 실패해도 본 트랜잭션을 깨지 않는다 (best effort)
-        previousStorageKeys.forEach(fileStoragePort::delete);
+        List<String> newStorageKeys = new ArrayList<>();
+        List<SubmissionFile> savedFiles;
+        try {
+            // 새 객체를 저장하며 스트림에서 SHA-256을 함께 계산한다. 별도 해시 워커는 사용하지 않는다.
+            savedFiles = storeFiles(submission, user, files, newStorageKeys);
+            submissionFileRepository.saveAll(savedFiles);
+            registerFileCleanup(previousStorageKeys, newStorageKeys);
+        } catch (RuntimeException exception) {
+            newStorageKeys.forEach(fileStoragePort::delete);
+            throw exception;
+        }
 
         return SubmissionRes.from(submission, toFileResList(savedFiles));
     }
@@ -150,6 +154,15 @@ public class SubmissionServiceImpl implements SubmissionService {
         return team;
     }
 
+    private Team findLeaderTeamForUpdate(String teamPublicId, Long userId) {
+        Team team = teamRepository.findByPublicIdForUpdate(teamPublicId)
+                .orElseThrow(() -> new CustomException(TeamErrorResponseCode.TEAM_NOT_FOUND));
+        if (!team.getLeaderUser().getId().equals(userId)) {
+            throw new CustomException(SubmissionErrorResponseCode.SUBMISSION_FORBIDDEN);
+        }
+        return team;
+    }
+
     // 제출 단계(SUBMISSION)가 OPEN이고 마감 시각이 지나지 않았는지 검증한다
     private void validateSubmissionStageOpen(Team team) {
         LocalDateTime now = LocalDateTime.now();
@@ -181,12 +194,17 @@ public class SubmissionServiceImpl implements SubmissionService {
         }
     }
 
-    private List<SubmissionFile> storeFiles(Submission submission, User uploader, List<MultipartFile> files) {
+    private List<SubmissionFile> storeFiles(
+            Submission submission,
+            User uploader,
+            List<MultipartFile> files,
+            List<String> newStorageKeys) {
         List<SubmissionFile> result = new ArrayList<>();
         String keyPrefix = "submissions/" + submission.getPublicId();
         for (MultipartFile file : files) {
             try (InputStream inputStream = file.getInputStream()) {
                 StoredFile stored = fileStoragePort.store(keyPrefix, file.getOriginalFilename(), inputStream);
+                newStorageKeys.add(stored.storageKey());
                 result.add(SubmissionFile.builder()
                         .submission(submission)
                         .uploadedBy(uploader)
@@ -202,6 +220,29 @@ public class SubmissionServiceImpl implements SubmissionService {
             }
         }
         return result;
+    }
+
+    private void registerFileCleanup(List<String> previousStorageKeys, List<String> newStorageKeys) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            previousStorageKeys.forEach(fileStoragePort::delete);
+            return;
+        }
+
+        List<String> oldFiles = List.copyOf(previousStorageKeys);
+        List<String> newFiles = List.copyOf(newStorageKeys);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                oldFiles.forEach(fileStoragePort::delete);
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    newFiles.forEach(fileStoragePort::delete);
+                }
+            }
+        });
     }
 
     private List<SubmissionFileRes> toFileResList(List<SubmissionFile> files) {

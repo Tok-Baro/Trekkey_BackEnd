@@ -262,17 +262,20 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    request(["제출물 수정 요청"]) --> upload["새 storageKey로 업로드하며 SHA-256 계산"]
-    upload --> transaction["DB transaction 시작"]
-    transaction --> latest["SUBMISSION 최신 상태 조회 (FOR UPDATE)"]
-    latest --> immutable{"제출 확정 또는 심사 시작?"}
-    immutable -->|"예"| cleanupNew["새 객체 정리 후 수정 거부"]
-    immutable -->|"아니오"| replace["제목과 현재 파일 목록 교체"]
+    request(["제출 요청"]) --> transaction["DB transaction 시작"]
+    transaction --> teamLock["TEAM row 조회 (FOR UPDATE)"]
+    teamLock --> latest["기존 SUBMISSION 조회 (FOR UPDATE)"]
+    latest --> finalized{"심사 시작으로 제출이 확정됐는가?"}
+    finalized -->|"예"| reject["수정 거부"]
+    finalized -->|"아니오"| upload["새 storageKey로 업로드하며 SHA-256 계산"]
+    upload --> replace["제목과 현재 파일 목록 교체"]
     replace --> commit["DB transaction commit"]
     commit --> cleanupOld["이전 객체 비동기 정리"]
+    upload -. "저장 또는 DB 실패" .-> cleanupNew["새 객체 정리"]
+    replace -. "DB rollback" .-> cleanupNew
 ```
 
-별도 제출 버전과 상태 머신은 만들지 않는다. 심사 시작 시 대상 제출물은 `finalizedAt`으로 업무상 수정 금지가 된다. `FOR UPDATE`는 이 상태 전환과 파일 교체가 동시에 실행되지 않도록 트랜잭션 동안만 사용하는 DB 동시성 제어다. 파일 SHA-256은 업로드 stream에서 계산하므로 별도 hash worker도 필요 없다.
+별도 제출 버전과 상태 머신은 만들지 않는다. 심사 시작 시 대상 제출물은 `finalizedAt`으로 업무상 수정 금지가 된다. `TEAM FOR UPDATE`는 최초 제출과 덮어쓰기를 팀 단위로 직렬화하고, 기존 `SUBMISSION`도 같은 순서로 잠근다. 파일 SHA-256은 업로드 stream에서 계산하므로 별도 hash worker도 필요 없다.
 
 ## 9. 라운드 심사와 공식 판정
 
