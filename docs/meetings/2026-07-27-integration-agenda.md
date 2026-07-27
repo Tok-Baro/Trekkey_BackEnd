@@ -44,10 +44,11 @@
 | 항목 | 상태 | 조치 |
 | --- | --- | --- |
 | 백엔드 `develop` | 대회·제출·심사·수상 코드가 합쳐짐 | 통합 PR의 base로 사용 |
-| [백엔드 통합 PR #9](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/9) | 업무 도메인·Credential, 보안·결정성·CI·문서 통합 | `develop` 대상 Draft, 팀 리뷰 필요 |
-| 기존 백엔드 PR #7 | `feat/blockchain-anchoring → main`, Draft | 새 `develop` PR로 대체 후 종료 |
-| [보안 PR #8](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/8) | 추적된 로컬 설정 제거와 JWT 키 필수화 | 우선 리뷰·병합 |
-| [프론트 통합 PR #1](https://github.com/Tok-Baro/Trekkey/pull/1) | 최신 `main` UI와 참가자 API 연동 통합 | `main` 대상 Draft, 백엔드 PR #9 이후 병합 |
+| [백엔드 통합 PR #9](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/9) | CI 성공, 리뷰·댓글 0건, GitHub mergeability 재계산 필요 | `develop` 대상 Draft, 다음 push 후 충돌 판정 재확인 |
+| 기존 백엔드 PR #7 | 종료됨 | PR #9로 대체 완료 |
+| [보안 PR #8](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/8) | mergeable, 리뷰·댓글 0건, GitHub CI 없음 | 우선 리뷰·실제 키 교체·병합 |
+| [프론트 통합 PR #1](https://github.com/Tok-Baro/Trekkey/pull/1) | CI 성공·mergeable, 리뷰·댓글 0건 | `main` 대상 Draft, 백엔드 PR #9 계약 뒤 병합 |
+| `feat/review-scoring` | `2d62dcd`, PR 없음, `develop`보다 12커밋 뒤 | 통째 병합하지 않고 심사 코드만 선별 이식 |
 | 백엔드 CI | Java·Solidity·TypeScript 검증 추가 | PR #9 결과 확인 후 병합 |
 | 프론트 CI | Node 22 production build 검증 추가 | PR #1 결과 확인 후 병합 |
 | 브랜치 보호 | Private Free 플랜에서 서버 강제 제한 | 팀 규칙과 CI로 우선 운영 |
@@ -60,6 +61,7 @@
 | JWT 기본키 최초 도입 | `d409039`, `naeunmin` | 보안 PR #8에서 제거 |
 | 제출 덮어쓰기·SHA-256 | `cbd88e6`, `ijunsu` | 제출 담당자와 통합 PR 리뷰어 |
 | 심사 도메인 구현 | `5ce57cc`, `ijunsu` | **기능 승인·인수 책임자는 혁모** |
+| 제출~심사위원 배정 대안 구현 | `2d62dcd`, `구혁모` | 최신 `develop` 기준으로 선별 이식·동시성 수정 |
 | 수상 도메인 구현 | `a4d23c9`, `ijunsu` | 수상 담당자 확정 필요 |
 | 업무·앵커링 통합 | `011f36e`, `69d531a`, `e1df66f`, `1ad4f8c`, `ijunsu` | 통합 PR 리뷰어 공동 책임 |
 | 블록체인 초안의 `main` 직접 반영 | Codex 작업 후 revert | 새 PR은 `develop` 대상으로 교체 |
@@ -247,6 +249,48 @@
 - 심사 관리자 API와 심사위원 제출 API의 happy path·실패 path 테스트
 - 프론트 담당자에게 `roundId` API 계약과 상태 enum을 인계
 - 7.1~7.3 체크리스트를 직접 시연하고 인수 완료 기록
+
+### 7.5 기존 `feat/review-scoring` 감사 결과
+
+확인한 커밋은 `2d62dcd` 한 건이며 88개 파일, 11,929줄 추가·90줄 삭제 규모다. 브랜치는 `develop`보다 12커밋 뒤에서 갈라져 현재 코드와 20개 파일이 충돌하므로 이 커밋을 통째로 cherry-pick하거나 바로 PR로 올리지 않는다.
+
+살릴 구현:
+
+- 256-bit 심사 링크 토큰 생성·해시 저장·만료/폐기 검증
+- 심사위원 등록과 링크 발급·재발급
+- 라운드 entry 준비와 심사위원별 assignment 준비
+- 심사위원 접근 확인과 심사 시트 조회
+- 서비스·컨트롤러·MySQL 동시성 테스트 시나리오
+
+가져오지 않을 구현:
+
+- 현재 `develop`의 대회·제출·보안 코드를 덮는 중복 구현
+- 합의한 단순 덮어쓰기 정책과 충돌하는 `/submit`, `/reopen`, `/withdraw` 상태 전이
+- `ContestStage`, `stageId`, `REVIEW/PRESENTATION`을 계속 사용하는 API와 모델
+
+아직 없는 구현:
+
+- 기준별 점수 제출과 `Review`·`ReviewScoreItem` 저장
+- 제출 후 재채점 금지와 라운드 마감
+- 점수 집계·순위·동점·통과/탈락·수동 판정
+- `PREVIOUS_PASSED` 기반 다음 라운드 대상 산출
+- 목표 모델인 `ReviewRound`와 `roundId` 전환
+
+검증 결과:
+
+- 기본 테스트: 293개 발견, 15개 MySQL 전용 테스트 제외, 실패 0
+- 실제 MySQL 8.4: 293개 실행, 1개 실패
+- 실패: 같은 심사위원·라운드의 동시 배정 준비 중 한 성공 요청이 빈 목록을 반환
+- 원인 후보: MySQL `REPEATABLE READ` 스냅샷에서 잠금 대기 후 일반 조회가 직전 트랜잭션의 배정을 보지 못함
+- 완료 조건: 잠금으로 읽은 최신 assignment를 직접 응답하거나 current read를 사용한 뒤 해당 테스트 반복 통과
+
+정리 순서:
+
+1. 기존 브랜치는 삭제하지 않고 참고용으로 보존한다.
+2. PR #9가 `develop`에 반영된 뒤 최신 `develop`에서 새 H1 브랜치를 만든다.
+3. `2d62dcd`는 cherry-pick하지 않고 위의 “살릴 구현”만 현재 패키지·ReviewRound 모델에 맞춰 옮긴다.
+4. H1은 모델·조회·심사위원·배정까지, H2는 채점·마감·불변성까지 분리한다.
+5. 각 PR에서 일반 테스트와 MySQL 8 동시성 테스트를 모두 CI로 실행한다.
 
 ## 8. 제출물 인수 안건
 
