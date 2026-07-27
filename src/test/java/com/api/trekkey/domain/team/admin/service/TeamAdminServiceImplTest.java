@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
+import com.api.trekkey.domain.credential.integration.ParticipationCredentialIssuer;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
@@ -52,6 +53,9 @@ class TeamAdminServiceImplTest {
     private TeamRepository teamRepository;
 
     @Mock
+    private ParticipationCredentialIssuer participationCredentialIssuer;
+
+    @Mock
     private AdminAuditLogger adminAuditLogger;
 
     private TeamAdminServiceImpl teamAdminService;
@@ -63,7 +67,8 @@ class TeamAdminServiceImplTest {
     @BeforeEach
     void setUp() {
         teamAdminService = new TeamAdminServiceImpl(
-                userRepository, contestRepository, teamRepository, adminAuditLogger);
+                userRepository, contestRepository, teamRepository,
+                participationCredentialIssuer, adminAuditLogger);
 
         organization = mock(Organization.class);
         lenient().when(organization.getId()).thenReturn(1L);
@@ -155,6 +160,7 @@ class TeamAdminServiceImplTest {
         assertThat(team.isFinalized()).isTrue();
         verify(adminAuditLogger).log(eq(100L), eq(1L), eq(AuditAction.TEAM_FINALIZE),
                 eq("TEAM"), eq(1L), anyString());
+        verify(participationCredentialIssuer).issueForFinalizedTeam(team); //확정과 같은 트랜잭션에서 참여 Credential 발급
     }
 
     @Test

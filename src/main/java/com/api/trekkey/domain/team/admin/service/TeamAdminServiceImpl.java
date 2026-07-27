@@ -2,6 +2,7 @@ package com.api.trekkey.domain.team.admin.service;
 
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
+import com.api.trekkey.domain.credential.integration.ParticipationCredentialIssuer;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
@@ -34,6 +35,7 @@ public class TeamAdminServiceImpl implements TeamAdminService {
     private final UserRepository userRepository;
     private final ContestRepository contestRepository;
     private final TeamRepository teamRepository;
+    private final ParticipationCredentialIssuer participationCredentialIssuer;
     private final AdminAuditLogger adminAuditLogger;
 
     @Override
@@ -89,6 +91,8 @@ public class TeamAdminServiceImpl implements TeamAdminService {
         }
 
         team.finalizeParticipation(LocalDateTime.now());
+        //명단 확정과 참여 Credential 발급을 한 트랜잭션으로 (erd-mvp §6 — 원천: 확정 TEAM)
+        participationCredentialIssuer.issueForFinalizedTeam(team);
 
         adminAuditLogger.log(admin.getId(), admin.getOrganization().getId(), AuditAction.TEAM_FINALIZE,
                 TARGET_TYPE_TEAM, team.getId(), team.getName());

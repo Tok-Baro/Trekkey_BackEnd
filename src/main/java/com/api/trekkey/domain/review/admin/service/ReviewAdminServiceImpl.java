@@ -2,6 +2,7 @@ package com.api.trekkey.domain.review.admin.service;
 
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
+import com.api.trekkey.domain.credential.integration.WorkCredentialIssuer;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.StagePassRule;
@@ -62,6 +63,7 @@ public class ReviewAdminServiceImpl implements ReviewAdminService {
     private final ContestStageEntryRepository entryRepository;
     private final ReviewAssignmentRepository assignmentRepository;
     private final ReviewRepository reviewRepository;
+    private final WorkCredentialIssuer workCredentialIssuer;
     private final ReviewTokenSupport reviewTokenSupport;
     private final AdminAuditLogger adminAuditLogger;
 
@@ -167,6 +169,8 @@ public class ReviewAdminServiceImpl implements ReviewAdminService {
             //첫 심사 시작 이후 제출물 수정 금지 (erd-mvp §5)
             if (!submission.isFinalized()) {
                 submission.finalizeSubmission(now);
+                //제출 확정과 작품 Credential 발급을 한 트랜잭션으로 (erd-mvp §6 — 원천: 확정 SUBMISSION)
+                workCredentialIssuer.issueForFinalizedSubmission(submission);
             }
             ContestStageEntry entry = entryRepository.save(ContestStageEntry.builder()
                     .contestStage(stage)

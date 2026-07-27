@@ -55,7 +55,9 @@ class AwardCredentialIssuerTest {
     @BeforeEach
     void setUp() {
         awardCredentialIssuer = new AwardCredentialIssuer(
-                credentialIssuanceService, teamMemberRepository, submissionFileRepository, new ObjectMapper());
+                credentialIssuanceService,
+                new CredentialSubjectAssembler(teamMemberRepository, submissionFileRepository),
+                new ObjectMapper());
 
         Organization organization = mock(Organization.class);
         lenient().when(organization.getId()).thenReturn(1L);

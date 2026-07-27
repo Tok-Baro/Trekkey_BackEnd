@@ -10,6 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
+import com.api.trekkey.domain.credential.integration.WorkCredentialIssuer;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.StagePassRule;
@@ -79,6 +80,9 @@ class ReviewAdminServiceImplTest {
     private ReviewRepository reviewRepository;
 
     @Mock
+    private WorkCredentialIssuer workCredentialIssuer;
+
+    @Mock
     private AdminAuditLogger adminAuditLogger;
 
     private ReviewAdminServiceImpl reviewAdminService;
@@ -93,7 +97,7 @@ class ReviewAdminServiceImplTest {
         reviewAdminService = new ReviewAdminServiceImpl(
                 userRepository, contestRepository, contestStageRepository, submissionRepository,
                 contestJudgeRepository, entryRepository, assignmentRepository, reviewRepository,
-                new ReviewTokenSupport("http://localhost:5173"), adminAuditLogger);
+                workCredentialIssuer, new ReviewTokenSupport("http://localhost:5173"), adminAuditLogger);
 
         organization = mock(Organization.class);
         lenient().when(organization.getId()).thenReturn(1L);
@@ -136,6 +140,7 @@ class ReviewAdminServiceImplTest {
         assertThat(submission.isFinalized()).isTrue(); //첫 심사 시작 → 제출물 잠금
         verify(assignmentRepository, times(2)).save(any(ReviewAssignment.class)); //심사위원 2명 배정
         verify(stage).changeStatus(StageStatus.OPEN);
+        verify(workCredentialIssuer).issueForFinalizedSubmission(submission); //첫 확정 시 작품 Credential 발급
     }
 
     @Test
