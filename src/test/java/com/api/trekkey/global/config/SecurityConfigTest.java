@@ -16,12 +16,16 @@ import com.api.trekkey.domain.review.service.ReviewAccessService;
 import com.api.trekkey.domain.review.service.ReviewAssignmentAdminService;
 import com.api.trekkey.domain.review.service.ReviewRoundEntryAdminService;
 import com.api.trekkey.domain.review.service.ReviewSheetService;
+import com.api.trekkey.domain.review.service.ReviewSubmissionService;
 import com.api.trekkey.domain.review.web.controller.ReviewAccessController;
 import com.api.trekkey.domain.review.web.controller.ReviewAssignmentAdminController;
 import com.api.trekkey.domain.review.web.controller.ReviewRoundEntryAdminController;
 import com.api.trekkey.domain.review.web.controller.ReviewSheetController;
+import com.api.trekkey.domain.review.web.controller.ReviewSubmissionController;
 import com.api.trekkey.domain.review.web.dto.request.ReviewAccessReq;
 import com.api.trekkey.domain.review.web.dto.request.ReviewAssignmentPrepareReq;
+import com.api.trekkey.domain.review.web.dto.request.ReviewScoreReq;
+import com.api.trekkey.domain.review.web.dto.request.ReviewSubmitReq;
 import com.api.trekkey.domain.submission.publicapi.service.SubmissionService;
 import com.api.trekkey.domain.submission.publicapi.web.controller.SubmissionController;
 import com.api.trekkey.domain.submission.publicapi.web.dto.SubmissionSaveReq;
@@ -34,6 +38,7 @@ import com.api.trekkey.global.security.handler.JwtAuthenticationEntryPoint;
 import com.api.trekkey.global.security.jwt.JwtAuthenticationFilter;
 import com.api.trekkey.global.security.jwt.JwtExtractor;
 import com.api.trekkey.global.security.jwt.JwtTokenProvider;
+import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -54,6 +59,7 @@ import org.springframework.test.web.servlet.MockMvc;
         ReviewAssignmentAdminController.class,
         ReviewRoundEntryAdminController.class,
         ReviewSheetController.class,
+        ReviewSubmissionController.class,
         SubmissionController.class
 })
 @Import({
@@ -89,6 +95,9 @@ class SecurityConfigTest {
 
     @MockitoBean
     private ReviewRoundEntryAdminService reviewRoundEntryAdminService;
+
+    @MockitoBean
+    private ReviewSubmissionService reviewSubmissionService;
 
     @MockitoBean
     private SubmissionService submissionService;
@@ -233,6 +242,70 @@ class SecurityConfigTest {
                 .andExpect(jsonPath("$.code").value("GLOBAL_401"));
 
         verifyNoInteractions(reviewSheetService);
+    }
+
+    @Test
+    @DisplayName("채점 제출 PUT은 토큰 검증을 위해 인증 없이 진입할 수 있다")
+    void reviewSubmission_permitsAnonymousPut() throws Exception {
+        ReviewSubmitReq request = validReviewSubmissionRequest();
+        given(reviewSubmissionService.submitReview(
+                500L,
+                request
+        )).willReturn(null);
+
+        mockMvc.perform(put(
+                        "/api/review/assignments/{assignmentId}/review",
+                        500L
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validReviewSubmissionRequestJson()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"));
+
+        verify(reviewSubmissionService).submitReview(500L, request);
+    }
+
+    @Test
+    @DisplayName("채점 제출 경로의 GET은 인증 없이 사용할 수 없다")
+    void reviewSubmissionGet_rejectsAnonymous() throws Exception {
+        mockMvc.perform(get(
+                        "/api/review/assignments/{assignmentId}/review",
+                        500L
+                ))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(reviewSubmissionService);
+    }
+
+    @Test
+    @DisplayName("채점 제출 경로의 POST는 인증 없이 사용할 수 없다")
+    void reviewSubmissionPost_rejectsAnonymous() throws Exception {
+        mockMvc.perform(post(
+                        "/api/review/assignments/{assignmentId}/review",
+                        500L
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validReviewSubmissionRequestJson()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(reviewSubmissionService);
+    }
+
+    @Test
+    @DisplayName("채점 제출과 유사한 하위 PUT 경로는 인증 없이 사용할 수 없다")
+    void reviewSubmissionNestedPath_rejectsAnonymous() throws Exception {
+        mockMvc.perform(put(
+                        "/api/review/assignments/{assignmentId}/review/draft",
+                        500L
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validReviewSubmissionRequestJson()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(reviewSubmissionService);
     }
 
     @Test
@@ -504,6 +577,32 @@ class SecurityConfigTest {
                   "title": "AI 캠퍼스"
                 }
                 """;
+    }
+
+    private ReviewSubmitReq validReviewSubmissionRequest() {
+        return new ReviewSubmitReq(
+                "a".repeat(43),
+                List.of(new ReviewScoreReq(
+                        600L,
+                        new BigDecimal("10")
+                )),
+                "의견"
+        );
+    }
+
+    private String validReviewSubmissionRequestJson() {
+        return """
+                {
+                  "token": "%s",
+                  "scores": [
+                    {
+                      "criterionId": 600,
+                      "score": 10
+                    }
+                  ],
+                  "comment": "의견"
+                }
+                """.formatted("a".repeat(43));
     }
 
     private String accessToken(String role) {

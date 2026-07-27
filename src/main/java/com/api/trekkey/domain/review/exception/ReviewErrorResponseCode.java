@@ -82,7 +82,47 @@ public enum ReviewErrorResponseCode implements BaseResponseCode {
     REVIEW_ASSIGNMENT_DUPLICATED(
             "REVIEW_ASSIGNMENT_DUPLICATED",
             409,
-            "심사 대상 배정이 이미 처리되었습니다.");
+            "심사 대상 배정이 이미 처리되었습니다."),
+    REVIEW_ASSIGNMENT_NOT_FOUND(
+            "REVIEW_ASSIGNMENT_NOT_FOUND",
+            404,
+            "채점할 심사 배정을 찾을 수 없습니다."),
+    REVIEW_SUBMISSION_NOT_ALLOWED(
+            "REVIEW_SUBMISSION_NOT_ALLOWED",
+            409,
+            "현재 대회 또는 심사 대상 상태에서는 채점을 제출할 수 없습니다."),
+    REVIEW_SUBMISSION_NOT_OPEN(
+            "REVIEW_SUBMISSION_NOT_OPEN",
+            409,
+            "현재 채점을 제출할 수 있는 심사 시간이 아닙니다."),
+    REVIEW_SUBMISSION_DEADLINE_EXPIRED(
+            "REVIEW_SUBMISSION_DEADLINE_EXPIRED",
+            409,
+            "심사 배정 마감 시각이 지났습니다."),
+    REVIEW_SCORE_CRITERIA_MISMATCH(
+            "REVIEW_SCORE_CRITERIA_MISMATCH",
+            400,
+            "현재 라운드의 모든 평가 기준에 점수를 한 번씩 입력해야 합니다."),
+    REVIEW_SCORE_OUT_OF_RANGE(
+            "REVIEW_SCORE_OUT_OF_RANGE",
+            400,
+            "평가 점수가 허용된 범위를 벗어났습니다."),
+    REVIEW_COMMENT_TOO_LONG(
+            "REVIEW_COMMENT_TOO_LONG",
+            400,
+            "심사 의견은 5000자 이하로 입력해야 합니다."),
+    REVIEW_ALREADY_SUBMITTED(
+            "REVIEW_ALREADY_SUBMITTED",
+            409,
+            "이미 제출된 채점 결과와 다른 내용으로 다시 제출할 수 없습니다."),
+    REVIEW_SUBMISSION_STATE_INVALID(
+            "REVIEW_SUBMISSION_STATE_INVALID",
+            409,
+            "저장된 심사 배정과 채점 결과의 상태가 일치하지 않습니다."),
+    REVIEW_SUBMISSION_DUPLICATED(
+            "REVIEW_SUBMISSION_DUPLICATED",
+            409,
+            "채점 결과가 이미 처리되었습니다.");
 
     private final String code;
     private final int httpStatus;

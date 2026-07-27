@@ -34,6 +34,17 @@ public interface ReviewRoundEntryRepository
     List<ReviewRoundEntry> findAllForUpdateByReviewStageIdOrderByIdAsc(
             @Param("reviewStageId") Long reviewStageId);
 
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("""
+            select entry
+            from ReviewRoundEntry entry
+            where entry.id = :entryId
+              and entry.reviewStage.id = :reviewStageId
+            """)
+    Optional<ReviewRoundEntry> findByIdAndReviewStageIdForShare(
+            @Param("entryId") Long entryId,
+            @Param("reviewStageId") Long reviewStageId);
+
     @Query("""
             select entry
             from ReviewRoundEntry entry

@@ -23,5 +23,15 @@ public interface ReviewCriterionRepository extends JpaRepository<ReviewCriterion
     List<ReviewCriterion> findAllForUpdateByContestStageIdInOrderBySortOrderAsc(
             @Param("stageIds") Collection<Long> stageIds);
 
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("""
+            select criterion
+            from ReviewCriterion criterion
+            where criterion.contestStage.id = :stageId
+            order by criterion.sortOrder, criterion.id
+            """)
+    List<ReviewCriterion> findAllForShareByContestStageIdOrderBySortOrderAsc(
+            @Param("stageId") Long stageId);
+
     void deleteByContestStageIdIn(Collection<Long> stageIds);
 }

@@ -68,6 +68,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/organizations/**").permitAll() //회원가입 시 학교 검색 API
                         .requestMatchers(HttpMethod.POST, "/api/review/access").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/review/assignments").permitAll()
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/review/assignments/*/review"
+                        ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/contests").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.GET, "/api/contests/*").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.POST, "/api/contests/*/applications").hasRole("PARTICIPANT")

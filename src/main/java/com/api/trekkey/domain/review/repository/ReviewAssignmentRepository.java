@@ -4,6 +4,7 @@ import com.api.trekkey.domain.review.entity.ReviewAssignment;
 import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -11,6 +12,40 @@ import org.springframework.data.repository.query.Param;
 
 public interface ReviewAssignmentRepository
         extends JpaRepository<ReviewAssignment, Long> {
+
+    interface ReviewSubmissionScope {
+
+        Long getReviewStageId();
+
+        Long getReviewRoundEntryId();
+    }
+
+    @Query("""
+            select stage.id as reviewStageId,
+                   entry.id as reviewRoundEntryId
+            from ReviewAssignment assignment
+            join assignment.contestJudge judge
+            join assignment.reviewRoundEntry entry
+            join entry.reviewStage stage
+            where assignment.id = :assignmentId
+              and judge.id = :judgeId
+            """)
+    Optional<ReviewSubmissionScope> findSubmissionScopeByIdAndJudgeId(
+            @Param("assignmentId") Long assignmentId,
+            @Param("judgeId") Long judgeId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select assignment
+            from ReviewAssignment assignment
+            where assignment.id = :assignmentId
+              and assignment.contestJudge.id = :judgeId
+              and assignment.reviewRoundEntry.id = :entryId
+            """)
+    Optional<ReviewAssignment> findByIdAndJudgeIdAndEntryIdForUpdate(
+            @Param("assignmentId") Long assignmentId,
+            @Param("judgeId") Long judgeId,
+            @Param("entryId") Long entryId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
