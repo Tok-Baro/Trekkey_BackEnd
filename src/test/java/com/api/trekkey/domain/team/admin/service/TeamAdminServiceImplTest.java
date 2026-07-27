@@ -19,11 +19,11 @@ import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.team.admin.web.dto.TeamAdminListRes;
+import com.api.trekkey.domain.team.admin.web.dto.TeamAdminRes;
 import com.api.trekkey.domain.team.admin.web.dto.TeamStatusUpdateReq;
 import com.api.trekkey.domain.team.entity.Team;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
-import com.api.trekkey.domain.team.publicapi.web.dto.TeamRes;
 import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.repository.UserRepository;
@@ -119,7 +119,7 @@ class TeamAdminServiceImplTest {
         Team team = teamFixture(1L, TeamStatus.PENDING, null);
         given(teamRepository.findByPublicId("team-pub-1")).willReturn(Optional.of(team));
 
-        TeamRes result = teamAdminService.changeStatus(
+        TeamAdminRes result = teamAdminService.changeStatus(
                 100L, "team-pub-1", new TeamStatusUpdateReq(TeamStatus.APPROVED));
 
         assertThat(result.status()).isEqualTo(TeamStatus.APPROVED);
@@ -149,7 +149,7 @@ class TeamAdminServiceImplTest {
         Team team = teamFixture(1L, TeamStatus.APPROVED, null);
         given(teamRepository.findByPublicId("team-pub-1")).willReturn(Optional.of(team));
 
-        TeamRes result = teamAdminService.finalizeParticipation(100L, "team-pub-1");
+        TeamAdminRes result = teamAdminService.finalizeParticipation(100L, "team-pub-1");
 
         assertThat(result.participationFinalizedAt()).isNotNull();
         assertThat(team.isFinalized()).isTrue();

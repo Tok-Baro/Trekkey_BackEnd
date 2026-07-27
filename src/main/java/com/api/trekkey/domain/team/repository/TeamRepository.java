@@ -12,7 +12,7 @@ public interface TeamRepository extends JpaRepository<Team, Long> {
 
     Optional<Team> findByPublicId(String publicId);
 
-    List<Team> findAllByLeaderUserIdOrderByCreatedAtDesc(Long leaderUserId);
+    Optional<Team> findByContestPublicIdAndLeaderUserId(String contestPublicId, Long leaderUserId);
 
     List<Team> findAllByContestIdOrderByCreatedAtDesc(Long contestId);
 

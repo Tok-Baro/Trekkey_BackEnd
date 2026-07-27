@@ -1,11 +1,11 @@
-package com.api.trekkey.domain.team.publicapi.web.dto;
+package com.api.trekkey.domain.team.admin.web.dto;
 
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.team.entity.Team;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import java.time.LocalDateTime;
 
-public record TeamRes(
+public record TeamAdminRes(
         // 공개 식별자 — 내부 PK는 노출하지 않는다
         String id,
         String contestId,
@@ -22,8 +22,8 @@ public record TeamRes(
         LocalDateTime participationFinalizedAt,
         LocalDateTime createdAt
 ) {
-    public static TeamRes from(Team team) {
-        return new TeamRes(
+    public static TeamAdminRes from(Team team) {
+        return new TeamAdminRes(
                 team.getPublicId(),
                 team.getContest().getPublicId(),
                 team.getContest().getTitle(),
