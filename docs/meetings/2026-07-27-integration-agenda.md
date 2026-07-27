@@ -44,7 +44,7 @@
 | 항목 | 상태 | 조치 |
 | --- | --- | --- |
 | 백엔드 `develop` | PR #10까지 병합, 팀원 기반 참가 신청 추가 | 통합 PR의 base로 사용 |
-| [백엔드 통합 PR #9](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/9) | 최신 `develop` 통합·충돌 해결·MySQL 회귀 성공 | 새 CI와 GitHub mergeability 재확인 |
+| [백엔드 통합 PR #9](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/9) | 최신 `develop` 통합, mergeable, CI·MySQL 회귀 성공, 리뷰·댓글 0건 | 팀 리뷰어 지정·승인 |
 | 기존 백엔드 PR #7 | 종료됨 | PR #9로 대체 완료 |
 | [보안 PR #8](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/8) | mergeable, 리뷰·댓글 0건, GitHub CI 없음 | 우선 리뷰·실제 키 교체·병합 |
 | [프론트 통합 PR #1](https://github.com/Tok-Baro/Trekkey/pull/1) | CI 성공·mergeable, 리뷰·댓글 0건 | `main` 대상 Draft, 백엔드 PR #9 계약 뒤 병합 |
