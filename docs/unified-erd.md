@@ -9,7 +9,7 @@
 
 팀 회의에서 업무 SQL과 앵커링 SQL을 한 캔버스로 보기 위한 통합 뷰다. `ANC_*`도 MySQL 테이블이며, Kaia에는 이 테이블이 생성되지 않는다. Kaia는 issuer key, Merkle root, Credential 폐기·대체 상태만 보관한다. 실제 컬럼과 제약을 수정할 때는 분리 원장인 `erd.md`를 먼저 갱신하고 이 뷰를 동기화한다.
 
-> 이 문서는 합의된 **목표 스키마**다. 2026-07-27 `develop`과 PR #9의 실행 코드는 아직 `CONTEST_STAGE`/`CONTEST_STAGE_ENTRY`를 사용한다. `REVIEW_ROUND`/`REVIEW_ROUND_ENTRY`는 후속 심사 모델 전환 PR이 병합되기 전까지 현재 DB 스키마가 아니다. 현재 코드 검증에는 `develop`을, 다음 모델 구현에는 이 문서를 사용한다.
+> 이 문서는 합의된 **목표 스키마**다. 2026-07-27 PR #9가 `develop`에 병합됐지만 실행 코드는 아직 `CONTEST_STAGE`/`CONTEST_STAGE_ENTRY`를 사용한다. `REVIEW_ROUND`/`REVIEW_ROUND_ENTRY`는 후속 심사 모델 전환 PR이 병합되기 전까지 현재 DB 스키마가 아니다. 현재 코드 검증에는 `develop`을, 다음 모델 구현에는 이 문서를 사용한다.
 
 ```mermaid
 erDiagram
