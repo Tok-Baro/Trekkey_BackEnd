@@ -7,6 +7,9 @@ erDiagram
     CONTEST ||--o{ REVIEW_ROUND : has_rounds
     CONTEST ||--o{ TEAM : accepts
     USER ||--o{ TEAM : leads
+    ORGANIZATION ||--o{ ADMIN_INVITATION : issues_invite
+    USER ||--o{ ADMIN_INVITATION : invited_by
+    USER ||--o{ REFRESH_TOKEN : holds
     TEAM ||--|{ TEAM_MEMBER : has_members
     USER ||--o{ TEAM_MEMBER : joins
     TEAM ||--o| SUBMISSION : submits
@@ -25,9 +28,6 @@ erDiagram
     REVIEW_CRITERION ||--o{ REVIEW_SCORE_ITEM : scores
     REVIEW_ROUND_ENTRY ||--o| AWARD : supports
     TEAM ||--o| AWARD : receives
-    ORGANIZATION ||--o{ ADMIN_INVITATION : issues_invite
-    USER ||--o{ ADMIN_INVITATION : invited_by
-    USER ||--o{ REFRESH_TOKEN : holds
     ORGANIZATION ||--o{ ANC_ISSUER_KEY : owns
     ORGANIZATION ||--o{ ANC_CREDENTIAL : issues
     ORGANIZATION ||--o{ ANC_BATCH : creates
@@ -450,3 +450,6 @@ erDiagram
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
+
+
+

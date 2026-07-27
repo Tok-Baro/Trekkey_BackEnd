@@ -2,6 +2,7 @@ package com.api.trekkey.domain.review.admin.service;
 
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
+import com.api.trekkey.domain.credential.integration.WorkCredentialIssuer;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.StagePassRule;
@@ -34,7 +35,9 @@ import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -62,6 +65,8 @@ public class ReviewAdminServiceImpl implements ReviewAdminService {
     private final ContestStageEntryRepository entryRepository;
     private final ReviewAssignmentRepository assignmentRepository;
     private final ReviewRepository reviewRepository;
+    private final WorkCredentialIssuer workCredentialIssuer;
+    private final Clock clock;
     private final ReviewTokenSupport reviewTokenSupport;
     private final AdminAuditLogger adminAuditLogger;
 
@@ -161,12 +166,15 @@ public class ReviewAdminServiceImpl implements ReviewAdminService {
             throw new CustomException(ReviewErrorResponseCode.ROUND_NO_TARGET);
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        //제출 확정 시각은 Credential 원문에 들어가므로 UTC로 고정 (award 확정과 동일 규약)
+        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
         List<EntryRes> result = new ArrayList<>();
         for (Submission submission : targets) {
             //첫 심사 시작 이후 제출물 수정 금지 (erd-mvp §5)
             if (!submission.isFinalized()) {
                 submission.finalizeSubmission(now);
+                //제출 확정과 작품 Credential 발급을 한 트랜잭션으로 (erd-mvp §6 — 원천: 확정 SUBMISSION)
+                workCredentialIssuer.issueForFinalizedSubmission(submission);
             }
             ContestStageEntry entry = entryRepository.save(ContestStageEntry.builder()
                     .contestStage(stage)

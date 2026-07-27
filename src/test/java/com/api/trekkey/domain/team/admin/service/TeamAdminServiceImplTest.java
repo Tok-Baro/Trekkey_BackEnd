@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
+import com.api.trekkey.domain.credential.integration.ParticipationCredentialIssuer;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
@@ -28,7 +29,10 @@ import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,6 +56,9 @@ class TeamAdminServiceImplTest {
     private TeamRepository teamRepository;
 
     @Mock
+    private ParticipationCredentialIssuer participationCredentialIssuer;
+
+    @Mock
     private AdminAuditLogger adminAuditLogger;
 
     private TeamAdminServiceImpl teamAdminService;
@@ -63,7 +70,9 @@ class TeamAdminServiceImplTest {
     @BeforeEach
     void setUp() {
         teamAdminService = new TeamAdminServiceImpl(
-                userRepository, contestRepository, teamRepository, adminAuditLogger);
+                userRepository, contestRepository, teamRepository,
+                participationCredentialIssuer, Clock.fixed(Instant.parse("2026-07-27T12:00:00Z"), ZoneOffset.UTC),
+                adminAuditLogger);
 
         organization = mock(Organization.class);
         lenient().when(organization.getId()).thenReturn(1L);
@@ -155,6 +164,7 @@ class TeamAdminServiceImplTest {
         assertThat(team.isFinalized()).isTrue();
         verify(adminAuditLogger).log(eq(100L), eq(1L), eq(AuditAction.TEAM_FINALIZE),
                 eq("TEAM"), eq(1L), anyString());
+        verify(participationCredentialIssuer).issueForFinalizedTeam(team); //확정과 같은 트랜잭션에서 참여 Credential 발급
     }
 
     @Test

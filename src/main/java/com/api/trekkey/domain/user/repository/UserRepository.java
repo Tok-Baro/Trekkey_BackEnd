@@ -18,6 +18,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByOrganizationIdAndStudentId(Long organizationId, String studentId);
 
+    Optional<User> findByOrganizationIdAndStudentId(Long organizationId, String studentId);
+
     // 로그인 시 이메일로 사용자를 찾고, 비밀번호 검증은 AuthService에서 BCrypt로 처리한다.
     Optional<User> findByEmail(String email);
 

@@ -10,6 +10,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Index;
+import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -18,6 +20,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
+@Table(
+        name = "refresh_token",
+        indexes = @Index(name = "idx_refresh_token_family_id", columnList = "family_id")) //재사용 감지 시 계보 전체 폐기 조회용
 @Getter
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
