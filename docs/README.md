@@ -3,7 +3,7 @@
 팀 구현 기준 문서는 다음 여섯 개다.
 
 1. [업무·블록체인 전체 통합 ERD](./unified-erd.md)
-   - 업무 SQL 16개와 앵커링 SQL 9개를 한 캔버스에 표시
+   - 업무 SQL 16개, 인증·관리 SQL 3개, 앵커링 SQL 9개를 한 캔버스에 표시
    - 신청·제출 일정은 `CONTEST`, 가변 심사는 `REVIEW_ROUND`로 분리
    - [확대용 SVG](./assets/trekkey-unified-erd.svg)
    - [Raw Mermaid](./trekkey-unified-erd.mmd)
