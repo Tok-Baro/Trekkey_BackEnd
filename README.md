@@ -73,14 +73,14 @@ src/main/java/com/api/trekkey
 | `SPRING_DATASOURCE_URL` | MySQL JDBC URL | 없음 |
 | `SPRING_DATASOURCE_USERNAME` | DB 사용자명 | 없음 |
 | `SPRING_DATASOURCE_PASSWORD` | DB 비밀번호 | 없음 |
-| `JWT_SECRET` | JWT 서명 키 | 개발용 기본값 |
+| `JWT_SECRET` | Base64 인코딩된 64바이트 이상 JWT 서명 키 | 없음 |
 | `JWT_ACCESS_EXPIRATION` | access token 유효기간(초) | `1800` |
 | `JWT_REFRESH_EXPIRATION` | refresh token 유효기간(초) | `1209600` |
 | `JWT_REFRESH_COOKIE_NAME` | refresh cookie 이름 | `refreshToken` |
 | `JWT_REFRESH_COOKIE_SECURE` | HTTPS 전용 쿠키 여부 | `false` |
 | `JWT_REFRESH_COOKIE_SAME_SITE` | SameSite 정책 | `Lax` |
 
-> 운영 환경에서는 충분히 긴 `JWT_SECRET`을 반드시 별도로 주입하고, HTTPS 환경에서 `JWT_REFRESH_COOKIE_SECURE=true`를 사용하세요.
+> `JWT_SECRET`이 없거나 HS512 기준보다 짧으면 애플리케이션이 기동하지 않습니다. HTTPS 환경에서는 `JWT_REFRESH_COOKIE_SECURE=true`를 사용하세요.
 
 ## 로컬 실행
 
@@ -88,12 +88,14 @@ src/main/java/com/api/trekkey
 export SPRING_DATASOURCE_URL='jdbc:mysql://localhost:3306/trekkey'
 export SPRING_DATASOURCE_USERNAME='root'
 export SPRING_DATASOURCE_PASSWORD='your-password'
-export JWT_SECRET='your-production-grade-secret-key'
+export JWT_SECRET="$(openssl rand -base64 64)"
 
 ./gradlew bootRun
 ```
 
 애플리케이션은 기본적으로 `http://localhost:8080`에서 실행됩니다.
+로컬 파일을 사용할 때는 `application-local.properties.example`을
+`application-local.properties`로 복사하고 실제 값은 Git에 커밋하지 않습니다.
 
 ## 테스트
 
