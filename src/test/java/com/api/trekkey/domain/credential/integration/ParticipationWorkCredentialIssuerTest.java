@@ -90,7 +90,7 @@ class ParticipationWorkCredentialIssuerTest {
         lenient().when(leaderRow.getUser()).thenReturn(leader);
         TeamMember memberRow = mock(TeamMember.class);
         lenient().when(memberRow.getUser()).thenReturn(member);
-        lenient().when(teamMemberRepository.findAllByTeamId(20L))
+        lenient().when(teamMemberRepository.findAllByTeamIdOrderByUserIdAsc(20L))
                 .thenReturn(List.of(leaderRow, memberRow));
 
         submission = mock(Submission.class);

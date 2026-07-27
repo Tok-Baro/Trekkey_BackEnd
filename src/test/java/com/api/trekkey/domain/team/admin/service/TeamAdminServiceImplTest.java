@@ -29,7 +29,10 @@ import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,7 +71,8 @@ class TeamAdminServiceImplTest {
     void setUp() {
         teamAdminService = new TeamAdminServiceImpl(
                 userRepository, contestRepository, teamRepository,
-                participationCredentialIssuer, adminAuditLogger);
+                participationCredentialIssuer, Clock.fixed(Instant.parse("2026-07-27T12:00:00Z"), ZoneOffset.UTC),
+                adminAuditLogger);
 
         organization = mock(Organization.class);
         lenient().when(organization.getId()).thenReturn(1L);

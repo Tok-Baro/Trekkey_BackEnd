@@ -39,7 +39,10 @@ import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
@@ -96,7 +99,8 @@ class ReviewAdminServiceImplTest {
         reviewAdminService = new ReviewAdminServiceImpl(
                 userRepository, contestRepository, contestStageRepository, submissionRepository,
                 contestJudgeRepository, entryRepository, assignmentRepository, reviewRepository,
-                workCredentialIssuer, new ReviewTokenSupport("http://localhost:5173"), adminAuditLogger);
+                workCredentialIssuer, Clock.fixed(Instant.parse("2026-07-27T12:00:00Z"), ZoneOffset.UTC),
+                new ReviewTokenSupport("http://localhost:5173"), adminAuditLogger);
 
         organization = mock(Organization.class);
         lenient().when(organization.getId()).thenReturn(1L);
