@@ -3,10 +3,10 @@ package com.api.trekkey.domain.team.admin.web.controller;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.team.admin.service.TeamAdminService;
 import com.api.trekkey.domain.team.admin.web.dto.TeamAdminListRes;
+import com.api.trekkey.domain.team.admin.web.dto.TeamAdminRes;
 import com.api.trekkey.domain.team.admin.web.dto.TeamStatusUpdateReq;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
-import com.api.trekkey.domain.team.publicapi.web.dto.TeamRes;
 import com.api.trekkey.global.response.SuccessResponse;
 import com.api.trekkey.global.security.AuthPrincipal;
 import com.api.trekkey.global.swagger.ApiErrorCodeExamples;
@@ -42,11 +42,11 @@ public class TeamAdminController {
 
     @ApiErrorCodeExamples(value = TeamErrorResponseCode.class, codes = {"TEAM_NOT_FOUND"})
     @PatchMapping("/api/admin/teams/{teamPublicId}/status")
-    public ResponseEntity<SuccessResponse<TeamRes>> changeStatus(
+    public ResponseEntity<SuccessResponse<TeamAdminRes>> changeStatus(
             @AuthenticationPrincipal AuthPrincipal authPrincipal,
             @PathVariable String teamPublicId,
             @RequestBody @Valid TeamStatusUpdateReq request) {
-        TeamRes response = teamAdminService.changeStatus(authPrincipal.getId(), teamPublicId, request);
+        TeamAdminRes response = teamAdminService.changeStatus(authPrincipal.getId(), teamPublicId, request);
 
         return ResponseEntity.ok(SuccessResponse.okCustom(response, "신청 상태를 변경했습니다."));
     }
@@ -57,10 +57,10 @@ public class TeamAdminController {
             "TEAM_NOT_APPROVED"
     })
     @PostMapping("/api/admin/teams/{teamPublicId}/finalize")
-    public ResponseEntity<SuccessResponse<TeamRes>> finalizeParticipation(
+    public ResponseEntity<SuccessResponse<TeamAdminRes>> finalizeParticipation(
             @AuthenticationPrincipal AuthPrincipal authPrincipal,
             @PathVariable String teamPublicId) {
-        TeamRes response = teamAdminService.finalizeParticipation(authPrincipal.getId(), teamPublicId);
+        TeamAdminRes response = teamAdminService.finalizeParticipation(authPrincipal.getId(), teamPublicId);
 
         return ResponseEntity.ok(SuccessResponse.okCustom(response, "팀원 명단을 확정했습니다."));
     }
