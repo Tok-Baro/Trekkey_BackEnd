@@ -1,7 +1,5 @@
 package com.api.trekkey.domain.credential.web.dto;
 
-import com.api.trekkey.domain.credential.entity.AncCredential;
-import com.api.trekkey.domain.credential.entity.AncCredentialSubject;
 import com.api.trekkey.domain.credential.entity.CredentialStatus;
 import com.api.trekkey.domain.credential.entity.CredentialType;
 import java.time.LocalDateTime;
@@ -19,17 +17,4 @@ public record CredentialHistoryRes(
         String displayName,
         String contestTitle,
         LocalDateTime issuedAt) {
-
-    public static CredentialHistoryRes of(
-            AncCredential credential, AncCredentialSubject subject, String contestTitle) {
-        return new CredentialHistoryRes(
-                credential.getPublicId(),
-                credential.getCredentialNo(),
-                credential.getCredentialType(),
-                credential.getStatus(),
-                subject.getRoleCode(),
-                subject.getDisplayNameSnapshot(),
-                contestTitle,
-                credential.getIssuedAt());
-    }
 }

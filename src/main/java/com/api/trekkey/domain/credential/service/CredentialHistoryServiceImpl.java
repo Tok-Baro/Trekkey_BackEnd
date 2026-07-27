@@ -1,22 +1,17 @@
 package com.api.trekkey.domain.credential.service;
 
-import com.api.trekkey.domain.credential.entity.AncCredential;
-import com.api.trekkey.domain.credential.entity.AncCredentialSubject;
-import com.api.trekkey.domain.credential.repository.AncCredentialRepository;
+import com.api.trekkey.domain.credential.entity.CredentialStatus;
+import com.api.trekkey.domain.credential.entity.CredentialType;
 import com.api.trekkey.domain.credential.repository.AncCredentialSubjectRepository;
+import com.api.trekkey.domain.credential.repository.CredentialHistoryRow;
 import com.api.trekkey.domain.credential.web.dto.CredentialHistoryRes;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 현재 팀·업무 원장이 아니라 발급 당시 ANC_CREDENTIAL_SUBJECT snapshot을 근거로 조회한다 —
  * 팀이 해체되거나 업무 데이터가 바뀌어도 개인 이력은 보존된다.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -32,12 +28,10 @@ public class CredentialHistoryServiceImpl implements CredentialHistoryService {
 
     private final UserRepository userRepository;
     private final AncCredentialSubjectRepository credentialSubjectRepository;
-    private final AncCredentialRepository credentialRepository;
-    private final ObjectMapper objectMapper;
 
     @Override
     public List<CredentialHistoryRes> getMyCredentials(Long userId) {
-        return toHistory(credentialSubjectRepository.findByUserIdOrderByCreatedAtDesc(userId), null);
+        return toHistory(credentialSubjectRepository.findHistoryRowsByUserId(userId), null);
     }
 
     @Override
@@ -51,47 +45,35 @@ public class CredentialHistoryServiceImpl implements CredentialHistoryService {
                 .orElseThrow(() -> new CustomException(UserErrorResponseCode.USER_NOT_FOUND));
 
         return toHistory(
-                credentialSubjectRepository.findByUserIdOrderByCreatedAtDesc(student.getId()),
+                credentialSubjectRepository.findHistoryRowsByUserId(student.getId()),
                 organizationId);
     }
 
     //======= 헬퍼 메서드 ==========
 
-    private List<CredentialHistoryRes> toHistory(List<AncCredentialSubject> subjects, Long issuerOrganizationId) {
-        if (subjects.isEmpty()) {
-            return List.of();
-        }
-        //subject → credential은 batch 조회로 한 번에 적재 (수현 컨벤션: 연관관계 없이 FK 값 참조)
-        Map<Long, AncCredential> credentials = credentialRepository
-                .findAllById(subjects.stream().map(AncCredentialSubject::getCredentialId).toList())
-                .stream()
-                .collect(Collectors.toMap(AncCredential::getId, Function.identity()));
-
-        return subjects.stream()
-                .map(subject -> {
-                    AncCredential credential = credentials.get(subject.getCredentialId());
-                    if (credential == null) {
-                        return null;
+    private List<CredentialHistoryRes> toHistory(List<CredentialHistoryRow> rows, Long issuerOrganizationId) {
+        return rows.stream()
+                .filter(row -> {
+                    //LEFT JOIN에서 credential이 비면 끊어진 참조 — 데이터 정합 문제이므로 숨기지 않고 경고한다
+                    if (row.getCredentialId() == null) {
+                        log.warn("ANC_CREDENTIAL_SUBJECT가 존재하지 않는 credential을 참조합니다. credentialId={}",
+                                row.getSubjectCredentialId());
+                        return false;
                     }
-                    //관리자 학번 조회는 자기 학교가 발급한 Credential만 노출한다
-                    if (issuerOrganizationId != null
-                            && !credential.getIssuerOrganizationId().equals(issuerOrganizationId)) {
-                        return null;
-                    }
-                    return CredentialHistoryRes.of(credential, subject, contestTitle(credential));
+                    return true;
                 })
-                .filter(java.util.Objects::nonNull)
-                .sorted(Comparator.comparing(CredentialHistoryRes::issuedAt).reversed())
+                //관리자 학번 조회는 자기 학교가 발급한 Credential만 노출한다
+                .filter(row -> issuerOrganizationId == null
+                        || issuerOrganizationId.equals(row.getIssuerOrganizationId()))
+                .map(row -> new CredentialHistoryRes(
+                        row.getCredentialPublicId(),
+                        row.getCredentialNo(),
+                        CredentialType.valueOf(row.getCredentialType()),
+                        CredentialStatus.valueOf(row.getStatus()),
+                        row.getRoleCode(),
+                        row.getDisplayName(),
+                        row.getContestTitle(),
+                        row.getIssuedAt()))
                 .toList();
-    }
-
-    // 발급 시점 payload에 고정된 대회명 — 업무 테이블이 아니라 불변 원문에서 읽는다
-    private String contestTitle(AncCredential credential) {
-        try {
-            JsonNode payload = objectMapper.readTree(credential.getPayloadJson());
-            return payload.path("source").path("snapshot").path("contestTitle").asText(null);
-        } catch (Exception exception) {
-            return null;
-        }
     }
 }
