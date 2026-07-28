@@ -1,6 +1,6 @@
 # Trekkey 블록체인 구현 및 실행 가이드
 
-- 기준일: 2026-07-28
+- 기준일: 2026-07-29
 - 대상: Trekkey 백엔드 개발자, 학교 관리자, 배포 담당자
 - 네트워크: Kaia Kairos `chainId=1001`
 - 컨트랙트: `TrekkeyCredentialRegistryV1`
@@ -9,6 +9,11 @@
 - 현재 issuer key: version `2`, signer `0x235a99Eb7Acb6f181740B246acfc9885692BD79d`
 - 현재 backend relayer: `0xB87670C4171e913368F688B660e143366E0ca6ea`
 - 실제 배포 증적: [Kairos Registry 배포 기록과 재현 절차](./blockchain-kairos-deployment.md)
+- 후속 개발 순서: [Kairos 지속 사용 및 후속 개발 인계](./blockchain-kairos-continuation-plan.md)
+
+현재 개발·시연·학교 내부 베타는 같은 Kairos Registry를 계속 사용한다. Mainnet은 실제
+학교의 장기 공식 발급 요구, 공용 DB migration, QR E2E, KMS와 복구 준비가 모두 확정된 뒤
+별도 Registry로 배포한다. Kaiascan source verification은 Kairos 사용의 선행 조건이 아니다.
 
 ## 1. 현재 구현된 범위
 

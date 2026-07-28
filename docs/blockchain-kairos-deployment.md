@@ -7,10 +7,13 @@
 - Registry: `0x4ca738CC22Af5aE40EA8A23E001FA93e1e044117`
 - 상태: Registry 배포, issuer v2·backend relayer 설정, `READ_ONLY`, anchor, QR 대상 API, revoke·supersede E2E 완료
 - 미완료: Kaiascan source verification과 mainnet 운영 준비
+- 운영 결정: 졸업작품·시연·학교 내부 베타는 현재 Kairos Registry를 계속 사용
 
 이 문서는 실제 Kairos 공개 좌표와 트랜잭션을 증적으로 남기고, 같은 검증을 재현하는
 절차를 설명한다. Credential 발급 규칙과 운영 구조는
 [블록체인 구현 및 실행 가이드](./blockchain-implementation-runbook.md)를 기준으로 한다.
+후속 개발 우선순위와 Mainnet 전환 조건은
+[Kairos 지속 사용 및 후속 개발 인계](./blockchain-kairos-continuation-plan.md)를 따른다.
 
 ## 1. 현재 공개 좌표
 
