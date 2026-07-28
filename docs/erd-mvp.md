@@ -189,10 +189,11 @@ sequenceDiagram
     participant API as Contest API
     participant DB as MySQL
 
+    Admin->>API: 심사 대상 준비 및 심사위원 배정
+    API->>DB: ELIGIBLE ENTRY와 ASSIGNMENT 저장
     Admin->>API: 라운드 시작
-    API->>DB: 대상 제출물 조회
-    API->>DB: REVIEW_ROUND_ENTRY 생성
-    API->>DB: REVIEW_ASSIGNMENT 생성
+    API->>DB: 현재 대상 집합 재검증 및 제출물 확정
+    API->>DB: ENTRY를 IN_REVIEW로 전환
     Judge->>API: 기준별 점수와 의견 제출
     API->>DB: REVIEW와 SCORE_ITEM 저장
     API->>DB: 제출된 REVIEW 잠금
@@ -208,6 +209,14 @@ sequenceDiagram
 - REVIEW_ROUND_ENTRY는 학교가 확정한 공식 점수·순위·통과·탈락 원장이다.
 - FINALIZED 라운드의 ENTRY, 평가 기준, 배정, 제출된 REVIEW는 수정·삭제할 수 없다.
 - AWARD.teamId는 조회용 비정규화 FK이며 ENTRY에서 도달한 TEAM과 같아야 한다.
+- 위 sequence는 점수형 라운드 기준이다.
+  `targetType=MANUAL`, `decisionRule=MANUAL`인 무채점 수동 라운드는
+  평가 기준, 배정, REVIEW, SCORE_ITEM을 만들지 않는다. 관리자가 모든
+  ENTRY의 판정 사유와 중복 없는 연속 순위 `1..N`을 제출하고
+  `finalScore=null`로 원자적으로 확정한다.
+- 라운드를 열기 전에 대상 TEAM의 명단이 모두 확정돼 있어야 하며,
+  앞선 라운드는 모두 FINALIZED여야 한다. 한 대회에는 OPEN 라운드를
+  하나만 허용한다.
 
 ## 6. Credential 발급 단위
 
