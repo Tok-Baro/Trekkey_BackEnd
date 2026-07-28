@@ -4,6 +4,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -12,6 +13,7 @@ import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.publicapi.service.ContestService;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestDetailRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestLikeRes;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchRes;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
 import com.api.trekkey.global.exception.CustomException;
@@ -78,7 +80,8 @@ class ContestControllerTest {
                 .andExpect(jsonPath("$.data[0].applicationStartsAt").doesNotExist())
                 .andExpect(jsonPath("$.data[0].applicationEndsAt").doesNotExist())
                 .andExpect(jsonPath("$.data[0].viewCount").value(31))
-                .andExpect(jsonPath("$.data[0].likeCount").value(7));
+                .andExpect(jsonPath("$.data[0].likeCount").value(7))
+                .andExpect(jsonPath("$.data[0].likedByMe").value(true));
     }
 
     @Test
@@ -126,9 +129,26 @@ class ContestControllerTest {
                 .andExpect(jsonPath("$.data.awardCount").value(3))
                 .andExpect(jsonPath("$.data.detailHtml").value("<p>대회 상세</p>"))
                 .andExpect(jsonPath("$.data.viewCount").value(31))
-                .andExpect(jsonPath("$.data.likeCount").value(7));
+                .andExpect(jsonPath("$.data.likeCount").value(7))
+                .andExpect(jsonPath("$.data.likedByMe").value(true));
 
         verify(contestService).getContestDetail(10L, publicId);
+    }
+
+    @Test
+    @DisplayName("좋아요를 토글하고 변경된 상태와 개수를 반환한다")
+    void toggleLike_returnsChangedLikeState() throws Exception {
+        String publicId = "f04739b5-bb66-4c3f-bf91-31b8712011be";
+        given(contestService.toggleLike(10L, publicId))
+                .willReturn(new ContestLikeRes(8L, true));
+
+        mockMvc.perform(post("/api/contests/{publicId}/like", publicId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.data.likeCount").value(8))
+                .andExpect(jsonPath("$.data.likedByMe").value(true));
+
+        verify(contestService).toggleLike(10L, publicId);
     }
 
     @Test
@@ -154,7 +174,8 @@ class ContestControllerTest {
                 List.of("AI", "캠퍼스"),
                 LocalDateTime.of(2026, 8, 10, 23, 59),
                 31L,
-                7L);
+                7L,
+                true);
     }
 
     private ContestDetailRes detailResponse() {
@@ -176,7 +197,8 @@ class ContestControllerTest {
                 "우수팀 시상",
                 "<p>대회 상세</p>",
                 31L,
-                7L);
+                7L,
+                true);
     }
 
     private Authentication participantAuthentication() {
