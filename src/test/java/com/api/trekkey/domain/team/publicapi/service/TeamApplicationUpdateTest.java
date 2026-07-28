@@ -8,10 +8,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.api.trekkey.domain.award.repository.AwardRepository;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
+import com.api.trekkey.domain.contest.repository.ContestStageRepository;
 import com.api.trekkey.domain.organization.entity.Organization;
+import com.api.trekkey.domain.review.repository.ContestStageEntryRepository;
+import com.api.trekkey.domain.submission.repository.SubmissionRepository;
 import com.api.trekkey.domain.team.entity.Team;
 import com.api.trekkey.domain.team.entity.TeamMember;
 import com.api.trekkey.domain.team.entity.TeamMemberRole;
@@ -53,6 +57,18 @@ class TeamApplicationUpdateTest {
     private TeamMemberRepository teamMemberRepository;
 
     @Mock
+    private SubmissionRepository submissionRepository;
+
+    @Mock
+    private ContestStageRepository contestStageRepository;
+
+    @Mock
+    private ContestStageEntryRepository contestStageEntryRepository;
+
+    @Mock
+    private AwardRepository awardRepository;
+
+    @Mock
     private Organization organization;
 
     private TeamApplicationServiceImpl teamApplicationService;
@@ -66,7 +82,11 @@ class TeamApplicationUpdateTest {
                 userRepository,
                 contestRepository,
                 teamRepository,
-                teamMemberRepository);
+                teamMemberRepository,
+                submissionRepository,
+                contestStageRepository,
+                contestStageEntryRepository,
+                awardRepository);
 
         contest = Contest.builder()
                 .id(20L)
