@@ -94,6 +94,8 @@ class CredentialIssuanceServiceImplTest {
                 .contains("\"credentialType\":\"AWARD\"")
                 .contains("\"issuer\"")
                 .contains("\"subjects\"")
+                .containsPattern("\"ref\":\"user:[0-9a-f-]{36}\"")
+                .doesNotContain("\"ref\":\"user:40\"")
                 .doesNotContain("\"userId\"");
         assertThat(credential.getContentHash()).hasSize(32);
         assertThat(credential.getFileManifestHash()).hasSize(32);
@@ -101,6 +103,9 @@ class CredentialIssuanceServiceImplTest {
         assertThat(subjectsCaptor.getValue())
                 .extracting(AncCredentialSubject::getSubjectOrder)
                 .containsExactly(0, 1);
+        assertThat(subjectsCaptor.getValue().get(1).getSubjectRef())
+                .matches("user:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
+                .doesNotContain("user:40");
     }
 
     @Test
@@ -171,7 +176,7 @@ class CredentialIssuanceServiceImplTest {
                         new CredentialIssueCommand.Subject(
                                 40L,
                                 null,
-                                "user-public-40",
+                                "user:40",
                                 CredentialSubjectType.USER,
                                 "김학생",
                                 "컴퓨터공학",

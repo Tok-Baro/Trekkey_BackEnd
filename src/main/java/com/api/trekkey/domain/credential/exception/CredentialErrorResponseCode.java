@@ -16,6 +16,10 @@ public enum CredentialErrorResponseCode implements BaseResponseCode {
             "CREDENTIAL_409_SOURCE_CONFLICT",
             409,
             "같은 발급 원천으로 생성된 Credential과 요청 내용이 일치하지 않습니다."),
+    CREDENTIAL_PACKAGE_NOT_PUBLIC(
+            "CREDENTIAL_PACKAGE_403",
+            403,
+            "비공개 주체가 포함된 Credential Package는 공개할 수 없습니다."),
     BATCH_NOT_FOUND("CREDENTIAL_BATCH_404", 404, "존재하지 않는 앵커링 배치입니다."),
     STATUS_EVENT_NOT_FOUND("CREDENTIAL_STATUS_EVENT_404", 404, "존재하지 않는 상태 변경 요청입니다."),
     ISSUER_KEY_NOT_FOUND("CREDENTIAL_ISSUER_KEY_404", 404, "등록된 발급 기관 키가 없습니다."),

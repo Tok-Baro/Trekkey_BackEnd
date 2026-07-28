@@ -9,6 +9,7 @@ import com.api.trekkey.domain.credential.crypto.SourceFingerprint;
 import com.api.trekkey.domain.credential.entity.AncCredential;
 import com.api.trekkey.domain.credential.entity.AncCredentialSource;
 import com.api.trekkey.domain.credential.entity.AncCredentialSubject;
+import com.api.trekkey.domain.credential.entity.CredentialSubjectType;
 import com.api.trekkey.domain.credential.exception.CredentialErrorResponseCode;
 import com.api.trekkey.domain.credential.repository.AncCredentialRepository;
 import com.api.trekkey.domain.credential.repository.AncCredentialSourceRepository;
@@ -66,9 +67,10 @@ public class CredentialIssuanceServiceImpl implements CredentialIssuanceService 
             }
 
             String credentialPublicId = UUID.randomUUID().toString();
+            CredentialIssueCommand publicCommand = withOpaqueUserSubjectRefs(command);
             byte[] canonicalBytes = CanonicalJson.canonicalize(CredentialPayloadFactory.create(
                     credentialPublicId,
-                    command,
+                    publicCommand,
                     issuerPublicId,
                     organization.getName(),
                     manifest.hash().hex()));
@@ -94,7 +96,7 @@ public class CredentialIssuanceServiceImpl implements CredentialIssuanceService 
                     command.expiresAt() == null ? null : UtcTime.toLocalDateTime(command.expiresAt())));
 
             credentialSourceRepository.save(sourceEntity(credential, command, sourceFingerprint));
-            credentialSubjectRepository.saveAll(subjectEntities(credential, command));
+            credentialSubjectRepository.saveAll(subjectEntities(credential, publicCommand));
             return response(credential, false);
         } catch (CryptoValidationException exception) {
             throw new CustomException(CredentialErrorResponseCode.INVALID_CREDENTIAL_INPUT);
@@ -153,6 +155,33 @@ public class CredentialIssuanceServiceImpl implements CredentialIssuanceService 
         snapshot.put("subjectType", subject.subjectType().name());
         snapshot.put("disclosureClass", subject.disclosureClass().name());
         return new SourceFingerprint.SubjectSnapshot(subject.subjectRef(), subject.roleCode(), snapshot);
+    }
+
+    private CredentialIssueCommand withOpaqueUserSubjectRefs(CredentialIssueCommand command) {
+        List<CredentialIssueCommand.Subject> publicSubjects = command.subjects().stream()
+                .map(subject -> subject.subjectType() == CredentialSubjectType.USER
+                        ? new CredentialIssueCommand.Subject(
+                                subject.userId(),
+                                subject.teamId(),
+                                "user:" + UUID.randomUUID(),
+                                subject.subjectType(),
+                                subject.displayName(),
+                                subject.major(),
+                                subject.roleCode(),
+                                subject.disclosureClass(),
+                                subject.order())
+                        : subject)
+                .toList();
+        return new CredentialIssueCommand(
+                command.issuerOrganizationId(),
+                command.credentialNo(),
+                command.credentialType(),
+                command.schemaProfileId(),
+                command.source(),
+                publicSubjects,
+                command.files(),
+                command.issuedAt(),
+                command.expiresAt());
     }
 
     private FileManifest.Result fileManifest(List<CredentialIssueCommand.FileEvidence> files) {

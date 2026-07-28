@@ -1,6 +1,6 @@
 # Trekkey 블록체인 구현 및 실행 가이드
 
-- 기준일: 2026-07-24
+- 기준일: 2026-07-28
 - 대상: Trekkey 백엔드 개발자, 학교 관리자, 배포 담당자
 - 네트워크: Kaia Kairos `chainId=1001`
 - 컨트랙트: `TrekkeyCredentialRegistryV1`
@@ -19,30 +19,63 @@
 | Kaia 연결 | web3j 표준 EVM JSON-RPC adapter |
 | 비동기 전송 | Transactional Outbox와 receipt/readback 검증 |
 | 공개 검증 | canonical payload, local hash/proof, Kaia 상태 종합 판정 |
+| 업무 연동 | 팀 참가 확정, 제출 확정, 수상 확정 시 Credential 자동 발급 |
+| Portable Package | canonical 원문, manifest, proof, 앵커 좌표, 승인, 상태 ZIP 다운로드 |
 | 배포 도구 | Kairos 배포, 역할 설정, issuer 등록, 개발용 서명 도구 |
 
-아직 팀 코드와 연결하지 않은 부분:
+아직 남은 부분:
 
-- `TEAM`, `SUBMISSION`, `AWARD` 확정 서비스에서 `CredentialIssuanceService.issue()` 호출
-- 파일 업로드 stream의 SHA-256 계산 결과 전달
 - QR 및 공개 검증 프론트 화면
-- 학생 소유 Portable Credential Package
 - 운영 KMS/HSM signer
 - Kaia mainnet 배포
+- Kairos 실제 컨트랙트 배포와 통합 시험
 
-현재 백엔드에는 대회·팀·제출·수상 엔티티가 아직 합쳐지지 않았으므로, 임의 발급 HTTP API는 열지 않았다. 최종 업무 원장을 구현한 서비스가 확정된 snapshot만 내부 Java service로 전달해야 한다.
+임의 발급 HTTP API는 열지 않는다. 최종 업무 원장을 확정하는 서비스만 내부
+`CredentialIssuanceService`를 호출하므로, 미확정 데이터를 브라우저가 직접 Credential로 만들 수 없다.
 
 ## 지금 담당자가 할 일
 
-1. 팀원의 `TEAM`, `SUBMISSION`, `AWARD` 구현이 합쳐지면 각 확정 트랜잭션에서 `CredentialIssuanceService.issue()`를 호출한다.
-2. 기존 `ORGANIZATION` 데이터에 `publicId`를 backfill하고 운영 migration에서 `NOT NULL + UNIQUE`로 고정한다.
-3. Kairos용 deployer, 학교 issuer, Trekkey relayer 계정을 서로 다르게 만들고 테스트 KAIA는 deployer와 relayer에만 넣는다.
-4. 컨트랙트를 Kairos에 배포하고 relayer 역할과 학교 issuer 공개 주소를 등록한다.
-5. 백엔드를 먼저 `READ_ONLY`로 연결해 조회를 확인한 뒤, 한 worker 인스턴스만 `LOCAL_RELAYER`로 전환한다.
-6. 테스트 Credential 1건을 발급하고 배치 서명, 앵커링, 공개 검증, 폐기까지 한 번 완주한다.
-7. Kairos 운영 결과와 장애 복구 절차가 확인되기 전에는 mainnet으로 전환하지 않는다.
+1. 기존 `ORGANIZATION` 데이터에 `publicId`를 backfill하고 운영 migration에서 `NOT NULL + UNIQUE`로 고정한다.
+2. Kairos용 deployer, 학교 issuer, Trekkey relayer 계정을 서로 다르게 만들고 테스트 KAIA는 deployer와 relayer에만 넣는다.
+3. 컨트랙트를 Kairos에 배포하고 relayer 역할과 학교 issuer 공개 주소를 등록한다.
+4. 백엔드를 먼저 `READ_ONLY`로 연결해 조회를 확인한 뒤, 한 worker 인스턴스만 `LOCAL_RELAYER`로 전환한다.
+5. 테스트 Credential 1건을 발급하고 배치 서명, 앵커링, 공개 검증, package 다운로드, 폐기까지 한 번 완주한다.
+6. Kairos 운영 결과와 장애 복구 절차가 확인되기 전에는 mainnet으로 전환하지 않는다.
 
 ## 2. 키와 역할
+
+### 일반 회원가입
+
+학생과 관리자의 Trekkey 회원가입은 Kaia 회원가입이 아니다.
+
+```text
+POST /api/auth/signup
+-> USER를 MySQL에 저장
+-> 로그인 시 JWT 발급
+-> 지갑 생성 없음
+-> Kaia 트랜잭션 없음
+```
+
+학생은 Credential의 주체이지만 트랜잭션 발신자가 아니다. 따라서 Kaia 주소, private key,
+KAIA 잔액이 필요하지 않다. 개인 이력 조회는 인증된 `USER.id`와
+`ANC_CREDENTIAL_SUBJECT.userId`의 SQL 관계로 처리한다. 신규 공개 Credential에는 raw user PK
+대신 Credential마다 새로 생성한 무작위 UUID `subjectRef`만 들어간다. 이미 발급된 원문은
+불변이므로 과거 `user:<PK>` 형식이 있다면 개발 데이터는 Kairos 시험 전에 재생성하고, 운영
+앵커가 있다면 새 Credential 발급 후 기존 건을 `SUPERSEDED` 처리한다.
+
+### Kaia에서 준비하는 계정
+
+Kaia에는 중앙식 회원가입 절차가 없다. 지갑에서 secp256k1 EOA를 생성하고 Kairos에 연결한 뒤,
+필요한 계정에만 faucet KAIA를 받는다.
+
+| Kairos 항목 | 값 |
+| --- | --- |
+| Network name | `Kaia Kairos Testnet` |
+| RPC URL | `https://public-en-kairos.node.kaia.io` |
+| Chain ID | `1001` |
+| Currency symbol | `KAIA` |
+| Explorer | `https://kairos.kaiascan.io` |
+| Faucet | `https://faucet.kaia.io` |
 
 | 주체 | 용도 | 보관 위치 |
 | --- | --- | --- |
@@ -51,6 +84,15 @@
 | School issuer signer | EIP-712 발급·폐기 승인 | 학교 KMS/HSM 또는 외부 signer |
 | Trekkey relayer | 승인된 트랜잭션 전송과 가스비 지불 | Trekkey KMS/HSM |
 | 학생·검증자 | 서명·가스비 없음 | 지갑 불필요 |
+
+개발 단계 최소 구성:
+
+1. `deployer/admin`: 컨트랙트 배포와 최초 역할 설정, Kairos KAIA 필요
+2. `relayer`: 승인된 앵커 트랜잭션 전송, Kairos KAIA 필요
+3. `issuer signer`: 학교 EIP-712 승인 서명, KAIA 불필요
+
+각 키는 서로 다른 주소로 만들고 private key를 Git, Notion, 메신저, DB에 저장하지 않는다.
+`contracts/.env`와 백엔드 환경변수에는 Kairos 개발 키만 두며 운영 키는 KMS/HSM으로 옮긴다.
 
 학교 issuer와 Trekkey relayer를 같은 키로 사용하지 않는다. issuer는 “학교가 이 내용을 승인했다”를 증명하고, relayer는 이미 승인된 요청을 Kaia에 전달한다.
 
@@ -65,7 +107,7 @@
 ### 개발 도구
 
 - JDK 21
-- Node.js 20 또는 22 LTS
+- Node.js 22 LTS
 - MySQL
 - Kairos KAIA를 가진 배포·relayer 계정
 - 별도의 학교 issuer signer 계정
@@ -192,15 +234,22 @@ curl -X POST \
 
 ## 8. 업무 확정 서비스가 호출할 발급 경계
 
-업무 팀원이 구현할 확정 서비스는 아래 조건을 먼저 보장한다.
+현재 연결된 발급 시점은 다음과 같다.
 
 ```text
-PARTICIPATION -> 팀 명단 확정
-WORK          -> 제출 확정 + 모든 파일의 서버 계산 SHA-256 준비
-AWARD         -> 수상 확정 + 발급 당시 팀원 명단 준비
+POST /api/admin/teams/{teamPublicId}/finalize
+-> PARTICIPATION 발급
+
+POST /api/admin/stages/{stageId}/open
+-> 제출 확정 + 모든 파일의 서버 계산 SHA-256 확인
+-> WORK 발급
+
+POST /api/admin/contests/{contestPublicId}/awards/confirm
+-> AWARD 발급
 ```
 
-그 다음 내부 Java 경계인 `CredentialIssuanceService.issue(command)`를 호출한다.
+각 업무 서비스가 같은 DB 트랜잭션 안에서 내부 Java 경계인
+`CredentialIssuanceService.issue(command)`를 호출한다.
 
 `CredentialIssueCommand`에 들어갈 값:
 
@@ -249,10 +298,12 @@ curl -sS \
 
 ```bash
 cd contracts
-ISSUER_PRIVATE_KEY=0x... \
-TYPED_DATA_FILE=/tmp/trekkey-batch-approval.json \
+cp .env.example .env
 npm run sign:approval
 ```
+
+실제 `ISSUER_PRIVATE_KEY`와 `TYPED_DATA_FILE=/tmp/trekkey-batch-approval.json`은 Git에
+포함되지 않는 `contracts/.env`에 넣는다. private key를 명령줄 인자로 직접 입력하지 않는다.
 
 출력된 digest가 API 응답 digest와 같은지 확인한다.
 
@@ -330,7 +381,14 @@ curl -sS \
 | `BLOCKCHAIN_CONFIGURATION_ERROR` | chain ID, contract 주소 또는 ABI 설정이 실제 체인과 맞지 않음 |
 | `SCHEMA_UNSUPPORTED` | 현재 verifier가 schema/tree 규칙을 모름 |
 
-응답의 `issuerId`, `credentialIdHash`, `schemaVersionHash`, `contentHash`, `fileManifestHash`, `leafHash`, `batchIdHash`, `merkleRoot`, `treeVersion`, `merkleProof`로 제3자가 Merkle membership을 재검산할 수 있다. 비공개 subject가 포함된 canonical 원문 전체는 공개 API에 노출하지 않는다.
+응답의 `issuerId`, `credentialIdHash`, `schemaVersionHash`, `contentHash`, `fileManifestHash`, `leafHash`, `batchIdHash`, `merkleRoot`, `treeVersion`, `merkleProof`로 제3자가 Merkle membership을 재검산할 수 있다. 검증 API는 `PUBLIC` subject만 표시하고, 공개 Package API는 모든 subject가 `PUBLIC`일 때만 canonical 원문을 제공한다. `PRIVATE` subject가 하나라도 있으면 package 요청을 `403`으로 거부한다.
+
+앵커링 작업이 만들어진 뒤에는 검증 응답과 Portable Package가 현재 환경변수가 아니라
+`ANC_CHAIN_TRANSACTION`에 고정된 `chainId`, `contractAddress`, `contractVersion`을 사용한다.
+서버 어댑터가 다른 체인이나 컨트랙트를 가리키면 잘못된 곳을 조회하지 않고
+`BLOCKCHAIN_CONFIGURATION_ERROR`를 반환한다. 여러 과거 체인을 동시에 조회하는 기능은 향후
+chain registry/router adapter로 확장한다. 현재 V1은 단일 설정 좌표만 온라인 조회하므로
+컨트랙트나 네트워크를 교체하기 전에 router를 먼저 구현해야 기존 Credential 검증이 끊기지 않는다.
 
 ## 11. 폐기와 대체
 

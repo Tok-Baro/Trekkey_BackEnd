@@ -26,6 +26,7 @@ public class CredentialSubjectAssembler {
 
     // memberRoleCode: 참여·작품은 PARTICIPANT, 수상은 AWARDEE (erd-mvp SUBJECT.roleCode 명세)
     public List<CredentialIssueCommand.Subject> teamSubjects(Team team, String memberRoleCode) {
+        // user:<PK>는 내부 fingerprint 입력일 뿐이며 issuance service가 공개 payload 전에 무작위 ref로 교체한다.
         List<CredentialIssueCommand.Subject> subjects = new ArrayList<>();
         subjects.add(new CredentialIssueCommand.Subject(
                 null,

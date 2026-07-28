@@ -1,7 +1,7 @@
 # Trekkey Credential 및 Kaia 앵커링 설계
 
-- 기준일: 2026-07-24
-- 상태: 블록체인 기반 구현 완료, 업무 도메인 연결 전
+- 기준일: 2026-07-28
+- 상태: 블록체인 기반 구현 및 업무 도메인 연결 완료, Kairos 배포 전
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 기준 ERD: [Trekkey 공모전·Credential 최종 ERD](./erd.md)
 - 대상 네트워크: Kaia Kairos 우선, EVM 체인 교체 가능 구조
@@ -46,14 +46,14 @@ Trekkey는 대회 원문과 개인정보를 SQL 및 객체 저장소에 보관�
 - batch 전체 revoke
 - Kaia native fee delegation adapter
 - 학교별 물리 서버 배포
-- QR 검증 화면과 Portable Credential Package
+- QR 검증 화면
 
 ### 현재 코드 상태
 
-- 구현 완료: canonical JSON, source fingerprint, file manifest, Merkle batch/proof, EIP-712, Solidity registry, web3j adapter, Transactional Outbox, 공개 검증, revoke/supersede
-- 연결 대기: 팀이 구현할 `TEAM`, `SUBMISSION`, `AWARD` 확정 서비스에서 내부 `CredentialIssuanceService` 호출
+- 구현 완료: canonical JSON, source fingerprint, file manifest, Merkle batch/proof, EIP-712, Solidity registry, web3j adapter, Transactional Outbox, 공개 검증, revoke/supersede, Portable Package
+- 연결 완료: `TEAM`, `SUBMISSION`, `AWARD` 확정 서비스에서 내부 `CredentialIssuanceService` 호출
 - 배포 대기: Kairos 실제 contract address와 운영 계정은 저장소에 포함하지 않음
-- 후속 구현: QR UI, Portable Package, KMS/HSM adapter, mainnet 운영
+- 후속 구현: QR UI, KMS/HSM adapter, 복수 chain registry/router, mainnet 운영
 
 ## 3. 시스템 경계
 
@@ -74,8 +74,8 @@ flowchart LR
     verifyApi --> mysql
     verifyApi --> objectStorage
     verifyApi --> kaia
-    issueService -. "후속 구현" .-> package["Portable Credential Package"]
-    verifier -. "후속 구현" .-> package
+    package["Portable Credential Package"] --> mysql
+    verifier --> package
 ```
 
 역할은 세 층으로 나뉜다.
@@ -124,7 +124,7 @@ root 하나는 원문의 백업이 아니다. 원문과 proof를 잃으면 root�
 
 - 최종 제출 파일
 - 표시용 인증서 PDF
-- immutable Portable Credential Package
+- 선택적 장기 보관용 Portable Credential Package
 - 선택적 장기 보존 원본
 
 ### Kaia
@@ -194,6 +194,7 @@ AWARD         -> AWARD.status CONFIRMED + confirmedAt 존재
 - `CONTEST`, `TEAM`, `SUBMISSION`, `AWARD`: 충분히 예측하기 어려운 공개 ID
 - `ANC_CREDENTIAL.publicId`: UUIDv4 기반 불변 ID
 - `ANC_BATCH.publicId`: UUIDv4 기반 불변 ID
+- 사용자 `subjectRef`: Credential마다 새로 생성하는 무작위 UUID 기반 불변 ID
 
 온체인 식별자는 고정 domain을 포함해 계산한다.
 
@@ -220,6 +221,13 @@ batchIdHash = keccak256(
 ```
 
 domain 상수와 ABI 타입은 계약, Java fixture, schema profile에 고정한다.
+사용자 `subjectRef`는 source fingerprint를 찾은 뒤 신규 발급에서만 생성한다. 따라서 public
+Credential끼리 같은 사용자를 불필요하게 연결하거나 작은 정수 PK를 대입 공격으로 추정할 수 없다.
+개인 이력 조회와 발급 멱등성은 공개 ref가 아니라 SQL의 `userId` FK와 내부 fingerprint가 담당한다.
+
+이미 발급된 canonical Credential은 수정하지 않는다. 과거 `user:<PK>` 형식이 존재한다면 개발
+데이터는 Kairos 통합 시험 전에 재생성하고, 운영에서 이미 앵커링된 건은 새 Credential 발급 후
+기존 건을 `SUPERSEDED` 처리한다.
 
 ## 9. Schema profile
 
@@ -290,7 +298,8 @@ sourceSnapshotHash = SHA-256(
 )
 
 subjectSetHash = SHA-256(
-  JCS([{userId, roleCode}, ...] sorted by userId then roleCode)
+  JCS([{subjectPublicId, roleCode, snapshot}, ...]
+      sorted by subjectPublicId then roleCode)
 )
 
 sourceFingerprint = SHA-256(
@@ -298,14 +307,18 @@ sourceFingerprint = SHA-256(
 )
 ```
 
+fingerprint profile V1의 `subjectPublicId`라는 필드명은 유지하지만, 사용자 항목에는 공개
+Credential ref가 아니라 서버 내부의 결정적 subject key를 넣는다. 이 canonical fingerprint
+입력은 외부 응답이나 package에 저장하지 않고 최종 hash만 DB에 저장한다.
+
 처리 순서:
 
 ```text
 source fingerprint 계산
 -> 기존 Credential 조회
 -> 있으면 기존 결과 반환
--> 없으면 public ID와 issuedAt을 최초 한 번 생성
--> UNIQUE 충돌 시 기존 Credential 재조회 후 반환
+-> 없으면 Credential public ID와 사용자별 무작위 subjectRef 생성
+-> Credential, source, subject snapshot을 한 트랜잭션으로 저장
 ```
 
 사용자 더블 클릭, HTTP 재시도, worker 중복 실행은 같은 Credential을 반환한다. 숫자 원천 revision 컬럼은 사용하지 않는다. 실제 정정으로 확정 원천 내용이나 subject 집합이 바뀌면 hash와 fingerprint가 달라져 새 Credential을 만들 수 있다. WORK snapshot에는 정렬된 현재 파일 SHA-256 목록을 포함하고 `storageKey`, URL, `updatedAt` 같은 운영 값은 제외한다.
@@ -640,7 +653,7 @@ merkle-proof.json
 anchor.json
 issuer-approval.json
 status.json
-rendered-certificate.pdf
+README.txt
 ```
 
 필수 검증 입력:
@@ -653,7 +666,15 @@ rendered-certificate.pdf
 - EIP-712 typed data와 issuer signature
 - schema profile ID와 hash
 
-PDF는 사람이 보는 표시물이며 cryptographic source of truth가 아니다. 원본 파일은 크기와 공개 정책에 따라 package에 포함하거나 SHA-256 manifest만 포함한다.
+현재 ZIP은 `credential.json`, `file-manifest.json`, `merkle-proof.json`, `anchor.json`,
+`issuer-approval.json`, `status.json`, `README.txt`를 포함한다. `anchor.json`의 chain ID,
+contract address, contract version은 해당 앵커 트랜잭션에 고정된 역사적 좌표다.
+
+PDF는 사람이 보는 표시물이며 cryptographic source of truth가 아니므로 현재 package에는 넣지 않는다.
+원본 파일도 공개·용량 정책이 확정되기 전까지 포함하지 않고 SHA-256 manifest만 제공한다.
+공개 package는 모든 subject의 `disclosureClass`가 `PUBLIC`인 Credential만 허용한다. 하나라도
+`PRIVATE`이면 `403`으로 거부하며, 비공개 package가 필요해지면 본인·학교 관리자용 인증 endpoint를
+별도로 추가한다.
 
 ## 22. 학교별 서버와 중앙 서버
 
@@ -680,6 +701,9 @@ public interface IssuerSignerPort {
 }
 ```
 
+위 `IssuerSignerPort`는 학교별 서버 확장 목표다. 현재 구현은 학교 signer가 외부에서 생성한
+EIP-712 서명을 관리자 API로 제출하는 경계까지이며, KMS/HSM signer adapter는 아직 없다.
+
 학교 서버 분산 배포로 바뀌어도 Credential schema, Merkle 규칙, 컨트랙트는 바뀌지 않는다.
 
 ## 23. API 경계
@@ -688,6 +712,7 @@ public interface IssuerSignerPort {
 
 ```text
 GET  /api/public/credentials/{credentialPublicId}
+GET  /api/public/credentials/{credentialPublicId}/package
 
 POST /api/admin/blockchain/issuer-keys/{keyVersion}/sync
 POST /api/admin/blockchain/batches
@@ -759,7 +784,7 @@ Kaia는 BFT 기반 immediate finality를 제공하므로 임의의 Ethereum conf
 - 동일 outbox와 source fingerprint 재처리가 중복 Credential을 만들지 않는다.
 - broadcast 응답 유실 후 저장된 tx hash로 receipt를 추적하고, 동일 raw transaction 재방송으로 복구한다.
 - `FAILED + DEAD` 승인 갱신 전에 온체인 readback으로 이미 성공한 트랜잭션을 확인한다.
-- Portable Package 구현 후 SQL 백업과 package 각각으로 proof를 재검증한다.
+- SQL 백업과 Portable Package 각각으로 proof를 재검증한다.
 
 ## 26. 구현 순서
 
@@ -774,8 +799,8 @@ Kaia는 BFT 기반 immediate finality를 제공하므로 임의의 Ethereum conf
 
 ### Phase 2. 체인 독립 Credential
 
-- 완료: schema profile, RFC 8785 canonicalizer, source fingerprint, idempotent issuance, subject snapshot, file manifest
-- 후속: 정식 JSON Schema 배포와 Portable Package
+- 완료: schema profile, RFC 8785 canonicalizer, source fingerprint, idempotent issuance, subject snapshot, file manifest, Portable Package
+- 후속: 정식 JSON Schema 배포
 
 ### Phase 3. Merkle와 Solidity
 
@@ -784,7 +809,7 @@ Kaia는 BFT 기반 immediate finality를 제공하므로 임의의 Ethereum conf
 
 ### Phase 4. Spring Boot 및 Kaia
 
-- 완료: 관리자 batch API, anchor worker, 외부 signer 경계, relayer, JSON-RPC adapter
+- 완료: 관리자 batch API, anchor worker, 외부 서명 제출 경계, relayer, JSON-RPC adapter
 - 완료: 공개 verify API, outbox 재시도, raw transaction/receipt 원장
 - 배포 대기: Kairos contract 배포 및 explorer 검증
 - 후속: QR 화면과 운영 모니터링
@@ -805,7 +830,9 @@ Trekkey는 개인정보와 인증서 원문을 퍼블릭 체인에 저장하지 
 
 업무 DB와 체인 처리는 transactional outbox로 분리했으며, source fingerprint, batch ID, chain operation별 멱등 키로 중복 발급과 중복 전송을 방지한다. 폐기와 정정은 기존 원문 수정이 아니라 revoke와 supersede로 처리한다.
 
-블록체인 root만으로 원문을 복구할 수 없다는 한계도 설계에 반영했다. 현재는 SQL과 객체 저장소 백업을 책임 경계로 두고, 후속 Portable Credential Package로 학생 소유 장기 증빙을 추가한다.
+블록체인 root만으로 원문을 복구할 수 없다는 한계도 설계에 반영했다. SQL과 객체 저장소
+백업에 더해 Portable Credential Package를 제공해 학생이 canonical 원문과 proof를 직접
+보관할 수 있게 했다.
 
 ## 28. 최종 결정 요약
 
@@ -820,12 +847,13 @@ Trekkey는 개인정보와 인증서 원문을 퍼블릭 체인에 저장하지 
 - JCS + NFC, SHA-256 content hash, OpenZeppelin-compatible Merkle 규칙을 고정한다.
 - 학교는 EIP-712 approval을 서명하고 표준 EVM relayer가 Kaia 트랜잭션을 보낸다.
 - V1은 개별 revoke와 supersede만 지원한다.
-- Credential Package는 장기 검증을 강화할 후속 필수 산출물이다.
+- Credential Package는 장기 검증을 위한 구현 완료 산출물이다.
 - 졸업, 학적 이력, 제출 버전, batch revoke는 실제 요구가 생길 때 확장한다.
 
 ## 29. 참고
 
 - [Kaia Foundation Setup](https://docs.kaia.io/build/get-started/foundation-setup/)
+- [Kaia Wallet·MetaMask 네트워크 설정](https://docs.kaia.io/ko/build/cookbooks/wallet-config-cookbook/)
 - [Kaia public JSON-RPC endpoints](https://docs.kaia.io/references/public-en/)
 - [Kaia Ethereum contract porting and decoupled keys](https://docs.kaia.io/build/smart-contracts/fundamentals/porting-ethereum-contract/)
 - [Kaia validateSender precompile](https://docs.kaia.io/learn/smart-contracts/precompiled-contracts/)

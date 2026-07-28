@@ -605,12 +605,12 @@ flowchart LR
     phase3 --> p3a["OpenZeppelin 호환 Fixture"]
     phase3 --> p3b["RegistryV1과 EIP-712"]
     phase4 --> p4a["Batch·Anchor Worker"]
-    phase4 --> p4b["Kairos 배포와 공개 Verify API"]
+    phase4 --> p4b["공개 Verify API 완료·Kairos 배포 대기"]
     phase5 --> p5a["Mainnet Multisig·KMS·복수 RPC"]
     phase5 --> p5b["학교별 Adapter와 졸업 Credential"]
 ```
 
-블록체인 구현은 업무 원장이 확정된 뒤 시작한다. 그렇지 않으면 블록체인이 보증하는 대상 자체가 계속 바뀐다.
+Credential 발급과 앵커링은 업무 원장이 확정된 뒤에만 시작한다. 그렇지 않으면 블록체인이 보증하는 대상 자체가 계속 바뀐다.
 
 ## 최종 합의 한 장
 

@@ -49,8 +49,9 @@ public record CredentialVerificationView(
             String merkleRoot,
             Integer treeVersion,
             List<String> merkleProof,
-            long chainId,
+            Long chainId,
             String contractAddress,
+            String contractVersion,
             String transactionHash,
             Long blockNumber) {
 

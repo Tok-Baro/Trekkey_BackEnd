@@ -8,6 +8,7 @@ import com.api.trekkey.domain.credential.repository.AncCredentialRepository;
 import com.api.trekkey.domain.credential.service.dto.CredentialPackageFile;
 import com.api.trekkey.domain.credential.service.dto.CredentialVerificationView;
 import com.api.trekkey.global.exception.CustomException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.ByteArrayOutputStream;
@@ -40,6 +41,7 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
     public CredentialPackageFile buildPackage(String credentialPublicId) {
         AncCredential credential = credentialRepository.findByPublicId(credentialPublicId)
                 .orElseThrow(() -> new CustomException(CredentialErrorResponseCode.CREDENTIAL_NOT_FOUND));
+        requirePublicDisclosure(credential);
         //검증 서비스가 hash·proof 재계산까지 끝낸 상태를 그대로 담는다 (§9와 동일 근거)
         CredentialVerificationView view = credentialVerificationService.verify(credentialPublicId);
 
@@ -57,8 +59,9 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
             throw new UncheckedIOException(exception);
         }
 
+        String fileId = view.credentialNo() == null ? credentialPublicId : view.credentialNo();
         return new CredentialPackageFile(
-                "trekkey-credential-" + view.credentialNo() + ".zip",
+                "trekkey-credential-" + fileId + ".zip",
                 buffer.toByteArray());
     }
 
@@ -84,6 +87,7 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
         ObjectNode node = objectMapper.createObjectNode();
         node.put("chainId", view.evidence().chainId());
         node.put("contractAddress", view.evidence().contractAddress());
+        node.put("contractVersion", view.evidence().contractVersion());
         node.put("transactionHash", view.evidence().transactionHash());
         node.put("blockNumber", view.evidence().blockNumber());
         node.put("merkleRoot", view.evidence().merkleRoot());
@@ -115,14 +119,35 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
         ObjectNode node = objectMapper.createObjectNode();
         node.put("credentialPublicId", view.credentialPublicId());
         node.put("credentialNo", view.credentialNo());
-        node.put("credentialType", view.credentialType().name());
+        node.put("credentialType", view.credentialType() == null ? null : view.credentialType().name());
         node.put("verificationStatus", view.verificationStatus().name());
         node.put("issuerName", view.issuerName());
         node.put("issuerPublicId", view.issuerPublicId());
         node.put("schemaProfileId", view.schemaProfileId());
-        node.put("issuedAt", view.issuedAt().toString());
+        node.put("issuedAt", view.issuedAt() == null ? null : view.issuedAt().toString());
         node.put("replacementCredentialPublicId", view.replacementCredentialPublicId());
         return node;
+    }
+
+    private void requirePublicDisclosure(AncCredential credential) {
+        try {
+            JsonNode subjects = objectMapper.readTree(credential.getCanonicalBytes()).get("subjects");
+            if (subjects == null || !subjects.isArray() || subjects.isEmpty()) {
+                throw new CustomException(CredentialErrorResponseCode.CREDENTIAL_PACKAGE_NOT_PUBLIC);
+            }
+            for (JsonNode subject : subjects) {
+                JsonNode disclosureClass = subject.get("disclosureClass");
+                if (disclosureClass == null
+                        || !disclosureClass.isTextual()
+                        || !"PUBLIC".equals(disclosureClass.textValue())) {
+                    throw new CustomException(CredentialErrorResponseCode.CREDENTIAL_PACKAGE_NOT_PUBLIC);
+                }
+            }
+        } catch (CustomException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new CustomException(CredentialErrorResponseCode.CREDENTIAL_PACKAGE_NOT_PUBLIC);
+        }
     }
 
     private String readme(CredentialVerificationView view) {

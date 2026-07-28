@@ -3,6 +3,7 @@ package com.api.trekkey.domain.credential.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.api.trekkey.domain.credential.config.BlockchainProperties;
 import com.api.trekkey.domain.credential.crypto.CanonicalJson;
@@ -13,8 +14,10 @@ import com.api.trekkey.domain.credential.crypto.Hash32;
 import com.api.trekkey.domain.credential.crypto.Hashing;
 import com.api.trekkey.domain.credential.entity.AncBatch;
 import com.api.trekkey.domain.credential.entity.AncBatchItem;
+import com.api.trekkey.domain.credential.entity.AncChainTransaction;
 import com.api.trekkey.domain.credential.entity.AncCredential;
 import com.api.trekkey.domain.credential.entity.AncIssuerKey;
+import com.api.trekkey.domain.credential.entity.ChainOperationType;
 import com.api.trekkey.domain.credential.entity.CredentialSourceType;
 import com.api.trekkey.domain.credential.entity.CredentialSubjectType;
 import com.api.trekkey.domain.credential.entity.CredentialType;
@@ -221,6 +224,64 @@ class CredentialVerificationServiceImplTest {
     }
 
     @Test
+    void refusesToQueryAChainAdapterConfiguredForDifferentHistoricalCoordinates() {
+        AnchoredEvidence evidence = anchoredEvidence();
+        properties.setChainId(8217L);
+
+        CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
+
+        assertThat(result.verificationStatus())
+                .isEqualTo(CredentialVerificationStatus.BLOCKCHAIN_CONFIGURATION_ERROR);
+        assertThat(result.evidence().chainId()).isEqualTo(1001L);
+        assertThat(result.evidence().contractAddress())
+                .isEqualTo("0x1111111111111111111111111111111111111111");
+        assertThat(result.evidence().contractVersion()).isEqualTo("1");
+        assertThat(evidence.transaction().getChainId()).isEqualTo(1001L);
+        verifyNoInteractions(blockchainAnchorPort);
+    }
+
+    @Test
+    void refusesToQueryWhenTheHistoricalContractAddressDiffers() {
+        anchoredEvidence();
+        properties.setContractAddress("0x2222222222222222222222222222222222222222");
+
+        CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
+
+        assertThat(result.verificationStatus())
+                .isEqualTo(CredentialVerificationStatus.BLOCKCHAIN_CONFIGURATION_ERROR);
+        assertThat(result.evidence().contractAddress())
+                .isEqualTo("0x1111111111111111111111111111111111111111");
+        verifyNoInteractions(blockchainAnchorPort);
+    }
+
+    @Test
+    void refusesToQueryWhenTheHistoricalContractVersionDiffers() {
+        anchoredEvidence();
+        properties.setContractVersion("2");
+
+        CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
+
+        assertThat(result.verificationStatus())
+                .isEqualTo(CredentialVerificationStatus.BLOCKCHAIN_CONFIGURATION_ERROR);
+        assertThat(result.evidence().contractVersion()).isEqualTo("1");
+        verifyNoInteractions(blockchainAnchorPort);
+    }
+
+    @Test
+    void failsClosedWhenAnAnchoredBatchHasNoHistoricalTransactionCoordinates() {
+        anchoredEvidence(false);
+
+        CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
+
+        assertThat(result.verificationStatus())
+                .isEqualTo(CredentialVerificationStatus.BLOCKCHAIN_CONFIGURATION_ERROR);
+        assertThat(result.evidence().chainId()).isNull();
+        assertThat(result.evidence().contractAddress()).isNull();
+        assertThat(result.evidence().contractVersion()).isNull();
+        verifyNoInteractions(blockchainAnchorPort);
+    }
+
+    @Test
     void neverGeneratesAnIssuerIdInsideTheReadOnlyVerificationPath() {
         ReflectionTestUtils.setField(organization, "publicId", null);
 
@@ -310,6 +371,10 @@ class CredentialVerificationServiceImplTest {
     }
 
     private AnchoredEvidence anchoredEvidence() {
+        return anchoredEvidence(true);
+    }
+
+    private AnchoredEvidence anchoredEvidence(boolean storeTransaction) {
         credential.markBatched();
         credential.markAnchored();
         Hash32 issuerId = Hashing.issuerId(ORGANIZATION_PUBLIC_ID);
@@ -354,7 +419,20 @@ class CredentialVerificationServiceImplTest {
         given(batchItemRepository.findByCredentialId(credential.getId())).willReturn(Optional.of(item));
         given(batchRepository.findById(batch.getId())).willReturn(Optional.of(batch));
         lenient().when(issuerKeyRepository.findById(issuerKey.getId())).thenReturn(Optional.of(issuerKey));
-        return new AnchoredEvidence(issuerId, issuerKey, batch);
+        AncChainTransaction transaction = AncChainTransaction.pending(
+                batch.getId(),
+                null,
+                null,
+                ChainOperationType.ANCHOR_BATCH,
+                "ANCHOR_BATCH:" + batch.getPublicId(),
+                properties.getChainId(),
+                EthereumAddress.fromHex(properties.getContractAddress()).bytes(),
+                properties.getContractVersion(),
+                LocalDateTime.ofInstant(ISSUED_AT, ZoneOffset.UTC));
+        given(chainTransactionRepository.findByBatchIdAndOperationType(
+                        batch.getId(), ChainOperationType.ANCHOR_BATCH))
+                .willReturn(storeTransaction ? Optional.of(transaction) : Optional.empty());
+        return new AnchoredEvidence(issuerId, issuerKey, batch, transaction);
     }
 
     private void stubValidChainEvidence(
@@ -393,6 +471,10 @@ class CredentialVerificationServiceImplTest {
         return value;
     }
 
-    private record AnchoredEvidence(Hash32 issuerId, AncIssuerKey issuerKey, AncBatch batch) {
+    private record AnchoredEvidence(
+            Hash32 issuerId,
+            AncIssuerKey issuerKey,
+            AncBatch batch,
+            AncChainTransaction transaction) {
     }
 }
