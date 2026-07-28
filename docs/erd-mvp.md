@@ -1,5 +1,10 @@
 # Trekkey MVP ERD
 
+> **주의:** 이 문서의 리뷰 영역은 이전 `CONTEST_STAGE` 기반 설계다.
+> 현재 리뷰 구현 기준과 DB 이전 규칙은
+> [review-domain-final-erd-alignment.md](review-domain-final-erd-alignment.md)를
+> 따른다.
+
 현재 프론트에서 실제로 사용하는 대회 운영 기능과 SQL·Kaia 분리형 Credential 앵커링 구조를 반영한 ERD입니다.
 업무 SQL과 인증·블록체인 앵커 SQL의 연결 관계를 한눈에 볼 수 있도록 하나의 Mermaid ERD로 통합합니다.
 

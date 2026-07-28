@@ -1,5 +1,9 @@
 # Trekkey ERD Draft
 
+> **주의:** 이 문서는 초기 초안이다. 리뷰 영역의 현재 기준은
+> [review-domain-final-erd-alignment.md](review-domain-final-erd-alignment.md)이며,
+> `REVIEW_ROUND`를 공식 심사 라운드 원장으로 사용한다.
+
 프론트의 현재 기능과 대회별 단계 구성이 달라질 수 있다는 요구사항을 반영한 백엔드 ERD 초안입니다.
 
 핵심 방향은 다음과 같습니다.

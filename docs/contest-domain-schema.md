@@ -1,5 +1,10 @@
 # 대회 도메인 최소 스키마
 
+> **주의:** 이 문서의 `CONTEST_STAGE` 기반 리뷰 설정은 이전 구조다.
+> 리뷰 기준·대상·배정·채점은
+> [review-domain-final-erd-alignment.md](review-domain-final-erd-alignment.md)의
+> `REVIEW_ROUND` 구조를 따른다.
+
 프론트엔드의 대회 생성/수정, 공개 상세, 참가 신청, 참가 신청 관리 화면을 기준으로 정리한 엔티티 구현용 설계입니다.
 
 대상 테이블은 `CONTEST`, `CONTEST_STAGE`, `TEAM`, `TEAM_MEMBER`, `TEAM_STAGE_RESULT`이며, 공개 화면의 좋아요 기능을 정상적으로 지원하기 위한 보조 테이블 `CONTEST_LIKE`를 포함합니다.
