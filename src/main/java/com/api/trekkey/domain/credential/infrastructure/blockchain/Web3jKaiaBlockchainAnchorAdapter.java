@@ -33,6 +33,7 @@ import org.web3j.protocol.core.methods.response.EthCall;
 import org.web3j.protocol.core.methods.response.EthChainId;
 import org.web3j.protocol.core.methods.response.EthEstimateGas;
 import org.web3j.protocol.core.methods.response.EthGasPrice;
+import org.web3j.protocol.core.methods.response.EthGetCode;
 import org.web3j.protocol.core.methods.response.EthGetTransactionCount;
 import org.web3j.protocol.core.methods.response.EthGetTransactionReceipt;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
@@ -57,7 +58,7 @@ public class Web3jKaiaBlockchainAnchorAdapter implements BlockchainAnchorPort {
     private final Object web3jMonitor = new Object();
 
     private volatile Web3j web3j;
-    private volatile boolean chainIdVerified;
+    private volatile boolean connectionVerified;
 
     @Autowired
     public Web3jKaiaBlockchainAnchorAdapter(BlockchainProperties properties) {
@@ -310,11 +311,11 @@ public class Web3jKaiaBlockchainAnchorAdapter implements BlockchainAnchorPort {
 
     private Web3j client() {
         Web3j client = web3j();
-        if (chainIdVerified) {
+        if (connectionVerified) {
             return client;
         }
         synchronized (web3jMonitor) {
-            if (!chainIdVerified) {
+            if (!connectionVerified) {
                 BigInteger actualChainId = requireUnsigned(send(client.ethChainId()).getChainId(), "RPC chainId");
                 if (!BigInteger.valueOf(properties.getChainId()).equals(actualChainId)) {
                     throw new BlockchainGatewayException(
@@ -322,7 +323,25 @@ public class Web3jKaiaBlockchainAnchorAdapter implements BlockchainAnchorPort {
                             false,
                             "RPC chainId does not match blockchain.anchoring.chainId");
                 }
-                chainIdVerified = true;
+                EthGetCode codeResponse = send(client.ethGetCode(
+                        properties.getContractAddress(),
+                        DefaultBlockParameterName.LATEST));
+                String runtimeCode = codeResponse.getCode();
+                if (runtimeCode == null || runtimeCode.equals("0x")) {
+                    throw new BlockchainGatewayException(
+                            "BLOCKCHAIN_CONTRACT_CODE_MISSING",
+                            false,
+                            "configured Registry address has no runtime code");
+                }
+                Hash32 actualCodeHash = Hash32.of(Hash.sha3(Numeric.hexStringToByteArray(runtimeCode)));
+                Hash32 expectedCodeHash = Hash32.fromHex(properties.getRuntimeCodeHash());
+                if (!actualCodeHash.equals(expectedCodeHash)) {
+                    throw new BlockchainGatewayException(
+                            "BLOCKCHAIN_CONTRACT_CODE_MISMATCH",
+                            false,
+                            "configured Registry runtime code hash does not match the deployment manifest");
+                }
+                connectionVerified = true;
             }
         }
         return client;

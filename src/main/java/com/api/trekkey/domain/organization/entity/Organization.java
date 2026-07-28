@@ -29,7 +29,7 @@ public class Organization extends BaseEntity {
     }
 
     public String ensurePublicId() {
-        if (publicId == null) {
+        if (publicId == null || publicId.isBlank()) {
             publicId = UUID.randomUUID().toString();
         }
         return publicId;

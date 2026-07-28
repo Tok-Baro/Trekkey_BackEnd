@@ -74,6 +74,7 @@ class PublicCredentialControllerTest {
                                 List.of(),
                                 1001L,
                                 "0x" + "2".repeat(40),
+                                "1",
                                 "0x" + "3".repeat(64),
                                 12L),
                         null,

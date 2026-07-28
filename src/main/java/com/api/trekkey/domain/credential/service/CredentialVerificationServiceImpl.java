@@ -107,11 +107,28 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
                     null,
                     null);
         }
+        if (localEvidence.batch().getStatus() == BatchStatus.ANCHORED
+                && localEvidence.transaction() == null) {
+            return response(
+                    CredentialVerificationStatus.BLOCKCHAIN_CONFIGURATION_ERROR,
+                    credential,
+                    localEvidence,
+                    null,
+                    null);
+        }
         if (!properties.isReadEnabled()) {
             CredentialVerificationStatus status = localEvidence.batch().getStatus() == BatchStatus.ANCHORED
                     ? CredentialVerificationStatus.RPC_UNAVAILABLE
                     : CredentialVerificationStatus.PENDING;
             return response(status, credential, localEvidence, null, null);
+        }
+        if (!usesConfiguredChain(localEvidence.transaction())) {
+            return response(
+                    CredentialVerificationStatus.BLOCKCHAIN_CONFIGURATION_ERROR,
+                    credential,
+                    localEvidence,
+                    null,
+                    null);
         }
 
         try {
@@ -410,6 +427,20 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
                 .orElse(null);
     }
 
+    private boolean usesConfiguredChain(AncChainTransaction transaction) {
+        if (transaction == null) {
+            return true;
+        }
+        try {
+            return transaction.getChainId() == properties.getChainId()
+                    && EthereumAddress.fromBytes(transaction.getContractAddress())
+                            .equals(EthereumAddress.fromHex(properties.getContractAddress()))
+                    && transaction.getContractVersion().equals(properties.getContractVersion());
+        } catch (CryptoValidationException exception) {
+            return false;
+        }
+    }
+
     private CredentialVerificationView response(
             CredentialVerificationStatus status,
             AncCredential credential,
@@ -419,6 +450,7 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
         VerifiedPayload payload = local.allValid() ? local.payload() : null;
         AncBatch batch = local.batch();
         AncChainTransaction transaction = local.transaction();
+        ChainCoordinates coordinates = chainCoordinates(batch, transaction);
         CredentialVerificationView.Evidence evidence = new CredentialVerificationView.Evidence(
                 local.canonicalPayloadMatches(),
                 local.contentHashMatches(),
@@ -437,8 +469,9 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
                 batch == null ? null : Hash32.of(batch.getMerkleRoot()).hex(),
                 batch == null ? null : batch.getTreeVersion(),
                 local.proof(),
-                properties.getChainId(),
-                properties.getContractAddress(),
+                coordinates.chainId(),
+                coordinates.contractAddress(),
+                coordinates.contractVersion(),
                 transaction == null || transaction.getTxHash() == null
                         ? null
                         : Hash32.of(transaction.getTxHash()).hex(),
@@ -457,6 +490,22 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
                 evidence,
                 replacementPublicId,
                 replacementHash);
+    }
+
+    private ChainCoordinates chainCoordinates(AncBatch batch, AncChainTransaction transaction) {
+        if (transaction == null) {
+            if (batch != null && batch.getStatus() == BatchStatus.ANCHORED) {
+                return new ChainCoordinates(null, null, null);
+            }
+            return new ChainCoordinates(
+                    properties.getChainId(),
+                    properties.getContractAddress(),
+                    properties.getContractVersion());
+        }
+        return new ChainCoordinates(
+                transaction.getChainId(),
+                EthereumAddress.fromBytes(transaction.getContractAddress()).hex(),
+                transaction.getContractVersion());
     }
 
     private JsonNode requiredObject(JsonNode parent, String fieldName) {
@@ -522,6 +571,12 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
             Instant expiresAt,
             String fileManifestHash,
             List<CredentialVerificationView.PublicSubject> publicSubjects) {
+    }
+
+    private record ChainCoordinates(
+            Long chainId,
+            String contractAddress,
+            String contractVersion) {
     }
 
     private record LocalEvidence(

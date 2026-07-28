@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 
 import com.api.trekkey.domain.credential.config.BlockchainProperties;
 import com.api.trekkey.domain.credential.crypto.EthereumAddress;
@@ -138,6 +139,140 @@ class BlockchainWorkersTest {
         workers.reconcileReceipts();
 
         then(transactions).should().failReceipt(task.transactionId(), "BLOCKCHAIN_BROADCAST_REJECTED");
+    }
+
+    @Test
+    void confirmedReceiptWithTemporarilyMissingReadbackBecomesUnknown() {
+        BlockchainWorkTransactions.ReceiptTask task = receiptTask(
+                26L, ChainOperationType.ANCHOR_BATCH, ChainTransactionStatus.SUBMITTED, NOW.minusSeconds(10));
+        BlockchainWorkTransactions.EvidenceExpectation expected = batchExpectation(task.transactionId());
+        given(transactions.receiptTasks(NOW)).willReturn(List.of(task));
+        given(blockchainAnchorPort.getReceipt(task.transactionHash(), task.operationType()))
+                .willReturn(confirmedReceipt());
+        given(transactions.evidenceExpectation(task.transactionId())).willReturn(expected);
+        given(blockchainAnchorPort.getBatch(expected.batchIdHash()))
+                .willReturn(new BlockchainAnchorPort.OnChainBatch(
+                        Hash32.ZERO, Hash32.ZERO, Hash32.ZERO, 0, 0, 0, 0, false));
+
+        workers.reconcileReceipts();
+
+        then(transactions).should().markReceiptUnknown(
+                task.transactionId(),
+                "CHAIN_EVIDENCE_PENDING",
+                NOW,
+                NOW.plusSeconds(2));
+    }
+
+    @Test
+    void confirmedReceiptWithPersistentReadbackMismatchRemainsUnknown() {
+        BlockchainWorkTransactions.ReceiptTask task = receiptTask(
+                27L,
+                ChainOperationType.ANCHOR_BATCH,
+                ChainTransactionStatus.UNKNOWN,
+                NOW.minus(properties.getReceiptTimeout()));
+        BlockchainWorkTransactions.EvidenceExpectation expected = batchExpectation(task.transactionId());
+        given(transactions.receiptTasks(NOW)).willReturn(List.of(task));
+        given(blockchainAnchorPort.getReceipt(task.transactionHash(), task.operationType()))
+                .willReturn(confirmedReceipt());
+        given(transactions.evidenceExpectation(task.transactionId())).willReturn(expected);
+        given(blockchainAnchorPort.getBatch(expected.batchIdHash()))
+                .willReturn(new BlockchainAnchorPort.OnChainBatch(
+                        Hash32.ZERO, Hash32.ZERO, Hash32.ZERO, 0, 0, 0, 0, false));
+
+        workers.reconcileReceipts();
+
+        then(transactions).should().rescheduleUnknownReceipt(
+                task.transactionId(),
+                "CHAIN_EVIDENCE_PENDING",
+                NOW.plusSeconds(2));
+        then(transactions).should(never()).failReceipt(any(), any());
+        then(blockchainAnchorPort).should(never()).broadcast(any());
+    }
+
+    @Test
+    void confirmedReceiptRecoversAfterReadbackLagWithoutRebroadcasting() {
+        BlockchainWorkTransactions.ReceiptTask submittedTask = receiptTask(
+                28L, ChainOperationType.ANCHOR_BATCH, ChainTransactionStatus.SUBMITTED, NOW.minusSeconds(10));
+        BlockchainWorkTransactions.ReceiptTask unknownTask = new BlockchainWorkTransactions.ReceiptTask(
+                submittedTask.transactionId(),
+                submittedTask.transactionHash(),
+                submittedTask.operationType(),
+                submittedTask.submittedAt(),
+                ChainTransactionStatus.UNKNOWN,
+                submittedTask.preparedTransaction());
+        BlockchainWorkTransactions.EvidenceExpectation expected = batchExpectation(submittedTask.transactionId());
+        BlockchainAnchorPort.OnChainBatch missing = new BlockchainAnchorPort.OnChainBatch(
+                Hash32.ZERO, Hash32.ZERO, Hash32.ZERO, 0, 0, 0, 0, false);
+        BlockchainAnchorPort.OnChainBatch anchored = new BlockchainAnchorPort.OnChainBatch(
+                expected.issuerId(),
+                expected.merkleRoot(),
+                expected.schemaVersionHash(),
+                expected.leafCount(),
+                expected.treeVersion(),
+                expected.issuerKeyVersion(),
+                1,
+                true);
+        BlockchainAnchorPort.ChainReceipt receipt = confirmedReceipt();
+        given(transactions.receiptTasks(NOW))
+                .willReturn(List.of(submittedTask))
+                .willReturn(List.of(unknownTask));
+        given(blockchainAnchorPort.getReceipt(submittedTask.transactionHash(), submittedTask.operationType()))
+                .willReturn(receipt);
+        given(transactions.evidenceExpectation(submittedTask.transactionId())).willReturn(expected);
+        given(blockchainAnchorPort.getBatch(expected.batchIdHash()))
+                .willReturn(missing)
+                .willReturn(anchored);
+
+        workers.reconcileReceipts();
+        workers.reconcileReceipts();
+
+        then(transactions).should().markReceiptUnknown(
+                submittedTask.transactionId(),
+                "CHAIN_EVIDENCE_PENDING",
+                NOW,
+                NOW.plusSeconds(2));
+        then(transactions).should().confirm(submittedTask.transactionId(), receipt, NOW);
+        then(blockchainAnchorPort).should(never()).broadcast(any());
+    }
+
+    private static BlockchainWorkTransactions.ReceiptTask receiptTask(
+            long transactionId,
+            ChainOperationType operationType,
+            ChainTransactionStatus status,
+            Instant submittedAt) {
+        BlockchainAnchorPort.PreparedTransaction prepared = new BlockchainAnchorPort.PreparedTransaction(
+                Hash32.of(bytes((int) transactionId)),
+                transactionId,
+                EthereumAddress.fromBytes(address((int) transactionId)),
+                new byte[] {1, 2, 3});
+        return new BlockchainWorkTransactions.ReceiptTask(
+                transactionId,
+                prepared.transactionHash(),
+                operationType,
+                submittedAt,
+                status,
+                prepared);
+    }
+
+    private static BlockchainWorkTransactions.EvidenceExpectation batchExpectation(long transactionId) {
+        return BlockchainWorkTransactions.EvidenceExpectation.batch(
+                transactionId,
+                Hash32.of(bytes(1)),
+                Hash32.of(bytes(2)),
+                Hash32.of(bytes(3)),
+                Hash32.of(bytes(4)),
+                3,
+                1,
+                2);
+    }
+
+    private static BlockchainAnchorPort.ChainReceipt confirmedReceipt() {
+        return new BlockchainAnchorPort.ChainReceipt(
+                BlockchainAnchorPort.ReceiptState.CONFIRMED,
+                123,
+                Hash32.of(bytes(5)),
+                0,
+                null);
     }
 
     private static byte[] bytes(int seed) {

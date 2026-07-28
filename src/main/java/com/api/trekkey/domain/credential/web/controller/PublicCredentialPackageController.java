@@ -19,7 +19,7 @@ public class PublicCredentialPackageController {
 
     private final CredentialPackageService credentialPackageService;
 
-    // Portable Credential Package 다운로드 — 무작위 publicId만 알면 누구나 (공개 검증과 동일 접근 규칙, erd-mvp §12·§13)
+    // 공개 subject만 가진 Portable Package — PRIVATE subject가 하나라도 있으면 service에서 거부한다.
     @GetMapping("/{credentialPublicId}/package")
     public ResponseEntity<byte[]> downloadPackage(@PathVariable String credentialPublicId) {
         CredentialPackageFile packageFile = credentialPackageService.buildPackage(credentialPublicId);

@@ -8,10 +8,13 @@
   },
   "scripts": {
     "compile": "hardhat compile",
-    "test": "hardhat test",
+    "test": "hardhat test && npm run test:wallet-deployer",
+    "test:wallet-deployer": "node --test scripts/wallet-deployer-server.test.mjs",
     "fixture:merkle": "hardhat run scripts/generate-merkle-fixture.ts",
     "deploy:kairos": "hardhat run scripts/deploy-kairos.ts --network kairos",
+    "deploy:kairos:wallet": "hardhat compile && node scripts/serve-wallet-deployer.mjs",
     "configure:kairos": "hardhat run scripts/configure-kairos.ts --network kairos",
+    "read:kairos": "node scripts/read-kairos-state.mjs",
     "sign:approval": "hardhat run scripts/sign-approval.ts",
     "verify:kairos": "hardhat verify --network kairos"
   },

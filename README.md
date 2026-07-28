@@ -101,6 +101,7 @@ src/main/java/com/api/trekkey
 | `BLOCKCHAIN_CHAIN_ID` | Kaia chain ID | `1001` |
 | `BLOCKCHAIN_RPC_URL` | EVM JSON-RPC URL | Kairos public RPC |
 | `BLOCKCHAIN_CONTRACT_ADDRESS` | 배포한 registry 주소 | 없음 |
+| `BLOCKCHAIN_RUNTIME_CODE_HASH` | 승인한 registry runtime Keccak-256 | 없음 |
 | `BLOCKCHAIN_WORKER_ENABLED` | Outbox/receipt worker 실행 | `false` |
 | `BLOCKCHAIN_OUTBOX_LEASE_TIMEOUT` | 중단된 worker 작업 회수 시간 | `1m` |
 | `BLOCKCHAIN_RELAYER_PRIVATE_KEY` | Kairos 개발용 relayer key | 없음 |
@@ -143,5 +144,7 @@ Java 단위·JPA 테스트는 H2를 사용한다. 별도의 MySQL 통합 테스�
 - [공모전·Credential 최종 ERD](docs/erd.md)
 - [Credential 및 Kaia 앵커링 설계](docs/blockchain-anchoring-architecture.md)
 - [블록체인 구현 및 Kairos 실행 가이드](docs/blockchain-implementation-runbook.md)
+- [2026-07-28 Kairos Registry 배포 기록과 재현 절차](docs/blockchain-kairos-deployment.md)
+- [Kairos 지속 사용 및 후속 개발 인계](docs/blockchain-kairos-continuation-plan.md)
 - [2026-07-27 통합 회의 안건](docs/meetings/2026-07-27-integration-agenda.md)
 - [설계 문서 인덱스](docs/README.md)
