@@ -11,30 +11,34 @@ public enum SubmissionErrorResponseCode implements BaseResponseCode {
             "SUBMISSION_NOT_FOUND",
             404,
             "제출물을 찾을 수 없습니다."),
-    SUBMISSION_TEAM_NOT_FOUND(
-            "SUBMISSION_TEAM_NOT_FOUND",
-            404,
-            "해당 대회에 참가한 팀을 찾을 수 없습니다."),
-    SUBMISSION_TEAM_NOT_APPROVED(
-            "SUBMISSION_TEAM_NOT_APPROVED",
-            409,
-            "승인된 참가 팀만 제출물을 작성할 수 있습니다."),
-    SUBMISSION_STAGE_INVALID(
-            "SUBMISSION_STAGE_INVALID",
-            409,
-            "대회의 제출 단계 설정이 올바르지 않습니다."),
+    SUBMISSION_FORBIDDEN(
+            "SUBMISSION_FORBIDDEN",
+            403,
+            "본인 팀의 제출물만 관리할 수 있습니다."),
     SUBMISSION_NOT_OPEN(
             "SUBMISSION_NOT_OPEN",
             409,
-            "현재 제출물을 작성하거나 변경할 수 있는 기간이 아닙니다."),
-    SUBMISSION_ALREADY_EXISTS(
-            "SUBMISSION_ALREADY_EXISTS",
+            "현재 제출이 열려 있지 않은 대회입니다."),
+    SUBMISSION_FINALIZED(
+            "SUBMISSION_FINALIZED",
             409,
-            "해당 팀의 제출물이 이미 존재합니다."),
-    INVALID_SUBMISSION_STATUS_TRANSITION(
-            "INVALID_SUBMISSION_STATUS_TRANSITION",
-            409,
-            "현재 제출물 상태에서는 요청한 작업을 수행할 수 없습니다.");
+            "제출이 마감되어 수정할 수 없습니다."),
+    SUBMISSION_FILE_REQUIRED(
+            "SUBMISSION_FILE_REQUIRED",
+            400,
+            "제출 파일을 1개 이상 첨부해야 합니다."),
+    SUBMISSION_FILE_TYPE_INVALID(
+            "SUBMISSION_FILE_TYPE_INVALID",
+            400,
+            "허용되지 않는 파일 형식입니다."),
+    SUBMISSION_FILE_NOT_FOUND(
+            "SUBMISSION_FILE_NOT_FOUND",
+            404,
+            "제출 파일을 찾을 수 없습니다."),
+    SUBMISSION_STORAGE_ERROR(
+            "SUBMISSION_STORAGE_ERROR",
+            500,
+            "파일 저장 처리 중 오류가 발생했습니다.");
 
     private final String code;
     private final int httpStatus;

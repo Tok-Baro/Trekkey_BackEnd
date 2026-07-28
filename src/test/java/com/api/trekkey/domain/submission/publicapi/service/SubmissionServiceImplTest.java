@@ -3,674 +3,317 @@ package com.api.trekkey.domain.submission.publicapi.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
-import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.StageStatus;
 import com.api.trekkey.domain.contest.entity.StageType;
-import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
-import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
-import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.submission.entity.Submission;
+import com.api.trekkey.domain.submission.entity.SubmissionFile;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
 import com.api.trekkey.domain.submission.exception.SubmissionErrorResponseCode;
 import com.api.trekkey.domain.submission.publicapi.web.dto.SubmissionRes;
-import com.api.trekkey.domain.submission.publicapi.web.dto.SubmissionSaveReq;
+import com.api.trekkey.domain.submission.repository.SubmissionFileRepository;
 import com.api.trekkey.domain.submission.repository.SubmissionRepository;
+import com.api.trekkey.domain.submission.support.FileStoragePort;
+import com.api.trekkey.domain.submission.support.StoredFile;
 import com.api.trekkey.domain.team.entity.Team;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
-import com.api.trekkey.domain.user.entity.UserRole;
-import com.api.trekkey.domain.user.entity.UserStatus;
-import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.multipart.MultipartFile;
 
 @ExtendWith(MockitoExtension.class)
 class SubmissionServiceImplTest {
-
-    private static final Long USER_ID = 10L;
-    private static final Long ORGANIZATION_ID = 2L;
-    private static final Long CONTEST_ID = 20L;
-    private static final Long TEAM_ID = 30L;
-    private static final String CONTEST_PUBLIC_ID = "contest-public-id";
-    private static final LocalDateTime NOW =
-            LocalDateTime.of(2026, 7, 24, 12, 0);
 
     @Mock
     private UserRepository userRepository;
 
     @Mock
-    private ContestRepository contestRepository;
+    private TeamRepository teamRepository;
 
     @Mock
     private ContestStageRepository contestStageRepository;
 
     @Mock
-    private TeamRepository teamRepository;
-
-    @Mock
     private SubmissionRepository submissionRepository;
 
     @Mock
-    private EntityManager entityManager;
+    private SubmissionFileRepository submissionFileRepository;
+
+    @Mock
+    private FileStoragePort fileStoragePort;
 
     private SubmissionServiceImpl submissionService;
 
+    private User leader;
+    private Contest contest;
+    private Team team;
+
     @BeforeEach
     void setUp() {
-        Clock clock = Clock.fixed(
-                Instant.parse("2026-07-24T03:00:00Z"),
-                ZoneId.of("Asia/Seoul")
-        );
         submissionService = new SubmissionServiceImpl(
-                userRepository,
-                contestRepository,
-                contestStageRepository,
-                teamRepository,
-                submissionRepository,
-                clock,
-                entityManager
-        );
+                userRepository, teamRepository, contestStageRepository,
+                submissionRepository, submissionFileRepository, fileStoragePort);
+
+        leader = mock(User.class);
+        lenient().when(leader.getId()).thenReturn(10L);
+        lenient().when(userRepository.findById(10L)).thenReturn(Optional.of(leader));
+
+        contest = mock(Contest.class);
+        lenient().when(contest.getId()).thenReturn(200L);
+
+        team = mock(Team.class);
+        lenient().when(team.getId()).thenReturn(1L);
+        lenient().when(team.getPublicId()).thenReturn("team-pub-1");
+        lenient().when(team.getName()).thenReturn("팀트레키");
+        lenient().when(team.getLeaderUser()).thenReturn(leader);
+        lenient().when(team.getContest()).thenReturn(contest);
+        lenient().when(team.getStatus()).thenReturn(TeamStatus.APPROVED);
+        lenient().when(teamRepository.findByPublicId("team-pub-1")).thenReturn(Optional.of(team));
+        lenient().when(teamRepository.findByPublicIdForUpdate("team-pub-1")).thenReturn(Optional.of(team));
+
+        lenient().when(fileStoragePort.store(anyString(), anyString(), any()))
+                .thenReturn(new StoredFile("submissions/pub/abc.pdf", 1024L, "a".repeat(64)));
+        lenient().when(submissionFileRepository.saveAll(anyList()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
-    @DisplayName("대표 참가자는 제출 기간과 관계없이 자신의 제출물을 조회할 수 있다")
-    void getSubmission_returnsOwnedSubmissionWithoutStageCheck() {
-        Team team = givenReadContext(TeamStatus.APPROVED);
-        Submission submission = submission(team, SubmissionStatus.SUBMITTED);
-        given(submissionRepository.findByTeamId(TEAM_ID))
-                .willReturn(Optional.of(submission));
+    @DisplayName("최초 제출 시 SHA-256이 확정되어 READY 상태로 저장된다")
+    void submit_createsSubmissionWithReadyIntegrity() {
+        givenSubmissionStageOpen();
+        given(submissionRepository.findByTeamIdForUpdate(1L)).willReturn(Optional.empty());
+        given(submissionRepository.save(any(Submission.class))).willAnswer(invocation -> {
+            Submission submission = invocation.getArgument(0);
+            ReflectionTestUtils.setField(submission, "id", 100L);
+            ReflectionTestUtils.setField(submission, "publicId", "sub-pub-1");
+            return submission;
+        });
 
-        SubmissionRes response =
-                submissionService.getSubmission(USER_ID, CONTEST_PUBLIC_ID);
+        SubmissionRes result = submissionService.submit(10L, "team-pub-1", "AI 작품", List.of(pdfFile()));
 
-        assertThat(response.publicId()).isEqualTo("submission-public-id");
-        assertThat(response.title()).isEqualTo("AI 캠퍼스");
-        assertThat(response.status()).isEqualTo(SubmissionStatus.SUBMITTED);
-        verifyNoInteractions(contestStageRepository);
+        assertThat(result.status()).isEqualTo(SubmissionStatus.SUBMITTED);
+        assertThat(result.files()).hasSize(1);
+        assertThat(result.files().get(0).sha256()).hasSize(64);
+        verify(teamRepository).findByPublicIdForUpdate("team-pub-1");
     }
 
     @Test
-    @DisplayName("승인 팀은 열린 제출 단계에서 제목을 정리해 초안을 생성한다")
-    void saveDraft_createsTrimmedDraftForApprovedTeam() {
-        Team team = givenMutationContext(TeamStatus.APPROVED, openStage());
-        given(submissionRepository.findByTeamIdForUpdate(TEAM_ID))
-                .willReturn(Optional.empty());
-        given(submissionRepository.saveAndFlush(any(Submission.class)))
-                .willAnswer(invocation -> {
-                    Submission saved = invocation.getArgument(0);
-                    ReflectionTestUtils.setField(saved, "id", 40L);
-                    ReflectionTestUtils.setField(
-                            saved,
-                            "publicId",
-                            "submission-public-id"
-                    );
-                    return saved;
-                });
+    @DisplayName("재제출 시 현재 제목과 파일을 덮어쓰고 이전 파일 객체를 정리한다")
+    void submit_overwritesCurrentSubmissionAndCleansOldFiles() {
+        givenSubmissionStageOpen();
+        Submission existing = submissionFixture(null);
+        given(submissionRepository.findByTeamIdForUpdate(1L)).willReturn(Optional.of(existing));
+        SubmissionFile oldFile = mock(SubmissionFile.class);
+        given(oldFile.getStorageKey()).willReturn("submissions/old/key.pdf");
+        given(submissionFileRepository.findAllBySubmissionIdForUpdate(100L)).willReturn(List.of(oldFile));
 
-        SubmissionRes response = submissionService.saveDraft(
-                USER_ID,
-                CONTEST_PUBLIC_ID,
-                new SubmissionSaveReq("  AI 캠퍼스  ")
-        );
+        SubmissionRes result = submissionService.submit(10L, "team-pub-1", "수정된 작품", List.of(pdfFile()));
 
-        ArgumentCaptor<Submission> captor =
-                ArgumentCaptor.forClass(Submission.class);
-        verify(submissionRepository).saveAndFlush(captor.capture());
-        Submission saved = captor.getValue();
-        assertThat(saved.getTeam()).isSameAs(team);
-        assertThat(saved.getTitle()).isEqualTo("AI 캠퍼스");
-        assertThat(saved.getStatus()).isEqualTo(SubmissionStatus.DRAFT);
-        assertThat(response.publicId()).isEqualTo("submission-public-id");
-
-        InOrder lockOrder = inOrder(
-                contestStageRepository,
-                entityManager,
-                teamRepository,
-                submissionRepository
-        );
-        lockOrder.verify(contestStageRepository)
-                .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
-                        CONTEST_ID,
-                        StageType.SUBMISSION
-                );
-        lockOrder.verify(entityManager)
-                .refresh(team.getContest(), LockModeType.PESSIMISTIC_READ);
-        lockOrder.verify(teamRepository)
-                .findByContestIdAndLeaderUserIdForUpdate(CONTEST_ID, USER_ID);
-        lockOrder.verify(submissionRepository)
-                .findByTeamIdForUpdate(TEAM_ID);
+        assertThat(result.title()).isEqualTo("수정된 작품");
+        verify(submissionFileRepository).deleteAllBySubmissionIdBulk(100L);
+        verify(fileStoragePort).delete("submissions/old/key.pdf");
     }
 
     @Test
-    @DisplayName("기존 초안은 같은 행의 제목만 수정한다")
-    void saveDraft_updatesExistingDraft() {
-        Team team = givenMutationContext(TeamStatus.APPROVED, openStage());
-        Submission submission = submission(team, SubmissionStatus.DRAFT);
-        given(submissionRepository.findByTeamIdForUpdate(TEAM_ID))
-                .willReturn(Optional.of(submission));
+    @DisplayName("이전 파일 객체는 DB 트랜잭션 커밋 이후에만 삭제한다")
+    void submit_deletesPreviousFilesAfterCommit() {
+        givenSubmissionStageOpen();
+        Submission existing = submissionFixture(null);
+        given(submissionRepository.findByTeamIdForUpdate(1L)).willReturn(Optional.of(existing));
+        SubmissionFile oldFile = mock(SubmissionFile.class);
+        given(oldFile.getStorageKey()).willReturn("submissions/old/key.pdf");
+        given(submissionFileRepository.findAllBySubmissionIdForUpdate(100L)).willReturn(List.of(oldFile));
 
-        SubmissionRes response = submissionService.saveDraft(
-                USER_ID,
-                CONTEST_PUBLIC_ID,
-                new SubmissionSaveReq("  수정 작품명  ")
-        );
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            submissionService.submit(10L, "team-pub-1", "수정된 작품", List.of(pdfFile()));
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
 
-        assertThat(submission.getTitle()).isEqualTo("수정 작품명");
-        assertThat(response.status()).isEqualTo(SubmissionStatus.DRAFT);
-        verify(submissionRepository).flush();
-        verify(submissionRepository, never()).saveAndFlush(any(Submission.class));
+            verify(fileStoragePort, never()).delete("submissions/old/key.pdf");
+            TransactionSynchronizationManager.clearSynchronization();
+            synchronizations.forEach(TransactionSynchronization::afterCommit);
+            synchronizations.forEach(synchronization ->
+                    synchronization.afterCompletion(TransactionSynchronization.STATUS_COMMITTED));
+
+            verify(fileStoragePort).delete("submissions/old/key.pdf");
+            verify(fileStoragePort, never()).delete("submissions/pub/abc.pdf");
+        } finally {
+            clearTransactionSynchronization();
+        }
     }
 
     @Test
-    @DisplayName("이미 제출한 작품은 초안 저장으로 수정할 수 없다")
-    void saveDraft_rejectsSubmittedSubmission() {
-        Team team = givenMutationContext(TeamStatus.APPROVED, openStage());
-        Submission submission = submission(team, SubmissionStatus.SUBMITTED);
-        given(submissionRepository.findByTeamIdForUpdate(TEAM_ID))
-                .willReturn(Optional.of(submission));
+    @DisplayName("DB 트랜잭션이 롤백되면 새 파일 객체만 삭제한다")
+    void submit_deletesNewFilesAfterRollback() {
+        givenSubmissionStageOpen();
+        Submission existing = submissionFixture(null);
+        given(submissionRepository.findByTeamIdForUpdate(1L)).willReturn(Optional.of(existing));
+        SubmissionFile oldFile = mock(SubmissionFile.class);
+        given(oldFile.getStorageKey()).willReturn("submissions/old/key.pdf");
+        given(submissionFileRepository.findAllBySubmissionIdForUpdate(100L)).willReturn(List.of(oldFile));
 
-        assertThatThrownBy(() -> submissionService.saveDraft(
-                USER_ID,
-                CONTEST_PUBLIC_ID,
-                new SubmissionSaveReq("수정 작품명")
-        ))
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            submissionService.submit(10L, "team-pub-1", "수정된 작품", List.of(pdfFile()));
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
+
+            TransactionSynchronizationManager.clearSynchronization();
+            synchronizations.forEach(synchronization ->
+                    synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
+
+            verify(fileStoragePort).delete("submissions/pub/abc.pdf");
+            verify(fileStoragePort, never()).delete("submissions/old/key.pdf");
+        } finally {
+            clearTransactionSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("제출이 잠긴 제출물은 덮어쓸 수 없다")
+    void submit_throwsWhenFinalized() {
+        givenSubmissionStageOpen();
+        Submission finalized = submissionFixture(LocalDateTime.now());
+        given(submissionRepository.findByTeamIdForUpdate(1L)).willReturn(Optional.of(finalized));
+
+        assertThatThrownBy(() -> submissionService.submit(10L, "team-pub-1", "작품", List.of(pdfFile())))
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(
-                        SubmissionErrorResponseCode.INVALID_SUBMISSION_STATUS_TRANSITION);
-
-        assertThat(submission.getTitle()).isEqualTo("AI 캠퍼스");
-        verify(submissionRepository, never()).flush();
+                .isEqualTo(SubmissionErrorResponseCode.SUBMISSION_FINALIZED);
     }
 
     @Test
-    @DisplayName("동시 생성으로 팀당 제출물 유니크 제약이 충돌하면 409로 변환한다")
-    void saveDraft_convertsUniqueConstraintViolation() {
-        givenMutationContext(TeamStatus.APPROVED, openStage());
-        given(submissionRepository.findByTeamIdForUpdate(TEAM_ID))
-                .willReturn(Optional.empty());
-        given(submissionRepository.saveAndFlush(any(Submission.class)))
-                .willThrow(DataIntegrityViolationException.class);
-
-        assertThatThrownBy(() -> submissionService.saveDraft(
-                USER_ID,
-                CONTEST_PUBLIC_ID,
-                new SubmissionSaveReq("AI 캠퍼스")
-        ))
-                .isInstanceOf(CustomException.class)
-                .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(SubmissionErrorResponseCode.SUBMISSION_ALREADY_EXISTS);
-    }
-
-    @Test
-    @DisplayName("비활성 참가자의 기존 토큰으로는 제출물을 조회할 수 없다")
-    void getSubmission_rejectsInactiveParticipant() {
-        User participant = participant(UserStatus.INACTIVE, UserRole.PARTICIPANT);
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(participant));
-
-        assertThatThrownBy(() ->
-                submissionService.getSubmission(USER_ID, CONTEST_PUBLIC_ID))
-                .isInstanceOf(CustomException.class)
-                .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(UserErrorResponseCode.USER_INVALID_TOKEN);
-
-        verifyNoInteractions(contestRepository, teamRepository, submissionRepository);
-    }
-
-    @Test
-    @DisplayName("현재 사용자 조직의 대회가 아니면 대회 없음으로 숨긴다")
-    void getSubmission_hidesOtherOrganizationContest() {
-        User participant = givenActiveParticipant();
-        given(contestRepository.findByPublicIdAndOrganizationId(
-                CONTEST_PUBLIC_ID,
-                ORGANIZATION_ID
-        )).willReturn(Optional.empty());
-
-        assertThatThrownBy(() ->
-                submissionService.getSubmission(USER_ID, CONTEST_PUBLIC_ID))
-                .isInstanceOf(CustomException.class)
-                .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(ContestErrorResponseCode.CONTEST_NOT_FOUND);
-
-        assertThat(participant.getOrganization().getId())
-                .isEqualTo(ORGANIZATION_ID);
-        verifyNoInteractions(teamRepository, submissionRepository);
-    }
-
-    @Test
-    @DisplayName("다른 팀원이나 미참가 사용자는 대표자 제출물을 찾을 수 없다")
-    void getSubmission_rejectsNonLeader() {
-        givenContestContext();
-        given(teamRepository.findByContestIdAndLeaderUserId(CONTEST_ID, USER_ID))
-                .willReturn(Optional.empty());
-
-        assertThatThrownBy(() ->
-                submissionService.getSubmission(USER_ID, CONTEST_PUBLIC_ID))
-                .isInstanceOf(CustomException.class)
-                .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(
-                        SubmissionErrorResponseCode.SUBMISSION_TEAM_NOT_FOUND);
-
-        verifyNoInteractions(submissionRepository);
-    }
-
-    @Test
-    @DisplayName("승인되지 않은 팀은 초안을 생성할 수 없다")
-    void saveDraft_rejectsUnapprovedTeam() {
-        givenMutationContext(TeamStatus.PENDING, openStage());
-
-        assertThatThrownBy(() -> submissionService.saveDraft(
-                USER_ID,
-                CONTEST_PUBLIC_ID,
-                new SubmissionSaveReq("AI 캠퍼스")
-        ))
-                .isInstanceOf(CustomException.class)
-                .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(
-                        SubmissionErrorResponseCode.SUBMISSION_TEAM_NOT_APPROVED);
-
-        verifyNoInteractions(submissionRepository);
-    }
-
-    @Test
-    @DisplayName("제출 단계가 없거나 둘 이상이면 대회 설정 오류로 처리한다")
-    void saveDraft_rejectsAmbiguousSubmissionStage() {
-        givenContestContext();
-        ContestStage first = openStage();
-        ContestStage second = openStage();
+    @DisplayName("제출 단계가 열려 있지 않으면 제출할 수 없다")
+    void submit_throwsWhenStageNotOpen() {
+        ContestStage closedStage = mock(ContestStage.class);
+        given(closedStage.getStatus()).willReturn(StageStatus.COMPLETED);
         given(contestStageRepository
                 .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
-                        CONTEST_ID,
-                        StageType.SUBMISSION
-                )).willReturn(List.of(first, second));
+                        200L, StageType.SUBMISSION))
+                .willReturn(List.of(closedStage));
 
-        assertThatThrownBy(() -> submissionService.saveDraft(
-                USER_ID,
-                CONTEST_PUBLIC_ID,
-                new SubmissionSaveReq("AI 캠퍼스")
-        ))
-                .isInstanceOf(CustomException.class)
-                .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(SubmissionErrorResponseCode.SUBMISSION_STAGE_INVALID);
-
-        verifyNoInteractions(teamRepository, submissionRepository);
-    }
-
-    @Test
-    @DisplayName("준비 중이거나 마감된 제출 단계에서는 초안을 저장할 수 없다")
-    void saveDraft_rejectsClosedSubmissionStage() {
-        givenContestContext();
-        ContestStage closedStage = ContestStage.builder()
-                .contest(contest())
-                .name("제출")
-                .stageType(StageType.SUBMISSION)
-                .sequenceNo(1)
-                .status(StageStatus.COMPLETED)
-                .endsAt(LocalDateTime.of(2099, 1, 1, 0, 0))
-                .build();
-        given(contestStageRepository
-                .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
-                        CONTEST_ID,
-                        StageType.SUBMISSION
-                )).willReturn(List.of(closedStage));
-
-        assertThatThrownBy(() -> submissionService.saveDraft(
-                USER_ID,
-                CONTEST_PUBLIC_ID,
-                new SubmissionSaveReq("AI 캠퍼스")
-        ))
+        assertThatThrownBy(() -> submissionService.submit(10L, "team-pub-1", "작품", List.of(pdfFile())))
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e).getBaseResponseCode())
                 .isEqualTo(SubmissionErrorResponseCode.SUBMISSION_NOT_OPEN);
-
-        verifyNoInteractions(teamRepository, submissionRepository);
     }
 
     @Test
-    @DisplayName("단계 잠금 대기 중 대회가 종료되면 최신 상태를 다시 읽고 거부한다")
-    void saveDraft_rejectsContestClosedBeforeStageLockAcquisition() {
-        User participant = givenActiveParticipant();
-        Contest contest = contest();
-        given(contestRepository.findByPublicIdAndOrganizationId(
-                CONTEST_PUBLIC_ID,
-                ORGANIZATION_ID
-        )).willReturn(Optional.of(contest));
-        ContestStage stage = openStage();
-        given(contestStageRepository
-                .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
-                        CONTEST_ID,
-                        StageType.SUBMISSION
-                )).willReturn(List.of(stage));
-        doAnswer(invocation -> {
-            ReflectionTestUtils.setField(
-                    contest,
-                    "status",
-                    ContestStatus.AWARDED
-            );
-            return null;
-        }).when(entityManager).refresh(
-                contest,
-                LockModeType.PESSIMISTIC_READ
-        );
+    @DisplayName("허용되지 않는 확장자는 거부한다")
+    void submit_throwsWhenExtensionInvalid() {
+        givenSubmissionStageOpen();
+        MultipartFile executable =
+                new MockMultipartFile("files", "malware.exe", "application/octet-stream", new byte[]{1});
 
-        assertThatThrownBy(() -> submissionService.saveDraft(
-                USER_ID,
-                CONTEST_PUBLIC_ID,
-                new SubmissionSaveReq("AI 캠퍼스")
-        ))
+        assertThatThrownBy(() -> submissionService.submit(10L, "team-pub-1", "작품", List.of(executable)))
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(SubmissionErrorResponseCode.SUBMISSION_NOT_OPEN);
-
-        assertThat(participant.getOrganization().getId())
-                .isEqualTo(ORGANIZATION_ID);
-        verifyNoInteractions(teamRepository, submissionRepository);
+                .isEqualTo(SubmissionErrorResponseCode.SUBMISSION_FILE_TYPE_INVALID);
     }
 
     @Test
-    @DisplayName("현재 시각이 제출 마감 시각과 같으면 제출을 거부한다")
-    void saveDraft_rejectsExactDeadlineBoundary() {
-        givenContestContext();
-        ContestStage deadlineReached = ContestStage.builder()
-                .contest(contest())
-                .name("제출")
-                .stageType(StageType.SUBMISSION)
-                .sequenceNo(1)
-                .status(StageStatus.OPEN)
-                .startsAt(NOW.minusDays(1))
-                .endsAt(NOW)
-                .build();
-        given(contestStageRepository
-                .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
-                        CONTEST_ID,
-                        StageType.SUBMISSION
-                )).willReturn(List.of(deadlineReached));
+    @DisplayName("파일 없이 제출하면 거부한다")
+    void submit_throwsWhenNoFiles() {
+        givenSubmissionStageOpen();
 
-        assertThatThrownBy(() -> submissionService.saveDraft(
-                USER_ID,
-                CONTEST_PUBLIC_ID,
-                new SubmissionSaveReq("AI 캠퍼스")
-        ))
+        assertThatThrownBy(() -> submissionService.submit(10L, "team-pub-1", "작품", List.of()))
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(SubmissionErrorResponseCode.SUBMISSION_NOT_OPEN);
-
-        verifyNoInteractions(teamRepository, submissionRepository);
+                .isEqualTo(SubmissionErrorResponseCode.SUBMISSION_FILE_REQUIRED);
     }
 
     @Test
-    @DisplayName("초안을 제출하면 제출 상태와 서버 제출 시각을 기록한다")
-    void submit_changesDraftToSubmitted() {
-        Team team = givenMutationContext(TeamStatus.APPROVED, openStage());
-        Submission submission = submission(team, SubmissionStatus.DRAFT);
-        given(submissionRepository.findByTeamIdForUpdate(TEAM_ID))
-                .willReturn(Optional.of(submission));
+    @DisplayName("팀 대표가 아니면 제출할 수 없다")
+    void submit_throwsWhenNotLeader() {
+        User other = mock(User.class);
+        given(other.getId()).willReturn(99L);
+        given(userRepository.findById(99L)).willReturn(Optional.of(other));
 
-        SubmissionRes response =
-                submissionService.submit(USER_ID, CONTEST_PUBLIC_ID);
-
-        assertThat(response.status()).isEqualTo(SubmissionStatus.SUBMITTED);
-        assertThat(response.submittedAt()).isNotNull();
-        verify(submissionRepository).flush();
+        assertThatThrownBy(() -> submissionService.submit(99L, "team-pub-1", "작품", List.of(pdfFile())))
+                .isInstanceOf(CustomException.class)
+                .extracting(e -> ((CustomException) e).getBaseResponseCode())
+                .isEqualTo(SubmissionErrorResponseCode.SUBMISSION_FORBIDDEN);
     }
 
     @Test
-    @DisplayName("이미 제출된 작품의 제출 재시도는 제출 시각을 바꾸지 않는다")
-    void submit_isIdempotentWhenAlreadySubmitted() {
-        Team team = givenMutationContext(TeamStatus.APPROVED, openStage());
-        LocalDateTime firstSubmittedAt =
-                LocalDateTime.of(2026, 7, 24, 12, 0);
+    @DisplayName("다른 팀 파일은 다운로드할 수 없다")
+    void downloadFile_throwsWhenNotOwner() {
+        User other = mock(User.class);
+        given(other.getId()).willReturn(99L);
+        given(userRepository.findById(99L)).willReturn(Optional.of(other));
+
+        Submission submission = submissionFixture(null);
+        SubmissionFile file = mock(SubmissionFile.class);
+        given(file.getSubmission()).willReturn(submission);
+        given(submissionFileRepository.findById(5L)).willReturn(Optional.of(file));
+
+        assertThatThrownBy(() -> submissionService.downloadFile(99L, 5L))
+                .isInstanceOf(CustomException.class)
+                .extracting(e -> ((CustomException) e).getBaseResponseCode())
+                .isEqualTo(SubmissionErrorResponseCode.SUBMISSION_FORBIDDEN);
+    }
+
+    //======= 헬퍼 메서드 ==========
+
+    private void givenSubmissionStageOpen() {
+        ContestStage stage = mock(ContestStage.class);
+        lenient().when(stage.getStageType()).thenReturn(StageType.SUBMISSION);
+        lenient().when(stage.getStatus()).thenReturn(StageStatus.OPEN);
+        lenient().when(stage.getEndsAt()).thenReturn(LocalDateTime.now().plusDays(7));
+        lenient().when(contestStageRepository
+                        .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
+                                200L, StageType.SUBMISSION))
+                .thenReturn(List.of(stage));
+    }
+
+    private Submission submissionFixture(LocalDateTime finalizedAt) {
         Submission submission = Submission.builder()
-                .publicId("submission-public-id")
+                .publicId("sub-pub-1")
                 .team(team)
-                .title("AI 캠퍼스")
+                .title("원래 작품")
                 .status(SubmissionStatus.SUBMITTED)
-                .submittedAt(firstSubmittedAt)
+                .submittedAt(LocalDateTime.now().minusDays(1))
                 .build();
-        given(submissionRepository.findByTeamIdForUpdate(TEAM_ID))
-                .willReturn(Optional.of(submission));
-
-        SubmissionRes response =
-                submissionService.submit(USER_ID, CONTEST_PUBLIC_ID);
-
-        assertThat(response.submittedAt()).isEqualTo(firstSubmittedAt);
-        verify(submissionRepository, never()).flush();
+        ReflectionTestUtils.setField(submission, "id", 100L);
+        if (finalizedAt != null) {
+            ReflectionTestUtils.setField(submission, "finalizedAt", finalizedAt);
+        }
+        return submission;
     }
 
-    @Test
-    @DisplayName("철회된 작품은 다시 제출할 수 없다")
-    void submit_rejectsWithdrawnSubmission() {
-        Team team = givenMutationContext(TeamStatus.APPROVED, openStage());
-        Submission submission = submission(team, SubmissionStatus.WITHDRAWN);
-        given(submissionRepository.findByTeamIdForUpdate(TEAM_ID))
-                .willReturn(Optional.of(submission));
-
-        assertThatThrownBy(() ->
-                submissionService.submit(USER_ID, CONTEST_PUBLIC_ID))
-                .isInstanceOf(CustomException.class)
-                .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(
-                        SubmissionErrorResponseCode.INVALID_SUBMISSION_STATUS_TRANSITION);
-
-        verify(submissionRepository, never()).flush();
+    private MultipartFile pdfFile() {
+        return new MockMultipartFile("files", "제안서.pdf", "application/pdf", new byte[]{1, 2, 3});
     }
 
-    @Test
-    @DisplayName("제출된 작품은 마감 전 초안으로 다시 열 수 있다")
-    void reopen_changesSubmittedToDraft() {
-        Team team = givenMutationContext(TeamStatus.APPROVED, openStage());
-        LocalDateTime firstSubmittedAt =
-                LocalDateTime.of(2026, 7, 24, 11, 0);
-        Submission submission = Submission.builder()
-                .publicId("submission-public-id")
-                .team(team)
-                .title("AI 캠퍼스")
-                .status(SubmissionStatus.SUBMITTED)
-                .submittedAt(firstSubmittedAt)
-                .build();
-        given(submissionRepository.findByTeamIdForUpdate(TEAM_ID))
-                .willReturn(Optional.of(submission));
-
-        SubmissionRes response =
-                submissionService.reopen(USER_ID, CONTEST_PUBLIC_ID);
-
-        assertThat(response.status()).isEqualTo(SubmissionStatus.DRAFT);
-        assertThat(response.submittedAt()).isEqualTo(firstSubmittedAt);
-        verify(submissionRepository).flush();
-    }
-
-    @Test
-    @DisplayName("철회된 작품은 초안으로 다시 열 수 없다")
-    void reopen_rejectsWithdrawnSubmission() {
-        Team team = givenMutationContext(TeamStatus.APPROVED, openStage());
-        Submission submission = submission(team, SubmissionStatus.WITHDRAWN);
-        given(submissionRepository.findByTeamIdForUpdate(TEAM_ID))
-                .willReturn(Optional.of(submission));
-
-        assertThatThrownBy(() ->
-                submissionService.reopen(USER_ID, CONTEST_PUBLIC_ID))
-                .isInstanceOf(CustomException.class)
-                .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(
-                        SubmissionErrorResponseCode.INVALID_SUBMISSION_STATUS_TRANSITION);
-
-        verify(submissionRepository, never()).flush();
-    }
-
-    @Test
-    @DisplayName("제출된 작품을 철회하면 철회 상태로 변경한다")
-    void withdraw_changesSubmittedToWithdrawn() {
-        Team team = givenMutationContext(TeamStatus.APPROVED, openStage());
-        Submission submission = submission(team, SubmissionStatus.SUBMITTED);
-        given(submissionRepository.findByTeamIdForUpdate(TEAM_ID))
-                .willReturn(Optional.of(submission));
-
-        SubmissionRes response =
-                submissionService.withdraw(USER_ID, CONTEST_PUBLIC_ID);
-
-        assertThat(response.status()).isEqualTo(SubmissionStatus.WITHDRAWN);
-        verify(submissionRepository).flush();
-    }
-
-    @Test
-    @DisplayName("아직 제출하지 않은 초안은 철회할 수 없다")
-    void withdraw_rejectsDraftSubmission() {
-        Team team = givenMutationContext(TeamStatus.APPROVED, openStage());
-        Submission submission = submission(team, SubmissionStatus.DRAFT);
-        given(submissionRepository.findByTeamIdForUpdate(TEAM_ID))
-                .willReturn(Optional.of(submission));
-
-        assertThatThrownBy(() ->
-                submissionService.withdraw(USER_ID, CONTEST_PUBLIC_ID))
-                .isInstanceOf(CustomException.class)
-                .extracting(e -> ((CustomException) e).getBaseResponseCode())
-                .isEqualTo(
-                        SubmissionErrorResponseCode.INVALID_SUBMISSION_STATUS_TRANSITION);
-
-        assertThat(submission.getStatus()).isEqualTo(SubmissionStatus.DRAFT);
-        verify(submissionRepository, never()).flush();
-    }
-
-    @Test
-    @DisplayName("이미 철회된 작품의 철회 재시도는 멱등 처리한다")
-    void withdraw_isIdempotentWhenAlreadyWithdrawn() {
-        Team team = givenMutationContext(TeamStatus.APPROVED, openStage());
-        Submission submission = submission(team, SubmissionStatus.WITHDRAWN);
-        given(submissionRepository.findByTeamIdForUpdate(TEAM_ID))
-                .willReturn(Optional.of(submission));
-
-        SubmissionRes response =
-                submissionService.withdraw(USER_ID, CONTEST_PUBLIC_ID);
-
-        assertThat(response.status()).isEqualTo(SubmissionStatus.WITHDRAWN);
-        verify(submissionRepository, never()).flush();
-    }
-
-    private Team givenReadContext(TeamStatus teamStatus) {
-        Contest contest = givenContestContext();
-        Team team = team(contest, teamStatus);
-        given(teamRepository.findByContestIdAndLeaderUserId(CONTEST_ID, USER_ID))
-                .willReturn(Optional.of(team));
-        return team;
-    }
-
-    private Team givenMutationContext(
-            TeamStatus teamStatus,
-            ContestStage submissionStage
-    ) {
-        Contest contest = givenContestContext();
-        given(contestStageRepository
-                .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
-                        CONTEST_ID,
-                        StageType.SUBMISSION
-                )).willReturn(List.of(submissionStage));
-        Team team = team(contest, teamStatus);
-        given(teamRepository.findByContestIdAndLeaderUserIdForUpdate(
-                CONTEST_ID,
-                USER_ID
-        )).willReturn(Optional.of(team));
-        return team;
-    }
-
-    private Contest givenContestContext() {
-        User participant = givenActiveParticipant();
-        Contest contest = contest();
-        given(contestRepository.findByPublicIdAndOrganizationId(
-                CONTEST_PUBLIC_ID,
-                ORGANIZATION_ID
-        )).willReturn(Optional.of(contest));
-        assertThat(participant.getOrganization().getId())
-                .isEqualTo(ORGANIZATION_ID);
-        return contest;
-    }
-
-    private User givenActiveParticipant() {
-        User participant =
-                participant(UserStatus.ACTIVE, UserRole.PARTICIPANT);
-        given(userRepository.findById(USER_ID))
-                .willReturn(Optional.of(participant));
-        return participant;
-    }
-
-    private User participant(UserStatus status, UserRole role) {
-        Organization organization =
-                org.mockito.Mockito.mock(Organization.class);
-        org.mockito.Mockito.lenient()
-                .when(organization.getId())
-                .thenReturn(ORGANIZATION_ID);
-        return User.builder()
-                .id(USER_ID)
-                .organization(organization)
-                .role(role)
-                .status(status)
-                .build();
-    }
-
-    private Contest contest() {
-        return Contest.builder()
-                .id(CONTEST_ID)
-                .publicId(CONTEST_PUBLIC_ID)
-                .status(ContestStatus.REVIEWING)
-                .build();
-    }
-
-    private Team team(Contest contest, TeamStatus status) {
-        return Team.builder()
-                .id(TEAM_ID)
-                .contest(contest)
-                .leaderUser(participant(UserStatus.ACTIVE, UserRole.PARTICIPANT))
-                .status(status)
-                .build();
-    }
-
-    private ContestStage openStage() {
-        return ContestStage.builder()
-                .contest(contest())
-                .name("제출")
-                .stageType(StageType.SUBMISSION)
-                .sequenceNo(1)
-                .status(StageStatus.OPEN)
-                .startsAt(LocalDateTime.of(2020, 1, 1, 0, 0))
-                .endsAt(LocalDateTime.of(2099, 1, 1, 0, 0))
-                .build();
-    }
-
-    private Submission submission(Team team, SubmissionStatus status) {
-        return Submission.builder()
-                .id(40L)
-                .publicId("submission-public-id")
-                .team(team)
-                .title("AI 캠퍼스")
-                .status(status)
-                .build();
+    private void clearTransactionSynchronization() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 }

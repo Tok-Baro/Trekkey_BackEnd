@@ -2,6 +2,7 @@ package com.api.trekkey.domain.review.repository;
 
 import com.api.trekkey.domain.review.entity.ReviewRound;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
 import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
@@ -56,6 +57,10 @@ public interface ReviewRoundEntryRepository
             """)
     List<ReviewRoundEntry> findAllByReviewRoundIdOrderByCreatedAtAscIdAsc(
             @Param("reviewRoundId") Long reviewRoundId);
+
+    List<ReviewRoundEntry> findAllByReviewRoundIdAndStatus(
+            Long reviewRoundId,
+            ReviewRoundEntryStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("""

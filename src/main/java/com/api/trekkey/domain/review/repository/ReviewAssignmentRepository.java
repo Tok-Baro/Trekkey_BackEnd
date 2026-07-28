@@ -1,6 +1,7 @@
 package com.api.trekkey.domain.review.repository;
 
 import com.api.trekkey.domain.review.entity.ReviewAssignment;
+import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
 import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
@@ -59,6 +60,17 @@ public interface ReviewAssignmentRepository
             @Param("judgeId") Long judgeId,
             @Param("entryIds") Collection<Long> entryIds);
 
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("""
+            select assignment
+            from ReviewAssignment assignment
+            where assignment.reviewRoundEntry.id in :entryIds
+            order by assignment.reviewRoundEntry.id, assignment.id
+            """)
+    List<ReviewAssignment>
+            findAllForShareByReviewRoundEntryIdInOrderByEntryIdAscIdAsc(
+                    @Param("entryIds") Collection<Long> entryIds);
+
     @Query("""
             select assignment
             from ReviewAssignment assignment
@@ -87,4 +99,37 @@ public interface ReviewAssignmentRepository
             """)
     List<ReviewAssignment> findAllWithDetailsByJudgeId(
             @Param("judgeId") Long judgeId);
+
+    // 심사위원 포털 목록 — 라운드, 제출물, 팀을 한 번에 적재해 N+1 조회를 막는다.
+    @Query("""
+            select ra
+            from ReviewAssignment ra
+            join fetch ra.reviewRoundEntry e
+            join fetch e.reviewRound
+            join fetch e.submission s
+            join fetch s.team
+            where ra.contestJudge.id = :contestJudgeId
+            order by ra.assignedAt asc
+            """)
+    List<ReviewAssignment> findAllByContestJudgeIdOrderByAssignedAtAsc(
+            @Param("contestJudgeId") Long contestJudgeId);
+
+    List<ReviewAssignment> findAllByReviewRoundEntryIdIn(
+            Collection<Long> entryIds);
+
+    boolean existsByContestJudgeId(Long contestJudgeId);
+
+    boolean existsByContestJudgeIdAndReviewRoundEntrySubmissionIdAndStatusNot(
+            Long contestJudgeId,
+            Long submissionId,
+            ReviewAssignmentStatus status);
+
+    // 심사위원별 배정/완료 수 집계 — 관리자 심사 현황
+    @Query("""
+            select ra.contestJudge.id, count(ra), sum(case when ra.status = 'COMPLETED' then 1 else 0 end)
+            from ReviewAssignment ra
+            where ra.contestJudge.id in :judgeIds
+            group by ra.contestJudge.id
+            """)
+    List<Object[]> countByJudgeIds(@Param("judgeIds") Collection<Long> judgeIds);
 }

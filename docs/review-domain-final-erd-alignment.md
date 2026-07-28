@@ -30,6 +30,11 @@ CONTEST
 따라서 데이터가 들어 있는 DB에 배포할 때는 아래 작업을 별도
 마이그레이션으로 먼저 수행해야 한다.
 
+`origin/develop` 스키마에서 시작하는 공유 개발 DB용 전환 초안은
+[`docs/migrations/2026-07-28-review-round-transition.sql`](migrations/2026-07-28-review-round-transition.sql)에
+있다. 백업과 쓰기 중단 후 실행하며, 시간 구간이 비어 있거나
+`FINAL` 판정 규칙이 남아 있으면 스크립트가 중단된다.
+
 1. `review_round` 테이블을 생성한다.
 2. 기존 `contest_stage` 중 심사 용도의 행을 `review_round`로 옮긴다.
 3. 기존 값은 다음 기준으로 변환한다.
@@ -46,11 +51,13 @@ CONTEST
 
 4. `review_criterion.review_round_id`를 nullable로 먼저 추가하고,
    기존 `contest_stage_id`를 이용해 값을 채운다.
-5. `review_round_entry.review_round_id`도 같은 방식으로 추가하고,
-   기존 `review_stage_id`를 이용해 값을 채운다.
-6. 누락 값과 중복 값을 검사한 뒤 새 FK를 `NOT NULL`로 변경하고
+5. 기존 `contest_stage_entry`를 `review_round_entry`로 복사하고
+   `PASSED/FAILED`를 `SELECTED/NOT_SELECTED`로 변환한다.
+6. `review_assignment`과 `award`의 새 `review_round_entry_id`를
+   기존 entry ID로 채운다.
+7. 누락 값과 중복 값을 검사한 뒤 새 FK를 `NOT NULL`로 변경하고
    최종 유니크 제약을 생성한다.
-7. 애플리케이션 전환과 데이터 검증이 끝난 후에만 예전 리뷰 FK 컬럼과
+8. 애플리케이션 전환과 데이터 검증이 끝난 후에만 예전 리뷰 FK 컬럼과
    제약을 제거한다.
 
 다음 데이터는 자동 변환하지 말고 배포 전에 정책을 정해야 한다.
@@ -74,7 +81,9 @@ DB에서는 재생성하지 말고 위 순서의 명시적 마이그레이션을
 - 전체 제출물을 대상으로 한 심사 대상 준비
 - 심사위원 배정과 링크 기반 평가표 조회
 - 항목별 점수 검증, 총점 계산, 중복 제출 방지
-- 라운드 시작
+- 라운드 시작 시 대상 제출물 확정
+- 수상 근거 FK를 `REVIEW_ROUND_ENTRY`로 전환
+- 심사위원에게 배정된 제출 파일의 링크 인증 다운로드
 
 `PREVIOUS_SELECTED`, `MANUAL` 대상 구성과 라운드 최종 점수·순위·판정
 확정은 다음 구현 범위다. enum과 DB 구조는 최종 ERD 값으로 먼저

@@ -26,6 +26,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Table(
+        name = "contest_judge",
         uniqueConstraints = {
                 @UniqueConstraint(
                         name = "uk_contest_judge_user",
@@ -57,10 +58,13 @@ public class ContestJudge extends BaseEntity {
     @Column(name = "review_token_hash", length = 64)
     private String reviewTokenHash;
 
+    @Column(name = "token_issued_at")
     private LocalDateTime tokenIssuedAt;
 
+    @Column(name = "token_expires_at")
     private LocalDateTime tokenExpiresAt;
 
+    @Column(name = "token_revoked_at")
     private LocalDateTime tokenRevokedAt;
 
     public void issueReviewLink(
@@ -94,5 +98,4 @@ public class ContestJudge extends BaseEntity {
         }
         return ReviewLinkStatus.ACTIVE;
     }
-
 }

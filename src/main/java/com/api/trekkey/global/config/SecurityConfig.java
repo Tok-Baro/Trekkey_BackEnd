@@ -72,15 +72,29 @@ public class SecurityConfig {
                                 HttpMethod.PUT,
                                 "/api/review/assignments/*/review"
                         ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/review/files/*/download"
+                        ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/contests").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.GET, "/api/contests/*").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.POST, "/api/contests/*/applications").hasRole("PARTICIPANT")
+                        .requestMatchers(HttpMethod.GET, "/api/me/applications").hasRole("PARTICIPANT")
+                        .requestMatchers(HttpMethod.PATCH, "/api/me/applications/*").hasRole("PARTICIPANT")
+                        .requestMatchers(HttpMethod.GET, "/api/me/teams").hasRole("PARTICIPANT")
+                        .requestMatchers(HttpMethod.GET, "/api/participants/search").hasRole("PARTICIPANT")
                         .requestMatchers(
-                                "/api/contests/*/submission",
-                                "/api/contests/*/submission/**"
+                                "/api/teams/*/submission",
+                                "/api/teams/*/submission/**"
+                        ).hasRole("PARTICIPANT")
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/files/*/download"
                         ).hasRole("PARTICIPANT")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN") //관리자 콘솔 (RoleHierarchy로 ROOT 포함)
                         .requestMatchers("/api/root/**").hasRole("ROOT_ADMIN") //초대 발급·가입 승인 등 ROOT_ADMIN 전용
+                        .requestMatchers(HttpMethod.GET, "/api/public/credentials/**").permitAll()
+                        .requestMatchers("/api/admin/blockchain/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

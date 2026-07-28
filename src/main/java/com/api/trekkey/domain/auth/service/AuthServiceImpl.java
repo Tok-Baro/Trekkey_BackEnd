@@ -70,6 +70,13 @@ public class AuthServiceImpl implements AuthService {
             throw new CustomException(UserErrorResponseCode.USER_EXISTS_EMAIL);
         }
 
+        // 같은 학교 안에서 학번 중복 확인 — DB 복합 유일 제약(uk_user_organization_student_id)의 사전 검증
+        if (userSignUpReq.getStudentId() != null && !userSignUpReq.getStudentId().isBlank()
+                && userRepository.existsByOrganizationIdAndStudentId(
+                        userSignUpReq.getOrganizationId(), userSignUpReq.getStudentId())) {
+            throw new CustomException(UserErrorResponseCode.USER_EXISTS_STUDENT_ID);
+        }
+
         // 사용자가 선택한 학교가 실제로 활성상태인지 확인
         Organization organization = organizationRepository.findByIdAndStatus(
                         userSignUpReq.getOrganizationId(),

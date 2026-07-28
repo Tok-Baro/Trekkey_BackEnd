@@ -5,8 +5,8 @@ import static com.api.trekkey.domain.user.entity.QUser.user;
 
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
-import com.api.trekkey.domain.contest.web.dto.ContestAdminSearchCond;
-import com.api.trekkey.domain.contest.web.dto.ContestSortKey;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSearchCond;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestSortKey;
 import com.querydsl.core.types.OrderSpecifier;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.ComparableExpressionBase;

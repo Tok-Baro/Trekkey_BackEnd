@@ -13,8 +13,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.AccessLevel;
@@ -28,37 +26,36 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
-@Table(
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uk_submission_public_id",
-                        columnNames = "public_id"),
-                @UniqueConstraint(
-                        name = "uk_submission_team",
-                        columnNames = "team_id")
-        })
 public class Submission extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    // 최종 제출물 PK
     private Long id;
 
-    @Column(name = "public_id", nullable = false, updatable = false, length = 36)
+    @Column(name = "public_id", nullable = false, updatable = false, unique = true, length = 36)
+    // 공개 URL과 API에서 사용할 불변 식별자
     private String publicId;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "team_id", nullable = false)
+    @JoinColumn(name = "team_id", nullable = false, unique = true)
+    // 제출 팀 — 팀당 최종 제출물 한 건 (erd-mvp §2, 마감 전 덮어쓰기)
     private Team team;
 
     @Column(nullable = false, length = 150)
+    // 작품명
     private String title;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
+    @Column(nullable = false, length = 20)
+    // 제출 상태
     private SubmissionStatus status;
 
+    // 제출 수정 마감 시각 — 심사 시작 등으로 잠기면 기록 (null이면 수정 가능)
     private LocalDateTime finalizedAt;
 
+    @Column(nullable = false)
+    // 최근 제출 시각
     private LocalDateTime submittedAt;
 
     @PrePersist
@@ -68,68 +65,36 @@ public class Submission extends BaseEntity {
         }
     }
 
-    public boolean isDraftEditable() {
-        return finalizedAt == null && status == SubmissionStatus.DRAFT;
-    }
-
-    public boolean updateDraftTitle(String title) {
-        if (!isDraftEditable()) {
-            return false;
-        }
+    // 재제출은 현재 제출물의 제목과 파일을 교체한다. 별도 버전 이력은 만들지 않는다.
+    public void overwrite(String title, LocalDateTime now) {
         this.title = title;
-        return true;
-    }
-
-    public boolean submit(LocalDateTime submittedAt) {
-        if (submittedAt == null
-                || isFinalized()
-                || status == SubmissionStatus.WITHDRAWN) {
-            return false;
-        }
-        if (status == SubmissionStatus.SUBMITTED) {
-            return false;
-        }
         this.status = SubmissionStatus.SUBMITTED;
-        this.submittedAt = submittedAt;
-        return true;
+        this.submittedAt = now;
     }
 
-    public boolean withdraw() {
-        if (isFinalized()) {
-            return false;
-        }
-        if (status == SubmissionStatus.WITHDRAWN) {
-            return false;
-        }
-        if (status != SubmissionStatus.SUBMITTED) {
-            return false;
-        }
-        this.status = SubmissionStatus.WITHDRAWN;
-        return true;
-    }
-
-    public boolean reopenDraft() {
-        if (isFinalized() || status == SubmissionStatus.WITHDRAWN) {
-            return false;
-        }
-        if (status == SubmissionStatus.DRAFT) {
-            return false;
-        }
-        this.status = SubmissionStatus.DRAFT;
-        return true;
+    // 제출을 확정한다. 심사가 시작되면 호출되며 이후 덮어쓰기를 거부한다.
+    public boolean finalizeSubmission(LocalDateTime now) {
+        return finalizeAt(now);
     }
 
     public boolean isFinalized() {
         return finalizedAt != null;
     }
 
-    public boolean finalizeAt(LocalDateTime finalizedAt) {
-        if (finalizedAt == null
+    /**
+     * 제출물을 심사 대상으로 확정한다.
+     *
+     * <p>제출 완료 상태만 한 번 확정할 수 있도록 엔티티 수준에서도 보호한다.
+     * 같은 제출물을 다시 확정하려는 호출은 최초 확정 시각을 유지한다.</p>
+     */
+    public boolean finalizeAt(LocalDateTime now) {
+        if (now == null
                 || isFinalized()
                 || status != SubmissionStatus.SUBMITTED) {
             return false;
         }
-        this.finalizedAt = finalizedAt;
+        this.finalizedAt = now;
         return true;
     }
+
 }

@@ -38,4 +38,8 @@ public interface ContestJudgeRepository extends JpaRepository<ContestJudge, Long
             @Param("reviewTokenHash") String reviewTokenHash);
 
     boolean existsByContestIdAndUserId(Long contestId, Long userId);
+
+    List<ContestJudge> findAllByContestIdOrderByCreatedAtDesc(Long contestId);
+
+    List<ContestJudge> findAllByContestId(Long contestId);
 }

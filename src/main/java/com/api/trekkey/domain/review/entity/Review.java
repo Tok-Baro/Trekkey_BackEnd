@@ -25,6 +25,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Table(
+        name = "review",
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_review_assignment",
                 columnNames = "assignment_id"))
@@ -38,12 +39,12 @@ public class Review extends BaseEntity {
     @JoinColumn(name = "assignment_id", nullable = false)
     private ReviewAssignment assignment;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    @Column(name = "total_score", nullable = false, precision = 12, scale = 2)
     private BigDecimal totalScore;
 
     @Column(columnDefinition = "TEXT")
     private String comment;
 
-    @Column(nullable = false)
+    @Column(name = "submitted_at", nullable = false)
     private LocalDateTime submittedAt;
 }

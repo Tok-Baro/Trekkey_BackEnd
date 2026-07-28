@@ -19,6 +19,10 @@ public enum ReviewErrorResponseCode implements BaseResponseCode {
             "CONTEST_JUDGE_USER_INVALID",
             400,
             "심사위원으로 연결할 수 없는 사용자입니다."),
+    CONTEST_JUDGE_HAS_ASSIGNMENTS(
+            "CONTEST_JUDGE_HAS_ASSIGNMENTS",
+            409,
+            "심사 배정 이력이 있는 심사위원은 삭제할 수 없습니다."),
     REVIEW_LINK_EXPIRATION_INVALID(
             "REVIEW_LINK_EXPIRATION_INVALID",
             400,
@@ -115,6 +119,10 @@ public enum ReviewErrorResponseCode implements BaseResponseCode {
             "REVIEW_ASSIGNMENT_ENTRY_INVALID",
             409,
             "현재 상태에서는 배정할 수 없는 심사 대상이 포함되어 있습니다."),
+    REVIEW_ASSIGNMENT_REQUIRED(
+            "REVIEW_ASSIGNMENT_REQUIRED",
+            409,
+            "심사 라운드를 시작하려면 모든 심사 대상에 심사위원을 한 명 이상 배정해야 합니다."),
     REVIEW_ASSIGNMENT_DUE_AT_INVALID(
             "REVIEW_ASSIGNMENT_DUE_AT_INVALID",
             400,

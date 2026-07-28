@@ -2,6 +2,7 @@ package com.api.trekkey.domain.review.repository;
 
 import com.api.trekkey.domain.review.entity.ReviewScoreItem;
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -20,4 +21,6 @@ public interface ReviewScoreItemRepository
             """)
     List<ReviewScoreItem> findAllForShareByReviewIdOrderByCriterionIdAsc(
             @Param("reviewId") Long reviewId);
+
+    List<ReviewScoreItem> findAllByReviewIdIn(Collection<Long> reviewIds);
 }

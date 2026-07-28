@@ -76,4 +76,12 @@ public class ReviewRoundEntry extends BaseEntity {
         status = ReviewRoundEntryStatus.IN_REVIEW;
         return true;
     }
+
+    public boolean isFinalized() {
+        return finalizedAt != null
+                && (status == ReviewRoundEntryStatus.SELECTED
+                || status == ReviewRoundEntryStatus.NOT_SELECTED
+                || status == ReviewRoundEntryStatus.WITHDRAWN
+                || status == ReviewRoundEntryStatus.DISQUALIFIED);
+    }
 }
