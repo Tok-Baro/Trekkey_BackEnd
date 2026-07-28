@@ -323,6 +323,23 @@ class SecurityConfigTest {
     }
 
     @Test
+    @DisplayName("심사 파일 다운로드 사전 확인 POST는 토큰 검증을 위해 인증 없이 진입할 수 있다")
+    void reviewFileAccessCheck_permitsAnonymousPost() throws Exception {
+        String rawToken = "a".repeat(43);
+        ReviewAccessReq request = new ReviewAccessReq(rawToken);
+
+        mockMvc.perform(post(
+                                "/api/review/files/{fileId}/download/check",
+                                10L
+                        )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"" + rawToken + "\"}"))
+                .andExpect(status().isOk());
+
+        verify(reviewFileService).validateFileAccess(10L, request);
+    }
+
+    @Test
     @DisplayName("심사 파일 다운로드 경로의 GET은 인증 없이 사용할 수 없다")
     void reviewFileDownloadGet_rejectsAnonymous() throws Exception {
         mockMvc.perform(get(
@@ -545,7 +562,8 @@ class SecurityConfigTest {
         given(reviewRoundEntryAdminService.prepareEntries(
                 10L,
                 "public-id",
-                20L
+                20L,
+                null
         )).willReturn(List.of());
 
         mockMvc.perform(post(
@@ -560,7 +578,7 @@ class SecurityConfigTest {
                 .andExpect(jsonPath("$.code").value("SUCCESS_200"));
 
         verify(reviewRoundEntryAdminService)
-                .prepareEntries(10L, "public-id", 20L);
+                .prepareEntries(10L, "public-id", 20L, null);
     }
 
     @Test
@@ -569,7 +587,8 @@ class SecurityConfigTest {
         given(reviewRoundEntryAdminService.prepareEntries(
                 10L,
                 "public-id",
-                20L
+                20L,
+                null
         )).willReturn(List.of());
 
         mockMvc.perform(post(
@@ -584,7 +603,7 @@ class SecurityConfigTest {
                 .andExpect(jsonPath("$.code").value("SUCCESS_200"));
 
         verify(reviewRoundEntryAdminService)
-                .prepareEntries(10L, "public-id", 20L);
+                .prepareEntries(10L, "public-id", 20L, null);
     }
 
     @Test

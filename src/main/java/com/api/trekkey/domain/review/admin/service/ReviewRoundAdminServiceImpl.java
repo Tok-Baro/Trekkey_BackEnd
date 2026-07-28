@@ -3,12 +3,18 @@ package com.api.trekkey.domain.review.admin.service;
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
 import com.api.trekkey.domain.contest.entity.Contest;
+import com.api.trekkey.domain.contest.entity.ContestStage;
+import com.api.trekkey.domain.contest.entity.ContestStatus;
+import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
+import com.api.trekkey.domain.contest.repository.ContestStageRepository;
+import com.api.trekkey.domain.credential.integration.WorkCredentialIssuer;
 import com.api.trekkey.domain.review.entity.ReviewCriterion;
 import com.api.trekkey.domain.review.entity.ReviewAssignment;
 import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
 import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundDecisionRule;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
 import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
@@ -18,12 +24,14 @@ import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundDeadlineExtendReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundCriterionReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundSaveReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewRoundRes;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
 import com.api.trekkey.domain.submission.repository.SubmissionRepository;
+import com.api.trekkey.domain.team.entity.Team;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
@@ -37,6 +45,7 @@ import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -62,12 +71,14 @@ public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
 
     private final UserRepository userRepository;
     private final ContestRepository contestRepository;
+    private final ContestStageRepository contestStageRepository;
     private final ReviewRoundRepository reviewRoundRepository;
     private final ReviewCriterionRepository reviewCriterionRepository;
     private final ReviewRoundEntryRepository reviewRoundEntryRepository;
     private final ReviewAssignmentRepository reviewAssignmentRepository;
     private final TeamRepository teamRepository;
     private final SubmissionRepository submissionRepository;
+    private final WorkCredentialIssuer workCredentialIssuer;
     private final AdminAuditLogger adminAuditLogger;
     private final EntityManager entityManager;
     private final Clock clock;
@@ -84,12 +95,17 @@ public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
         validateRoundRequest(req);
 
         // 같은 대회의 라운드 번호를 동시에 만들지 못하도록 대회를 먼저 잠근다.
-        entityManager.refresh(contest, LockModeType.PESSIMISTIC_WRITE);
+        lockContest(contest);
+        rejectAwardedContestConfiguration(contest);
         List<ReviewRound> existingRounds =
                 reviewRoundRepository
                         .findAllForUpdateByContestIdOrderByRoundNoAsc(
                                 contest.getId());
-        validateRoundNoAvailable(existingRounds, null, req.roundNo());
+        validateNewRoundSequence(existingRounds, req.roundNo());
+        validateFirstRoundAfterSubmissionDeadline(
+                contest,
+                req.roundNo(),
+                req.startsAt());
 
         List<CriterionPlan> criterionPlans =
                 resolveCriterionPlans(req.criteria(), List.of());
@@ -191,6 +207,8 @@ public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
         User admin = findActiveAdmin(adminUserId);
         Contest contest = findContest(contestPublicId, admin);
         validateRoundRequest(req);
+        lockContest(contest);
+        rejectAwardedContestConfiguration(contest);
         validateRoundOrganization(roundId, admin);
 
         List<ReviewRound> lockedRounds =
@@ -203,7 +221,15 @@ public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
                     ReviewErrorResponseCode
                             .REVIEW_ROUND_CONFIGURATION_LOCKED);
         }
-        validateRoundNoAvailable(lockedRounds, roundId, req.roundNo());
+        if (round.getRoundNo() != req.roundNo()) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_SEQUENCE_INVALID);
+        }
+        validateFirstRoundAfterSubmissionDeadline(
+                contest,
+                req.roundNo(),
+                req.startsAt());
 
         List<ReviewCriterion> existingCriteria =
                 reviewCriterionRepository
@@ -265,6 +291,12 @@ public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
     ) {
         User admin = findActiveAdmin(adminUserId);
         Contest contest = findContest(contestPublicId, admin);
+        lockContest(contest);
+        if (contest.getStatus() == ContestStatus.AWARDED) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_STATUS_TRANSITION_INVALID);
+        }
         validateRoundOrganization(roundId, admin);
         ReviewRound round = reviewRoundRepository.findByIdForUpdate(roundId)
                 .orElseThrow(() -> new CustomException(
@@ -276,6 +308,10 @@ public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
                     ReviewErrorResponseCode
                             .REVIEW_ROUND_STATUS_TRANSITION_INVALID);
         }
+        List<ReviewRound> contestRounds = reviewRoundRepository
+                .findAllForUpdateByContestIdOrderByRoundNoAsc(
+                        contest.getId());
+        validateRoundOpeningOrder(round, contestRounds);
         if (!round.hasValidConfigurationForOpening()) {
             throw new CustomException(
                     ReviewErrorResponseCode
@@ -287,13 +323,15 @@ public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
                     ReviewErrorResponseCode
                             .REVIEW_ROUND_OPEN_WINDOW_EXPIRED);
         }
+        validateSubmissionDeadlinePassed(contest, round, now);
 
         List<ReviewCriterion> criteria =
                 reviewCriterionRepository
                         .findAllForShareByReviewRoundIdOrderBySortOrderAsc(
                                 roundId);
         List<ReviewCriterion> activeCriteria = activeCriteria(criteria);
-        if (activeCriteria.isEmpty()) {
+        boolean manualWithoutReview = round.isManualWithoutReview();
+        if (activeCriteria.isEmpty() && !manualWithoutReview) {
             throw new CustomException(
                     ReviewErrorResponseCode
                             .REVIEW_ROUND_CRITERION_REQUIRED);
@@ -318,43 +356,72 @@ public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
                     ReviewErrorResponseCode.REVIEW_ROUND_ENTRY_INVALID);
         }
 
-        List<Long> entryIds = entries.stream()
-                .map(ReviewRoundEntry::getId)
-                .toList();
-        List<ReviewAssignment> assignments = reviewAssignmentRepository
-                .findAllForShareByReviewRoundEntryIdInOrderByEntryIdAscIdAsc(
-                        entryIds);
-        Set<Long> assignedEntryIds = assignments.stream()
-                .filter(assignment -> assignment.getStatus()
-                        != ReviewAssignmentStatus.CANCELED)
-                .map(assignment ->
-                        assignment.getReviewRoundEntry().getId())
-                .collect(java.util.stream.Collectors.toSet());
-        if (entryIds.stream().anyMatch(entryId ->
-                !assignedEntryIds.contains(entryId))) {
-            throw new CustomException(
-                    ReviewErrorResponseCode.REVIEW_ASSIGNMENT_REQUIRED);
+        if (!manualWithoutReview) {
+            List<Long> entryIds = entries.stream()
+                    .map(ReviewRoundEntry::getId)
+                    .toList();
+            List<ReviewAssignment> assignments =
+                    reviewAssignmentRepository
+                            .findAllForShareByReviewRoundEntryIdInOrderByEntryIdAscIdAsc(
+                                    entryIds);
+            Set<Long> assignedEntryIds = assignments.stream()
+                    .filter(assignment -> assignment.getStatus()
+                            != ReviewAssignmentStatus.CANCELED)
+                    .map(assignment ->
+                            assignment.getReviewRoundEntry().getId())
+                    .collect(java.util.stream.Collectors.toSet());
+            if (entryIds.stream().anyMatch(entryId ->
+                    !assignedEntryIds.contains(entryId))) {
+                throw new CustomException(
+                        ReviewErrorResponseCode.REVIEW_ASSIGNMENT_REQUIRED);
+            }
         }
 
-        teamRepository.findAllForUpdateByContestIdOrderByIdAsc(contest.getId());
+        List<Team> lockedTeams =
+                teamRepository.findAllForUpdateByContestIdOrderByIdAsc(
+                        contest.getId());
+        validateTargetTeamsFinalized(entries, lockedTeams);
         List<Submission> lockedSubmissions = submissionRepository
                 .findAllForUpdateByContestIdAndStatusAndTeamStatus(
                         contest.getId(),
                         SubmissionStatus.SUBMITTED,
                         TeamStatus.APPROVED);
+        if (round.getTargetType()
+                == ReviewRoundTargetType.ALL_SUBMISSIONS) {
+            Set<Long> entrySubmissionIds = entries.stream()
+                    .map(entry -> entry.getSubmission().getId())
+                    .collect(java.util.stream.Collectors.toSet());
+            Set<Long> eligibleSubmissionIds = lockedSubmissions.stream()
+                    .map(Submission::getId)
+                    .collect(java.util.stream.Collectors.toSet());
+            if (!entrySubmissionIds.equals(eligibleSubmissionIds)) {
+                throw new CustomException(
+                        ReviewErrorResponseCode
+                                .REVIEW_ENTRY_SYNC_REQUIRED);
+            }
+        }
         Map<Long, Submission> submissionsById = lockedSubmissions.stream()
                 .collect(java.util.stream.Collectors.toMap(
                         Submission::getId,
                         submission -> submission));
+        LocalDateTime finalizedAtUtc = LocalDateTime.ofInstant(
+                clock.instant(),
+                ZoneOffset.UTC);
         for (ReviewRoundEntry entry : entries) {
             Submission submission =
                     submissionsById.get(entry.getSubmission().getId());
-            if (submission == null
-                    || (!submission.isFinalized()
-                    && !submission.finalizeAt(now))) {
+            if (submission == null) {
                 throw new CustomException(
                         ReviewErrorResponseCode
                                 .REVIEW_ENTRY_SUBMISSION_INVALID);
+            }
+            if (!submission.isFinalized()) {
+                if (!submission.finalizeAt(finalizedAtUtc)) {
+                    throw new CustomException(
+                            ReviewErrorResponseCode
+                                    .REVIEW_ENTRY_SUBMISSION_INVALID);
+                }
+                workCredentialIssuer.issueForFinalizedSubmission(submission);
             }
         }
 
@@ -364,6 +431,7 @@ public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
                             .REVIEW_ROUND_STATUS_TRANSITION_INVALID);
         }
         entries.forEach(ReviewRoundEntry::startReview);
+        contest.changeStatus(ContestStatus.REVIEWING);
         reviewRoundRepository.flush();
         reviewRoundEntryRepository.flush();
 
@@ -378,6 +446,166 @@ public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
         );
 
         return ReviewRoundRes.from(round, activeCriteria);
+    }
+
+    @Override
+    @Transactional
+    public ReviewRoundRes extendDeadline(
+            Long adminUserId,
+            String contestPublicId,
+            Long roundId,
+            ReviewRoundDeadlineExtendReq req
+    ) {
+        User admin = findActiveAdmin(adminUserId);
+        Contest contest = findContest(contestPublicId, admin);
+        lockContest(contest);
+        rejectAwardedContestConfiguration(contest);
+        validateRoundOrganization(roundId, admin);
+
+        ReviewRound round = reviewRoundRepository.findByIdForUpdate(roundId)
+                .orElseThrow(() -> new CustomException(
+                        ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND));
+        validateRoundContest(round, contest);
+        if (round.getStatus() != ReviewRoundStatus.OPEN) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_STATUS_TRANSITION_INVALID);
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        if (req == null
+                || req.endsAt() == null
+                || !req.endsAt().isAfter(now)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_DEADLINE_INVALID);
+        }
+
+        LocalDateTime previousEndsAt = round.getEndsAt();
+        if (!round.extendEndsAt(req.endsAt())) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_DEADLINE_INVALID);
+        }
+        reviewRoundRepository.flush();
+
+        adminAuditLogger.log(
+                admin.getId(),
+                admin.getOrganization().getId(),
+                AuditAction.REVIEW_ROUND_DEADLINE_EXTEND,
+                TARGET_TYPE_REVIEW_ROUND,
+                round.getId(),
+                "endsAt=" + previousEndsAt + "->" + round.getEndsAt()
+        );
+
+        List<ReviewCriterion> criteria =
+                reviewCriterionRepository
+                        .findAllByReviewRoundIdInOrderBySortOrderAsc(
+                                List.of(roundId));
+        return ReviewRoundRes.from(round, criteria);
+    }
+
+    private void lockContest(Contest contest) {
+        entityManager.refresh(contest, LockModeType.PESSIMISTIC_WRITE);
+    }
+
+    private void validateRoundOpeningOrder(
+            ReviewRound round,
+            List<ReviewRound> contestRounds
+    ) {
+        if (contestRounds.stream().anyMatch(candidate ->
+                candidate.getRoundNo() < round.getRoundNo()
+                        && candidate.getStatus()
+                        != ReviewRoundStatus.FINALIZED)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_PREVIOUS_NOT_FINALIZED);
+        }
+        if (contestRounds.stream().anyMatch(candidate ->
+                !Objects.equals(candidate.getId(), round.getId())
+                        && candidate.getStatus()
+                        == ReviewRoundStatus.OPEN)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode.REVIEW_ROUND_ALREADY_OPEN);
+        }
+    }
+
+    private void validateTargetTeamsFinalized(
+            List<ReviewRoundEntry> entries,
+            List<Team> lockedTeams
+    ) {
+        Set<Long> targetTeamIds = entries.stream()
+                .map(entry -> entry.getSubmission().getTeam().getId())
+                .collect(java.util.stream.Collectors.toSet());
+        Set<Long> finalizedTeamIds = lockedTeams.stream()
+                .filter(Team::isFinalized)
+                .map(Team::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!finalizedTeamIds.containsAll(targetTeamIds)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ENTRY_TEAM_NOT_FINALIZED);
+        }
+    }
+
+    private void rejectAwardedContestConfiguration(Contest contest) {
+        if (contest.getStatus() == ContestStatus.AWARDED) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_CONFIGURATION_LOCKED);
+        }
+    }
+
+    private void validateFirstRoundAfterSubmissionDeadline(
+            Contest contest,
+            int roundNo,
+            LocalDateTime startsAt
+    ) {
+        if (roundNo != 1) {
+            return;
+        }
+        ContestStage submissionStage = findSubmissionStage(contest);
+        if (submissionStage == null) {
+            return;
+        }
+        LocalDateTime submissionEndsAt = submissionStage.getEndsAt();
+        if (submissionEndsAt == null
+                || startsAt.isBefore(submissionEndsAt)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_SUBMISSION_WINDOW_INVALID);
+        }
+    }
+
+    private void validateSubmissionDeadlinePassed(
+            Contest contest,
+            ReviewRound round,
+            LocalDateTime now
+    ) {
+        if (round.getRoundNo() != 1) {
+            return;
+        }
+        ContestStage submissionStage = findSubmissionStage(contest);
+        if (submissionStage == null) {
+            return;
+        }
+        LocalDateTime submissionEndsAt = submissionStage.getEndsAt();
+        if (submissionEndsAt == null
+                || !now.isAfter(submissionEndsAt)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_SUBMISSION_WINDOW_INVALID);
+        }
+    }
+
+    private ContestStage findSubmissionStage(Contest contest) {
+        return contestStageRepository
+                .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
+                        contest.getId(),
+                        StageType.SUBMISSION)
+                .stream()
+                .findFirst()
+                .orElse(null);
     }
 
     private User findActiveAdmin(Long userId) {
@@ -437,29 +665,25 @@ public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
                         ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND));
     }
 
-    private void validateRoundNoAvailable(
+    private void validateNewRoundSequence(
             List<ReviewRound> rounds,
-            Long currentRoundId,
-            int roundNo
+            int requestedRoundNo
     ) {
-        boolean duplicated = rounds.stream().anyMatch(round ->
-                round.getRoundNo() == roundNo
-                        && !Objects.equals(round.getId(), currentRoundId));
-        if (duplicated) {
+        for (int index = 0; index < rounds.size(); index++) {
+            if (rounds.get(index).getRoundNo() != index + 1) {
+                throw new CustomException(
+                        ReviewErrorResponseCode
+                                .REVIEW_ROUND_SEQUENCE_INVALID);
+            }
+        }
+        if (requestedRoundNo != rounds.size() + 1) {
             throw new CustomException(
-                    ReviewErrorResponseCode.REVIEW_ROUND_DUPLICATED);
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_SEQUENCE_INVALID);
         }
     }
 
     private void validateRoundRequest(ReviewRoundSaveReq req) {
-        if (req != null
-                && req.targetType() != null
-                && req.targetType()
-                        != ReviewRoundTargetType.ALL_SUBMISSIONS) {
-            throw new CustomException(
-                    ReviewErrorResponseCode
-                            .REVIEW_ENTRY_TARGET_TYPE_UNSUPPORTED);
-        }
         if (req == null
                 || req.roundNo() == null
                 || req.roundNo() < 1
@@ -471,6 +695,13 @@ public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
                 || !req.startsAt().isBefore(req.endsAt())
                 || req.targetType() == null
                 || req.decisionRule() == null
+                || (req.targetType()
+                == ReviewRoundTargetType.PREVIOUS_SELECTED
+                && req.roundNo() <= 1)
+                || (req.targetType() == ReviewRoundTargetType.MANUAL
+                && req.decisionRule() == ReviewRoundDecisionRule.MANUAL
+                && req.criteria() != null
+                && !req.criteria().isEmpty())
                 || !hasValidDecisionConfiguration(req)) {
             throw new CustomException(
                     ReviewErrorResponseCode

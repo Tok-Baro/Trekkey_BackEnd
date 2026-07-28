@@ -7,7 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.api.trekkey.domain.review.entity.ContestJudge;
-import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
+import com.api.trekkey.domain.review.entity.ReviewAssignment;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.support.ReviewLinkAuthenticator;
@@ -24,6 +24,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -72,6 +73,8 @@ class ReviewFileServiceImplTest {
     @DisplayName("심사위원에게 취소되지 않은 배정이 있는 제출 파일만 다운로드한다")
     void downloadFile_returnsAssignedSubmissionFile() {
         ContestJudge judge = org.mockito.Mockito.mock(ContestJudge.class);
+        ReviewAssignment assignment =
+                org.mockito.Mockito.mock(ReviewAssignment.class);
         Submission submission = org.mockito.Mockito.mock(Submission.class);
         SubmissionFile file =
                 org.mockito.Mockito.mock(SubmissionFile.class);
@@ -86,12 +89,11 @@ class ReviewFileServiceImplTest {
         given(file.getSubmission()).willReturn(submission);
         given(submission.getId()).willReturn(300L);
         given(reviewAssignmentRepository
-                .existsByContestJudgeIdAndReviewRoundEntrySubmissionIdAndStatusNot(
+                .findAllWithRoundByJudgeIdAndSubmissionId(
                         200L,
-                        300L,
-                        ReviewAssignmentStatus.CANCELED
-                ))
-                .willReturn(true);
+                        300L))
+                .willReturn(List.of(assignment));
+        given(assignment.isVisibleToJudgeAt(NOW)).willReturn(true);
         given(file.getOriginalName()).willReturn("작품.pdf");
         given(file.getContentType()).willReturn("application/pdf");
         given(file.getSizeBytes()).willReturn(11L);
@@ -109,12 +111,46 @@ class ReviewFileServiceImplTest {
         assertThat(result.sizeBytes()).isEqualTo(11L);
         assertThat(result.inputStream()).isSameAs(inputStream);
         verify(reviewAssignmentRepository)
-                .existsByContestJudgeIdAndReviewRoundEntrySubmissionIdAndStatusNot(
+                .findAllWithRoundByJudgeIdAndSubmissionId(
                         200L,
-                        300L,
-                        ReviewAssignmentStatus.CANCELED
-                );
+                        300L);
         verify(fileStoragePort).open("submissions/300/work.pdf");
+    }
+
+    @Test
+    @DisplayName("대용량 다운로드 사전 확인은 파일 스트림을 열지 않고 접근 권한만 검사한다")
+    void validateFileAccess_checksAuthorizationWithoutOpeningFile() {
+        ContestJudge judge = org.mockito.Mockito.mock(ContestJudge.class);
+        ReviewAssignment assignment =
+                org.mockito.Mockito.mock(ReviewAssignment.class);
+        Submission submission = org.mockito.Mockito.mock(Submission.class);
+        SubmissionFile file =
+                org.mockito.Mockito.mock(SubmissionFile.class);
+
+        given(reviewLinkAuthenticator.authenticate(RAW_TOKEN, NOW))
+                .willReturn(judge);
+        given(judge.getId()).willReturn(200L);
+        given(submissionFileRepository.findById(10L))
+                .willReturn(Optional.of(file));
+        given(file.getSubmission()).willReturn(submission);
+        given(submission.getId()).willReturn(300L);
+        given(reviewAssignmentRepository
+                .findAllWithRoundByJudgeIdAndSubmissionId(
+                        200L,
+                        300L))
+                .willReturn(List.of(assignment));
+        given(assignment.isVisibleToJudgeAt(NOW)).willReturn(true);
+
+        service.validateFileAccess(
+                10L,
+                new ReviewAccessReq(RAW_TOKEN)
+        );
+
+        verify(reviewAssignmentRepository)
+                .findAllWithRoundByJudgeIdAndSubmissionId(
+                        200L,
+                        300L);
+        verifyNoInteractions(fileStoragePort);
     }
 
     @Test
@@ -133,12 +169,10 @@ class ReviewFileServiceImplTest {
         given(file.getSubmission()).willReturn(submission);
         given(submission.getId()).willReturn(300L);
         given(reviewAssignmentRepository
-                .existsByContestJudgeIdAndReviewRoundEntrySubmissionIdAndStatusNot(
+                .findAllWithRoundByJudgeIdAndSubmissionId(
                         200L,
-                        300L,
-                        ReviewAssignmentStatus.CANCELED
-                ))
-                .willReturn(false);
+                        300L))
+                .willReturn(List.of());
 
         assertThatThrownBy(() -> service.downloadFile(
                 10L,

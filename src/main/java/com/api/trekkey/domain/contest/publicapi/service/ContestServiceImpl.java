@@ -97,6 +97,22 @@ public class ContestServiceImpl implements ContestService {
     @Override
     @Transactional
     public ContestDetailRes getContestDetail(Long userId, String publicId) {
+        return getContestDetail(userId, publicId, true);
+    }
+
+    @Override
+    public ContestDetailRes getContestDetailWithoutViewIncrement(
+            Long userId,
+            String publicId
+    ) {
+        return getContestDetail(userId, publicId, false);
+    }
+
+    private ContestDetailRes getContestDetail(
+            Long userId,
+            String publicId,
+            boolean incrementView
+    ) {
         // 참가자에게 준비 중인 대회가 노출되지 않도록 공개 가능한 상태만 조회한다.
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(UserErrorResponseCode.USER_NOT_FOUND));
@@ -110,9 +126,12 @@ public class ContestServiceImpl implements ContestService {
                                 ContestStatus.AWARDED))
                 .orElseThrow(() -> new CustomException(ContestErrorResponseCode.CONTEST_NOT_FOUND));
         Long contestId = contest.getId();
-        contestRepository.incrementViewCount(contestId);
-        Contest viewedContest = contestRepository.findById(contestId)
-                .orElseThrow(() -> new CustomException(ContestErrorResponseCode.CONTEST_NOT_FOUND));
+        Contest viewedContest = contest;
+        if (incrementView) {
+            contestRepository.incrementViewCount(contestId);
+            viewedContest = contestRepository.findById(contestId)
+                    .orElseThrow(() -> new CustomException(ContestErrorResponseCode.CONTEST_NOT_FOUND));
+        }
         List<ContestStage> stages = contestStageRepository
                 .findAllByContestIdAndStageTypeInOrderBySequenceNoAsc(
                         contestId,

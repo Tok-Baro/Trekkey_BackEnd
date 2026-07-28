@@ -9,7 +9,10 @@ import com.api.trekkey.domain.review.entity.ContestJudge;
 import com.api.trekkey.domain.review.support.ReviewLinkAuthenticator;
 import com.api.trekkey.domain.review.publicapi.web.dto.request.ReviewAccessReq;
 import com.api.trekkey.domain.review.publicapi.web.dto.response.ReviewAccessRes;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,11 +40,18 @@ class ReviewAccessServiceImplTest {
                 .build();
         given(reviewLinkAuthenticator.authenticate(
                 org.mockito.ArgumentMatchers.eq("a".repeat(43)),
-                any(LocalDateTime.class)
+                org.mockito.ArgumentMatchers.eq(
+                        LocalDateTime.of(2026, 7, 28, 12, 0))
         )).willReturn(judge);
 
+        Clock clock = Clock.fixed(
+                Instant.parse("2026-07-28T03:00:00Z"),
+                ZoneId.of("Asia/Seoul")
+        );
         ReviewAccessServiceImpl service =
-                new ReviewAccessServiceImpl(reviewLinkAuthenticator);
+                new ReviewAccessServiceImpl(
+                        reviewLinkAuthenticator,
+                        clock);
         ReviewAccessRes response =
                 service.verifyAccess(new ReviewAccessReq("a".repeat(43)));
 

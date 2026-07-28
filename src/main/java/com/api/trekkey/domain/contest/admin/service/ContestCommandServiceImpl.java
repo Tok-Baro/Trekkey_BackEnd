@@ -4,6 +4,7 @@ import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
+import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.StageStatus;
 import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
@@ -54,6 +55,7 @@ public class ContestCommandServiceImpl implements ContestCommandService {
             ContestCreateReq req
     ) {
         User user = findUser(userId);
+        rejectDirectAwardedStatus(null, req.status());
         List<StageReq> orderedStages = sortBySequenceNo(req.stages());
         validateSubmissionStageCount(orderedStages);
         orderedStages.forEach(this::validateNewStage);
@@ -103,14 +105,26 @@ public class ContestCommandServiceImpl implements ContestCommandService {
             ContestCreateReq req
     ) {
         User user = findUser(userId);
-        Contest contest = contestRepository.findByPublicId(publicId)
+        Contest contest = contestRepository.findByPublicIdForUpdate(publicId)
                 .orElseThrow(() -> new CustomException(
                         ContestErrorResponseCode.CONTEST_NOT_FOUND));
         validateSameOrganization(contest, user);
+        rejectDirectAwardedStatus(contest.getStatus(), req.status());
 
-        List<ContestStage> existingStages = contestStageRepository
+        List<ContestStage> allExistingStages = contestStageRepository
                 .findAllForUpdateByContestIdOrderBySequenceNoAsc(
                         contest.getId());
+        List<ContestStage> existingStages = allExistingStages.stream()
+                .filter(stage ->
+                        !stage.getStageType().supportsReviewCriteria())
+                .toList();
+        Set<Integer> legacyReviewStageSequences =
+                allExistingStages.stream()
+                        .filter(stage ->
+                                stage.getStageType()
+                                        .supportsReviewCriteria())
+                        .map(ContestStage::getSequenceNo)
+                        .collect(java.util.stream.Collectors.toSet());
         Map<Long, ContestStage> existingById = new HashMap<>();
         existingStages.forEach(stage ->
                 existingById.put(stage.getId(), stage));
@@ -120,7 +134,8 @@ public class ContestCommandServiceImpl implements ContestCommandService {
         List<StagePlan> plans = planStageUpdate(
                 orderedStages,
                 existingStages,
-                existingById
+                existingById,
+                legacyReviewStageSequences
         );
         Set<Long> requestedIds = new HashSet<>();
         plans.stream()
@@ -157,7 +172,9 @@ public class ContestCommandServiceImpl implements ContestCommandService {
             contestStageRepository.deleteAll(stagesToDelete);
             contestStageRepository.flush();
         }
-        moveChangedStagesToTemporarySequences(plans, existingStages);
+        moveChangedStagesToTemporarySequences(
+                plans,
+                allExistingStages);
 
         List<StageRes> stageResponses = new ArrayList<>();
         for (StagePlan plan : plans) {
@@ -255,6 +272,17 @@ public class ContestCommandServiceImpl implements ContestCommandService {
         return user;
     }
 
+    private void rejectDirectAwardedStatus(
+            ContestStatus currentStatus,
+            ContestStatus requestedStatus
+    ) {
+        if ((currentStatus == ContestStatus.AWARDED)
+                != (requestedStatus == ContestStatus.AWARDED)) {
+            throw new CustomException(
+                    ContestErrorResponseCode.CONTEST_STATUS_LOCKED);
+        }
+    }
+
     private void validateSameOrganization(Contest contest, User user) {
         if (!contest.getOrganization().getId()
                 .equals(user.getOrganization().getId())) {
@@ -317,17 +345,21 @@ public class ContestCommandServiceImpl implements ContestCommandService {
     private List<StagePlan> planStageUpdate(
             List<StageReq> orderedStages,
             List<ContestStage> existingStages,
-            Map<Long, ContestStage> existingById
+            Map<Long, ContestStage> existingById,
+            Set<Integer> reservedSequences
     ) {
         List<StagePlan> plans = new ArrayList<>();
         Set<Long> requestedIds = new HashSet<>();
-        for (int index = 0; index < orderedStages.size(); index++) {
-            StageReq request = orderedStages.get(index);
+        int sequenceNo = 1;
+        for (StageReq request : orderedStages) {
+            while (reservedSequences.contains(sequenceNo)) {
+                sequenceNo++;
+            }
             validateStageRequest(request);
-            int sequenceNo = index + 1;
             if (request.id() == null) {
                 validateNewStage(request);
                 plans.add(new StagePlan(request, null, sequenceNo));
+                sequenceNo++;
                 continue;
             }
             if (!requestedIds.add(request.id())) {
@@ -360,6 +392,7 @@ public class ContestCommandServiceImpl implements ContestCommandService {
                                 .STAGE_CONFIGURATION_LOCKED);
             }
             plans.add(new StagePlan(request, stage, sequenceNo));
+            sequenceNo++;
         }
 
         boolean removesLockedStage = existingStages.stream()

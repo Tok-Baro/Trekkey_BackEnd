@@ -7,4 +7,12 @@ public record ReviewLinkIssueRes(
         String reviewUrl,
         LocalDateTime expiresAt
 ) {
+    @Override
+    public String toString() {
+        return "ReviewLinkIssueRes["
+                + "judgeId=" + judgeId
+                + ", reviewUrl=***"
+                + ", expiresAt=" + expiresAt
+                + ']';
+    }
 }

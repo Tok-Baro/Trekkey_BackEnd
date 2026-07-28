@@ -5,6 +5,11 @@ import com.api.trekkey.domain.submission.support.FileDownload;
 
 public interface ReviewFileService {
 
+    void validateFileAccess(
+            Long fileId,
+            ReviewAccessReq req
+    );
+
     FileDownload downloadFile(
             Long fileId,
             ReviewAccessReq req

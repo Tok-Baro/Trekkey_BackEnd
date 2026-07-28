@@ -3,6 +3,7 @@ package com.api.trekkey.domain.review.publicapi.web.dto.response;
 import com.api.trekkey.domain.review.entity.ReviewAssignment;
 import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record ReviewSheetAssignmentRes(
         Long assignmentId,
@@ -10,10 +11,12 @@ public record ReviewSheetAssignmentRes(
         String submissionTitle,
         ReviewAssignmentStatus status,
         LocalDateTime dueAt,
-        LocalDateTime completedAt
+        LocalDateTime completedAt,
+        List<ReviewSheetFileRes> files
 ) {
     public static ReviewSheetAssignmentRes from(
-            ReviewAssignment assignment
+            ReviewAssignment assignment,
+            List<ReviewSheetFileRes> files
     ) {
         return new ReviewSheetAssignmentRes(
                 assignment.getId(),
@@ -25,7 +28,8 @@ public record ReviewSheetAssignmentRes(
                         .getTitle(),
                 assignment.getStatus(),
                 assignment.getDueAt(),
-                assignment.getCompletedAt()
+                assignment.getCompletedAt(),
+                files == null ? List.of() : List.copyOf(files)
         );
     }
 }

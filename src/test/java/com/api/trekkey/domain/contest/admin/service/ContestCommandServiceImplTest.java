@@ -142,6 +142,30 @@ class ContestCommandServiceImplTest {
     }
 
     @Test
+    @DisplayName("대회 생성 API로 수상 확정 상태를 직접 만들 수 없다")
+    void createContest_rejectsDirectAwardedStatus() {
+        given(userRepository.findById(10L))
+                .willReturn(Optional.of(admin));
+
+        assertThatThrownBy(() -> contestCommandService.createContest(
+                10L,
+                createReq(
+                        ContestStatus.AWARDED,
+                        List.of(stageReq(
+                                null,
+                                "참가 신청",
+                                StageType.APPLICATION,
+                                1)))
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(error ->
+                        ((CustomException) error).getBaseResponseCode())
+                .isEqualTo(ContestErrorResponseCode.CONTEST_STATUS_LOCKED);
+
+        verify(contestRepository, never()).save(any(Contest.class));
+    }
+
+    @Test
     @DisplayName("단계 요청에 평가 기준이 오면 심사 라운드 API 사용을 안내한다")
     void createContest_rejectsReviewCriteriaInStageRequest() {
         given(userRepository.findById(10L))
@@ -306,7 +330,7 @@ class ContestCommandServiceImplTest {
         Contest contest = contestBuilder(otherOrganization);
         given(userRepository.findById(10L))
                 .willReturn(Optional.of(admin));
-        given(contestRepository.findByPublicId("pub-1"))
+        given(contestRepository.findByPublicIdForUpdate("pub-1"))
                 .willReturn(Optional.of(contest));
 
         assertThatThrownBy(() -> contestCommandService.updateContest(
@@ -323,6 +347,54 @@ class ContestCommandServiceImplTest {
                 .extracting(error ->
                         ((CustomException) error).getBaseResponseCode())
                 .isEqualTo(ContestErrorResponseCode.CONTEST_FORBIDDEN);
+        verify(contestStageRepository, never())
+                .findAllForUpdateByContestIdOrderBySequenceNoAsc(any());
+    }
+
+    @Test
+    @DisplayName("수상 확정 상태는 대회 수정 API로 되돌릴 수 없다")
+    void updateContest_rejectsAwardedStatusRegression() {
+        Contest contest = contestBuilder(organization);
+        contest.changeStatus(ContestStatus.AWARDED);
+        given(userRepository.findById(10L))
+                .willReturn(Optional.of(admin));
+        given(contestRepository.findByPublicIdForUpdate("pub-1"))
+                .willReturn(Optional.of(contest));
+
+        assertThatThrownBy(() -> contestCommandService.updateContest(
+                10L,
+                "pub-1",
+                createReq(List.of())
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(error ->
+                        ((CustomException) error).getBaseResponseCode())
+                .isEqualTo(
+                        ContestErrorResponseCode.CONTEST_STATUS_LOCKED);
+        assertThat(contest.getStatus()).isEqualTo(ContestStatus.AWARDED);
+        verify(contestStageRepository, never())
+                .findAllForUpdateByContestIdOrderBySequenceNoAsc(any());
+    }
+
+    @Test
+    @DisplayName("대회 수정 API로 수상 확정 상태에 직접 진입할 수 없다")
+    void updateContest_rejectsDirectAwardedStatus() {
+        Contest contest = contestBuilder(organization);
+        given(userRepository.findById(10L))
+                .willReturn(Optional.of(admin));
+        given(contestRepository.findByPublicIdForUpdate("pub-1"))
+                .willReturn(Optional.of(contest));
+
+        assertThatThrownBy(() -> contestCommandService.updateContest(
+                10L,
+                "pub-1",
+                createReq(ContestStatus.AWARDED, List.of())
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(error ->
+                        ((CustomException) error).getBaseResponseCode())
+                .isEqualTo(ContestErrorResponseCode.CONTEST_STATUS_LOCKED);
+
         verify(contestStageRepository, never())
                 .findAllForUpdateByContestIdOrderBySequenceNoAsc(any());
     }
@@ -352,7 +424,7 @@ class ContestCommandServiceImplTest {
         );
         given(userRepository.findById(10L))
                 .willReturn(Optional.of(admin));
-        given(contestRepository.findByPublicId("pub-1"))
+        given(contestRepository.findByPublicIdForUpdate("pub-1"))
                 .willReturn(Optional.of(contest));
         given(contestStageRepository
                 .findAllForUpdateByContestIdOrderBySequenceNoAsc(100L))
@@ -389,6 +461,89 @@ class ContestCommandServiceImplTest {
     }
 
     @Test
+    @DisplayName("이전 심사 단계는 숨겨 둔 채 일반 단계만 안전하게 수정한다")
+    void updateContest_ignoresMigratedReviewStages() {
+        Contest contest = contestBuilder(organization);
+        ReflectionTestUtils.setField(contest, "id", 100L);
+        ContestStage application = stageEntity(
+                contest,
+                201L,
+                "참가 신청",
+                StageType.APPLICATION,
+                1,
+                StageStatus.PREPARING,
+                null
+        );
+        ContestStage migratedReview = stageEntity(
+                contest,
+                299L,
+                "이전 1차 심사",
+                StageType.REVIEW,
+                2,
+                StageStatus.OPEN,
+                LocalDateTime.now().plusDays(4)
+        );
+        ContestStage submission = stageEntity(
+                contest,
+                202L,
+                "작품 제출",
+                StageType.SUBMISSION,
+                3,
+                StageStatus.PREPARING,
+                LocalDateTime.now().plusDays(3)
+        );
+        given(userRepository.findById(10L))
+                .willReturn(Optional.of(admin));
+        given(contestRepository.findByPublicIdForUpdate("pub-1"))
+                .willReturn(Optional.of(contest));
+        given(contestStageRepository
+                .findAllForUpdateByContestIdOrderBySequenceNoAsc(100L))
+                .willReturn(List.of(
+                        application,
+                        migratedReview,
+                        submission));
+        stubStageSaveWithIds();
+
+        ContestDetailRes response = contestCommandService.updateContest(
+                10L,
+                "pub-1",
+                createReq(List.of(
+                        stageReq(
+                                201L,
+                                "참가 신청",
+                                StageType.APPLICATION,
+                                1
+                        ),
+                        stageReq(
+                                202L,
+                                "작품 제출",
+                                StageType.SUBMISSION,
+                                2,
+                                StageStatus.PREPARING,
+                                null,
+                                submission.getEndsAt(),
+                                null
+                        ),
+                        stageReq(
+                                null,
+                                "시상",
+                                StageType.AWARD,
+                                3
+                        )
+                ))
+        );
+
+        assertThat(response.stages())
+                .extracting(StageRes::sequenceNo)
+                .containsExactly(1, 3, 4);
+        assertThat(response.stages())
+                .extracting(StageRes::name)
+                .containsExactly("참가 신청", "작품 제출", "시상");
+        assertThat(migratedReview.getSequenceNo()).isEqualTo(2);
+        verify(contestStageRepository, never()).deleteAll(anyList());
+    }
+
+    @Test
     @DisplayName("진행 중인 단계의 설정은 대회 수정 API에서 바꿀 수 없다")
     void updateContest_rejectsConfigurationChangeOnOpenStage() {
         Contest contest = contestBuilder(organization);
@@ -404,7 +559,7 @@ class ContestCommandServiceImplTest {
         );
         given(userRepository.findById(10L))
                 .willReturn(Optional.of(admin));
-        given(contestRepository.findByPublicId("pub-1"))
+        given(contestRepository.findByPublicIdForUpdate("pub-1"))
                 .willReturn(Optional.of(contest));
         given(contestStageRepository
                 .findAllForUpdateByContestIdOrderBySequenceNoAsc(100L))
@@ -449,7 +604,7 @@ class ContestCommandServiceImplTest {
         );
         given(userRepository.findById(10L))
                 .willReturn(Optional.of(admin));
-        given(contestRepository.findByPublicId("pub-1"))
+        given(contestRepository.findByPublicIdForUpdate("pub-1"))
                 .willReturn(Optional.of(contest));
         given(contestStageRepository
                 .findAllForUpdateByContestIdOrderBySequenceNoAsc(100L))
@@ -494,7 +649,7 @@ class ContestCommandServiceImplTest {
         );
         given(userRepository.findById(10L))
                 .willReturn(Optional.of(admin));
-        given(contestRepository.findByPublicId("pub-1"))
+        given(contestRepository.findByPublicIdForUpdate("pub-1"))
                 .willReturn(Optional.of(contest));
         given(contestStageRepository
                 .findAllForUpdateByContestIdOrderBySequenceNoAsc(100L))
@@ -547,7 +702,7 @@ class ContestCommandServiceImplTest {
         );
         given(userRepository.findById(10L))
                 .willReturn(Optional.of(admin));
-        given(contestRepository.findByPublicId("pub-1"))
+        given(contestRepository.findByPublicIdForUpdate("pub-1"))
                 .willReturn(Optional.of(contest));
         given(contestStageRepository
                 .findAllForUpdateByContestIdOrderBySequenceNoAsc(100L))
@@ -817,6 +972,27 @@ class ContestCommandServiceImplTest {
 
     private ContestCreateReq createReq(List<StageReq> stages) {
         return createReqWithDetailHtml("<p>본문</p>", stages);
+    }
+
+    private ContestCreateReq createReq(
+            ContestStatus status,
+            List<StageReq> stages
+    ) {
+        return new ContestCreateReq(
+                "2026 AI 공모전",
+                "교무처",
+                status,
+                ParticipationType.BOTH,
+                3,
+                null,
+                "AI 공모전",
+                "재학생",
+                "온라인 접수",
+                "상장 수여",
+                "AI,공모전",
+                "<p>본문</p>",
+                stages
+        );
     }
 
     private ContestCreateReq createReqWithDetailHtml(

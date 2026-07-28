@@ -1,7 +1,10 @@
 package com.api.trekkey.domain.review.admin.web.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -11,6 +14,7 @@ import com.api.trekkey.domain.review.entity.ReviewDecisionType;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.admin.service.ReviewRoundEntryAdminService;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundEntryPrepareReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewRoundEntryRes;
 import com.api.trekkey.global.exception.CustomException;
 import com.api.trekkey.global.exception.GlobalExceptionHandler;
@@ -25,6 +29,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.MethodParameter;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.support.WebDataBinderFactory;
@@ -53,12 +58,51 @@ class ReviewRoundEntryAdminControllerTest {
     }
 
     @Test
+    @DisplayName("수동 심사 대상 준비 요청은 선택한 제출물 공개 ID를 서비스에 전달한다")
+    void prepareEntries_passesManualSubmissionPublicIds() throws Exception {
+        given(reviewRoundEntryAdminService.prepareEntries(
+                org.mockito.ArgumentMatchers.eq(10L),
+                org.mockito.ArgumentMatchers.eq("contest-public-id"),
+                org.mockito.ArgumentMatchers.eq(300L),
+                any(ReviewRoundEntryPrepareReq.class)
+        )).willReturn(List.of(entryRes()));
+
+        mockMvc.perform(post(
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}/entries/prepare",
+                        "contest-public-id",
+                        300L
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "submissionPublicIds": [
+                                    "submission-public-id",
+                                    "second-submission-public-id"
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].submissionPublicId")
+                        .value("submission-public-id"));
+
+        verify(reviewRoundEntryAdminService).prepareEntries(
+                org.mockito.ArgumentMatchers.eq(10L),
+                org.mockito.ArgumentMatchers.eq("contest-public-id"),
+                org.mockito.ArgumentMatchers.eq(300L),
+                argThat(req -> req.submissionPublicIds().equals(List.of(
+                        "submission-public-id",
+                        "second-submission-public-id")))
+        );
+    }
+
+    @Test
     @DisplayName("심사 대상 준비에 성공하면 관리자 ID를 전달하고 생성된 대상을 반환한다")
     void prepareEntries_returnsOk() throws Exception {
         given(reviewRoundEntryAdminService.prepareEntries(
                 10L,
                 "contest-public-id",
-                300L
+                300L,
+                null
         )).willReturn(List.of(entryRes()));
 
         mockMvc.perform(post(
@@ -88,7 +132,11 @@ class ReviewRoundEntryAdminControllerTest {
                         .value(23));
 
         verify(reviewRoundEntryAdminService)
-                .prepareEntries(10L, "contest-public-id", 300L);
+                .prepareEntries(
+                        10L,
+                        "contest-public-id",
+                        300L,
+                        null);
     }
 
     @Test
@@ -120,12 +168,31 @@ class ReviewRoundEntryAdminControllerTest {
     }
 
     @Test
+    @DisplayName("심사 대상 초기화 요청은 관리자와 라운드 식별자를 서비스에 전달한다")
+    void resetEntries_returnsOk() throws Exception {
+        mockMvc.perform(delete(
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}/entries",
+                        "contest-public-id",
+                        300L
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.message")
+                        .value("심사 대상과 미완료 배정을 초기화했습니다."))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        verify(reviewRoundEntryAdminService)
+                .resetEntries(10L, "contest-public-id", 300L);
+    }
+
+    @Test
     @DisplayName("준비 중이 아닌 심사 단계에서 대상을 준비하면 409를 반환한다")
     void prepareEntries_returnsConflictWhenPreparationIsNotAllowed() throws Exception {
         given(reviewRoundEntryAdminService.prepareEntries(
                 10L,
                 "contest-public-id",
-                300L
+                300L,
+                null
         )).willThrow(new CustomException(
                 ReviewErrorResponseCode.REVIEW_ENTRY_PREPARATION_NOT_ALLOWED));
 
@@ -141,7 +208,11 @@ class ReviewRoundEntryAdminControllerTest {
                 .andExpect(jsonPath("$.httpStatus").value(409));
 
         verify(reviewRoundEntryAdminService)
-                .prepareEntries(10L, "contest-public-id", 300L);
+                .prepareEntries(
+                        10L,
+                        "contest-public-id",
+                        300L,
+                        null);
     }
 
     private HandlerMethodArgumentResolver authPrincipalResolver(AuthPrincipal principal) {
@@ -173,6 +244,7 @@ class ReviewRoundEntryAdminControllerTest {
                 new BigDecimal("91.5"),
                 1,
                 ReviewDecisionType.RULE,
+                null,
                 "상위 점수 선정",
                 LocalDateTime.of(2026, 7, 23, 18, 0),
                 LocalDateTime.of(2026, 7, 24, 12, 0),

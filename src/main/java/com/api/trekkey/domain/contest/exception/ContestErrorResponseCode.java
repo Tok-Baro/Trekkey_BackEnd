@@ -9,6 +9,10 @@ import lombok.Getter;
 public enum ContestErrorResponseCode implements BaseResponseCode {
     CONTEST_NOT_FOUND("CONTEST_NOT_FOUND", 404, "대회를 찾을 수 없습니다."),
     CONTEST_FORBIDDEN("CONTEST_FORBIDDEN", 403, "해당 대회에 대한 권한이 없습니다."),
+    CONTEST_STATUS_LOCKED(
+            "CONTEST_STATUS_LOCKED",
+            409,
+            "수상 확정 상태는 수상 확정 절차에서만 변경할 수 있습니다."),
     STAGE_NOT_FOUND("STAGE_NOT_FOUND", 404, "평가 단계를 찾을 수 없습니다."),
     STAGE_DUPLICATED("STAGE_DUPLICATED", 409, "같은 단계가 요청에 중복되어 있습니다."),
     SUBMISSION_STAGE_DUPLICATED(

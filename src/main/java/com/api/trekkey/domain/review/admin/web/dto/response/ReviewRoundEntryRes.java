@@ -16,6 +16,7 @@ public record ReviewRoundEntryRes(
         BigDecimal finalScore,
         Integer rankNo,
         ReviewDecisionType decisionType,
+        Long decidedByUserId,
         String decisionReason,
         LocalDateTime submissionFinalizedAt,
         LocalDateTime finalizedAt,
@@ -33,6 +34,9 @@ public record ReviewRoundEntryRes(
                 entry.getFinalScore(),
                 entry.getRankNo(),
                 entry.getDecisionType(),
+                entry.getDecidedByUser() == null
+                        ? null
+                        : entry.getDecidedByUser().getId(),
                 entry.getDecisionReason(),
                 entry.getSubmission().getFinalizedAt(),
                 entry.getFinalizedAt(),

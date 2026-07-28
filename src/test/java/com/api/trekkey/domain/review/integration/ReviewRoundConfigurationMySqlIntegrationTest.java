@@ -209,8 +209,8 @@ class ReviewRoundConfigurationMySqlIntegrationTest {
     }
 
     @Test
-    @DisplayName("같은 대회에 같은 라운드 번호를 두 번 만들 수 없다")
-    void createRound_rejectsDuplicatedRoundNo() {
+    @DisplayName("다음 순서가 아닌 라운드 번호를 만들 수 없다")
+    void createRound_rejectsNonSequentialRoundNo() {
         ReviewRoundSaveReq request = roundRequest(List.of(
                 criterion(null, "creativity", "창의성", 30, 1)
         ));
@@ -230,7 +230,7 @@ class ReviewRoundConfigurationMySqlIntegrationTest {
                         exception -> assertThat(
                                 exception.getBaseResponseCode())
                                 .isEqualTo(ReviewErrorResponseCode
-                                        .REVIEW_ROUND_DUPLICATED)
+                                        .REVIEW_ROUND_SEQUENCE_INVALID)
                 );
     }
 

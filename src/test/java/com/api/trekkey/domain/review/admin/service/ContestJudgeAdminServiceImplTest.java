@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -22,10 +23,13 @@ import com.api.trekkey.domain.review.entity.ContestJudge;
 import com.api.trekkey.domain.review.entity.ReviewLinkStatus;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.repository.ContestJudgeRepository;
+import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.support.ReviewLinkTokenManager;
 import com.api.trekkey.domain.review.admin.web.dto.request.ContestJudgeCreateReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewLinkIssueReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ContestJudgeRes;
+import com.api.trekkey.domain.review.admin.web.dto.response.ReviewJudgeProgressRes;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewLinkIssueRes;
 import com.api.trekkey.domain.user.entity.MemberType;
 import com.api.trekkey.domain.user.entity.User;
@@ -34,7 +38,10 @@ import com.api.trekkey.domain.user.entity.UserStatus;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,6 +57,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 @ExtendWith(MockitoExtension.class)
 class ContestJudgeAdminServiceImplTest {
 
+    private static final LocalDateTime NOW =
+            LocalDateTime.of(2026, 7, 24, 12, 0);
+
     @Mock
     private UserRepository userRepository;
 
@@ -58,6 +68,12 @@ class ContestJudgeAdminServiceImplTest {
 
     @Mock
     private ContestJudgeRepository contestJudgeRepository;
+
+    @Mock
+    private ReviewRoundRepository reviewRoundRepository;
+
+    @Mock
+    private ReviewAssignmentRepository reviewAssignmentRepository;
 
     @Mock
     private ReviewLinkTokenManager reviewLinkTokenManager;
@@ -73,12 +89,19 @@ class ContestJudgeAdminServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        Clock clock = Clock.fixed(
+                Instant.parse("2026-07-24T03:00:00Z"),
+                ZoneId.of("Asia/Seoul")
+        );
         service = new ContestJudgeAdminServiceImpl(
                 userRepository,
                 contestRepository,
                 contestJudgeRepository,
+                reviewRoundRepository,
+                reviewAssignmentRepository,
                 reviewLinkTokenManager,
-                adminAuditLogger
+                adminAuditLogger,
+                clock
         );
         ReflectionTestUtils.setField(service, "frontBaseUrl", "https://trekkey.example.com/");
 
@@ -217,8 +240,8 @@ class ContestJudgeAdminServiceImplTest {
         ContestJudge activeJudge = judge(200L, null, "김심사");
         activeJudge.issueReviewLink(
                 "a".repeat(64),
-                LocalDateTime.now().minusHours(1),
-                LocalDateTime.now().plusDays(1)
+                NOW.minusHours(1),
+                NOW.plusDays(1)
         );
         stubAdminAndContest();
         given(contestJudgeRepository.findAllByContestIdOrderByCreatedAtAscIdAsc(100L))
@@ -235,10 +258,114 @@ class ContestJudgeAdminServiceImplTest {
     }
 
     @Test
+    @DisplayName("대회의 심사위원별 배정 진행 현황을 반환한다")
+    void getJudgeProgress_returnsAggregatedCounts() {
+        ReviewAssignmentRepository.JudgeProgressProjection projection =
+                org.mockito.Mockito.mock(
+                        ReviewAssignmentRepository
+                                .JudgeProgressProjection.class);
+        stubAdminAndContest();
+        given(projection.getJudgeId()).willReturn(200L);
+        given(projection.getJudgeName()).willReturn("김심사");
+        given(projection.getAssignedCount()).willReturn(5L);
+        given(projection.getCompletedCount()).willReturn(2L);
+        given(projection.getPendingCount()).willReturn(1L);
+        given(projection.getOverdueCount()).willReturn(2L);
+        given(reviewAssignmentRepository.findJudgeProgressByContestId(
+                eq(100L),
+                eq(null),
+                any(LocalDateTime.class)
+        )).willReturn(List.of(projection));
+
+        List<ReviewJudgeProgressRes> response =
+                service.getJudgeProgress(
+                        10L,
+                        "contest-public-id",
+                        null
+                );
+
+        assertThat(response).singleElement().satisfies(progress -> {
+            assertThat(progress.judgeId()).isEqualTo(200L);
+            assertThat(progress.assignedCount()).isEqualTo(5L);
+            assertThat(progress.completedCount()).isEqualTo(2L);
+            assertThat(progress.pendingCount()).isEqualTo(1L);
+            assertThat(progress.overdueCount()).isEqualTo(2L);
+        });
+    }
+
+    @Test
+    @DisplayName("배정 이력이 없는 심사위원은 삭제하고 감사 로그를 남긴다")
+    void deleteJudge_deletesJudgeWithoutAssignments() {
+        ContestJudge judge = judge(200L, null, "김심사");
+        stubAdminAndContest();
+        given(contestJudgeRepository.findByIdAndContestIdForUpdate(200L, 100L))
+                .willReturn(Optional.of(judge));
+        given(reviewAssignmentRepository.existsByContestJudgeId(200L))
+                .willReturn(false);
+
+        service.deleteJudge(10L, "contest-public-id", 200L);
+
+        verify(contestJudgeRepository).delete(judge);
+        verify(contestJudgeRepository).flush();
+        verify(adminAuditLogger).log(
+                10L,
+                1L,
+                AuditAction.CONTEST_JUDGE_DELETE,
+                "CONTEST_JUDGE",
+                200L,
+                "contestId=100"
+        );
+    }
+
+    @Test
+    @DisplayName("배정 이력이 있는 심사위원은 삭제할 수 없다")
+    void deleteJudge_rejectsJudgeWithAssignments() {
+        ContestJudge judge = judge(200L, null, "김심사");
+        stubAdminAndContest();
+        given(contestJudgeRepository.findByIdAndContestIdForUpdate(200L, 100L))
+                .willReturn(Optional.of(judge));
+        given(reviewAssignmentRepository.existsByContestJudgeId(200L))
+                .willReturn(true);
+
+        assertThatThrownBy(() ->
+                service.deleteJudge(10L, "contest-public-id", 200L))
+                .isInstanceOf(CustomException.class)
+                .extracting(e ->
+                        ((CustomException) e).getBaseResponseCode())
+                .isEqualTo(
+                        ReviewErrorResponseCode
+                                .CONTEST_JUDGE_HAS_ASSIGNMENTS);
+
+        verify(contestJudgeRepository, never()).delete(any());
+        verify(adminAuditLogger, never()).log(
+                anyLong(),
+                anyLong(),
+                any(),
+                anyString(),
+                anyLong(),
+                anyString()
+        );
+    }
+
+    @Test
+    @DisplayName("심사 링크 발급 응답 문자열에는 원본 URL을 노출하지 않는다")
+    void reviewLinkIssueResponse_masksRawUrlInToString() {
+        ReviewLinkIssueRes response = new ReviewLinkIssueRes(
+                200L,
+                "https://trekkey.example.com/judge/review#token=raw-token",
+                LocalDateTime.of(2026, 7, 25, 12, 0)
+        );
+
+        assertThat(response.toString())
+                .contains("judgeId=200", "reviewUrl=***")
+                .doesNotContain("raw-token");
+    }
+
+    @Test
     @DisplayName("심사 링크 발급 시 원문은 URL에만 반환하고 해시만 저장한다")
     void issueReviewLink_returnsRawTokenOnlyInFragmentUrl() {
         ContestJudge judge = judge(200L, null, "김심사");
-        LocalDateTime expiresAt = LocalDateTime.now().plusDays(3);
+        LocalDateTime expiresAt = NOW.plusDays(3);
         stubAdminAndContest();
         given(contestJudgeRepository.findByIdAndContestIdForUpdate(200L, 100L))
                 .willReturn(Optional.of(judge));
@@ -256,7 +383,7 @@ class ContestJudgeAdminServiceImplTest {
                 .isEqualTo("https://trekkey.example.com/judge/review#token=raw_review-token");
         assertThat(judge.getReviewTokenHash()).isEqualTo("b".repeat(64));
         assertThat(judge.getReviewTokenHash()).doesNotContain("raw_review-token");
-        assertThat(judge.getReviewLinkStatus(LocalDateTime.now()))
+        assertThat(judge.getReviewLinkStatus(NOW))
                 .isEqualTo(ReviewLinkStatus.ACTIVE);
         verify(contestJudgeRepository).flush();
         verify(adminAuditLogger).log(
@@ -275,10 +402,10 @@ class ContestJudgeAdminServiceImplTest {
         ContestJudge judge = judge(200L, null, "김심사");
         judge.issueReviewLink(
                 "old-hash",
-                LocalDateTime.now().minusDays(1),
-                LocalDateTime.now().plusDays(1)
+                NOW.minusDays(1),
+                NOW.plusDays(1)
         );
-        judge.revokeReviewLink(LocalDateTime.now().minusHours(1));
+        judge.revokeReviewLink(NOW.minusHours(1));
         stubAdminAndContest();
         given(contestJudgeRepository.findByIdAndContestIdForUpdate(200L, 100L))
                 .willReturn(Optional.of(judge));
@@ -289,7 +416,7 @@ class ContestJudgeAdminServiceImplTest {
                 10L,
                 "contest-public-id",
                 200L,
-                new ReviewLinkIssueReq(LocalDateTime.now().plusDays(2))
+                new ReviewLinkIssueReq(NOW.plusDays(2))
         );
 
         assertThat(judge.getReviewTokenHash()).isEqualTo("new-hash");
@@ -305,7 +432,7 @@ class ContestJudgeAdminServiceImplTest {
                 10L,
                 "contest-public-id",
                 200L,
-                new ReviewLinkIssueReq(LocalDateTime.now().minusMinutes(1))
+                new ReviewLinkIssueReq(NOW.minusMinutes(1))
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e).getBaseResponseCode())
@@ -322,8 +449,8 @@ class ContestJudgeAdminServiceImplTest {
         ContestJudge judge = judge(200L, null, "김심사");
         judge.issueReviewLink(
                 "stored-hash",
-                LocalDateTime.now().minusHours(1),
-                LocalDateTime.now().plusDays(1)
+                NOW.minusHours(1),
+                NOW.plusDays(1)
         );
         stubAdminAndContest();
         given(contestJudgeRepository.findByIdAndContestIdForUpdate(200L, 100L))
@@ -333,7 +460,7 @@ class ContestJudgeAdminServiceImplTest {
         service.revokeReviewLink(10L, "contest-public-id", 200L);
 
         assertThat(judge.getReviewTokenHash()).isEqualTo("stored-hash");
-        assertThat(judge.getReviewLinkStatus(LocalDateTime.now()))
+        assertThat(judge.getReviewLinkStatus(NOW))
                 .isEqualTo(ReviewLinkStatus.REVOKED);
         verify(adminAuditLogger, times(1)).log(
                 10L,
@@ -356,7 +483,7 @@ class ContestJudgeAdminServiceImplTest {
                 10L,
                 "contest-public-id",
                 200L,
-                new ReviewLinkIssueReq(LocalDateTime.now().plusDays(1))
+                new ReviewLinkIssueReq(NOW.plusDays(1))
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e).getBaseResponseCode())

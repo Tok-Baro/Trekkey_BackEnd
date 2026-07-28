@@ -2,27 +2,31 @@ package com.api.trekkey.domain.review.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
 
 import com.api.trekkey.domain.audit.repository.AdminAuditLogRepository;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
+import com.api.trekkey.domain.credential.integration.WorkCredentialIssuer;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.organization.entity.OrganizationStatus;
 import com.api.trekkey.domain.organization.repository.OrganizationRepository;
-import com.api.trekkey.domain.review.entity.ReviewCriterion;
 import com.api.trekkey.domain.review.entity.ReviewRound;
 import com.api.trekkey.domain.review.entity.ReviewRoundDecisionRule;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
 import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
 import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
+import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.admin.service.ReviewRoundAdminService;
 import com.api.trekkey.domain.review.admin.service.ReviewRoundEntryAdminService;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundEntryPrepareReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewRoundEntryRes;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewRoundRes;
 import com.api.trekkey.domain.submission.entity.Submission;
@@ -36,6 +40,7 @@ import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.entity.UserRole;
 import com.api.trekkey.domain.user.entity.UserStatus;
 import com.api.trekkey.domain.user.repository.UserRepository;
+import com.api.trekkey.global.exception.CustomException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -54,6 +59,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -108,6 +114,9 @@ class ReviewRoundEntryMySqlIntegrationTest {
 
     @Autowired
     private TransactionTemplate transactionTemplate;
+
+    @MockitoBean
+    private WorkCredentialIssuer workCredentialIssuer;
 
     private User admin;
     private Contest contest;
@@ -194,21 +203,12 @@ class ReviewRoundEntryMySqlIntegrationTest {
                         .status(ReviewRoundStatus.PREPARING)
                         .startsAt(now.minusHours(1))
                         .endsAt(now.plusDays(1))
-                        .targetType(ReviewRoundTargetType.ALL_SUBMISSIONS)
+                        .targetType(ReviewRoundTargetType.MANUAL)
                         .decisionRule(ReviewRoundDecisionRule.MANUAL)
                         .build()
         );
 
-        reviewCriterionRepository.saveAndFlush(ReviewCriterion.builder()
-                .reviewRound(reviewRound)
-                .code("creativity")
-                .label("창의성")
-                .maxScore(30)
-                .sortOrder(1)
-                .active(true)
-                .build());
-
-        Team team = teamRepository.saveAndFlush(Team.builder()
+        Team team = Team.builder()
                 .contest(contest)
                 .leaderUser(participant)
                 .name("트랙키 팀")
@@ -219,7 +219,9 @@ class ReviewRoundEntryMySqlIntegrationTest {
                 .contactEmail("participant@example.com")
                 .phone("010-1234-5678")
                 .motivation("학교 문제를 해결합니다.")
-                .build());
+                .build();
+        team.finalizeParticipation(LocalDateTime.now().minusDays(2));
+        team = teamRepository.saveAndFlush(team);
 
         submission = submissionRepository.saveAndFlush(
                 Submission.builder()
@@ -237,30 +239,37 @@ class ReviewRoundEntryMySqlIntegrationTest {
     }
 
     @Test
-    @DisplayName("대상 준비와 단계 오픈 후 재호출해도 같은 심사 대상 한 건을 반환한다")
-    void prepareEntries_isIdempotentAfterStageOpens() {
+    @DisplayName("라운드를 연 뒤에는 대상 재준비를 거부하고 기존 대상을 유지한다")
+    void prepareEntries_rejectsRetryAfterRoundOpens() {
         List<ReviewRoundEntryRes> first =
                 reviewRoundEntryAdminService.prepareEntries(
                         admin.getId(),
                         contest.getPublicId(),
-                        reviewRound.getId()
+                        reviewRound.getId(),
+                        manualTargetRequest()
                 );
         ReviewRoundRes opened = reviewRoundAdminService.openRound(
                 admin.getId(),
                 contest.getPublicId(),
                 reviewRound.getId()
         );
-        List<ReviewRoundEntryRes> retried =
+
+        assertThatThrownBy(() ->
                 reviewRoundEntryAdminService.prepareEntries(
                         admin.getId(),
                         contest.getPublicId(),
-                        reviewRound.getId()
+                        reviewRound.getId(),
+                        manualTargetRequest()
+                ))
+                .isInstanceOfSatisfying(
+                        CustomException.class,
+                        exception -> assertThat(
+                                exception.getBaseResponseCode())
+                                .isEqualTo(ReviewErrorResponseCode
+                                        .REVIEW_ENTRY_PREPARATION_NOT_ALLOWED)
                 );
 
         assertThat(first).hasSize(1);
-        assertThat(retried).hasSize(1);
-        assertThat(retried.getFirst().id())
-                .isEqualTo(first.getFirst().id());
         assertThat(opened.status()).isEqualTo(ReviewRoundStatus.OPEN);
         assertThat(reviewRoundEntryRepository.count()).isEqualTo(1);
         assertThat(submissionRepository.findById(submission.getId())
@@ -286,7 +295,8 @@ class ReviewRoundEntryMySqlIntegrationTest {
                     return reviewRoundEntryAdminService.prepareEntries(
                             admin.getId(),
                             contest.getPublicId(),
-                            reviewRound.getId()
+                            reviewRound.getId(),
+                            manualTargetRequest()
                     );
                 }));
             }
@@ -365,6 +375,41 @@ class ReviewRoundEntryMySqlIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("작품 Credential 발급 실패 시 라운드 시작과 제출 확정을 함께 롤백한다")
+    void openRound_rollsBackWhenWorkCredentialIssuanceFails() {
+        contest.changeStatus(ContestStatus.APPLICATION_OPEN);
+        contestRepository.saveAndFlush(contest);
+        List<ReviewRoundEntryRes> entries =
+                reviewRoundEntryAdminService.prepareEntries(
+                        admin.getId(),
+                        contest.getPublicId(),
+                        reviewRound.getId(),
+                        manualTargetRequest());
+        given(workCredentialIssuer.issueForFinalizedSubmission(any()))
+                .willThrow(new IllegalStateException(
+                        "credential issuance failed"));
+
+        assertThatThrownBy(() -> reviewRoundAdminService.openRound(
+                admin.getId(),
+                contest.getPublicId(),
+                reviewRound.getId()
+        )).isInstanceOf(IllegalStateException.class);
+
+        assertThat(contestRepository.findById(contest.getId())
+                .orElseThrow()
+                .getStatus()).isEqualTo(ContestStatus.APPLICATION_OPEN);
+        assertThat(reviewRoundRepository.findById(reviewRound.getId())
+                .orElseThrow()
+                .getStatus()).isEqualTo(ReviewRoundStatus.PREPARING);
+        assertThat(reviewRoundEntryRepository.findById(
+                entries.getFirst().id()).orElseThrow().getStatus())
+                .isEqualTo(ReviewRoundEntryStatus.ELIGIBLE);
+        assertThat(submissionRepository.findById(submission.getId())
+                .orElseThrow()
+                .getFinalizedAt()).isNull();
+    }
+
     private void deleteTestData() {
         adminAuditLogRepository.deleteAllInBatch();
         reviewRoundEntryRepository.deleteAllInBatch();
@@ -375,6 +420,11 @@ class ReviewRoundEntryMySqlIntegrationTest {
         contestRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
         organizationRepository.deleteAllInBatch();
+    }
+
+    private ReviewRoundEntryPrepareReq manualTargetRequest() {
+        return new ReviewRoundEntryPrepareReq(
+                List.of(submission.getPublicId()));
     }
 
     private static String environment(String name, String defaultValue) {

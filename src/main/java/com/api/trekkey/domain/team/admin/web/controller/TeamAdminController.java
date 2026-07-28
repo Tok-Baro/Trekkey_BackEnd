@@ -40,7 +40,10 @@ public class TeamAdminController {
                 teamAdminService.getTeams(authPrincipal.getId(), contestPublicId, status)));
     }
 
-    @ApiErrorCodeExamples(value = TeamErrorResponseCode.class, codes = {"TEAM_NOT_FOUND"})
+    @ApiErrorCodeExamples(value = TeamErrorResponseCode.class, codes = {
+            "TEAM_NOT_FOUND",
+            "TEAM_ALREADY_FINALIZED"
+    })
     @PatchMapping("/api/admin/teams/{teamPublicId}/status")
     public ResponseEntity<SuccessResponse<TeamAdminRes>> changeStatus(
             @AuthenticationPrincipal AuthPrincipal authPrincipal,

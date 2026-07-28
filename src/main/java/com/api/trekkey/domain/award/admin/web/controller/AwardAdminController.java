@@ -25,7 +25,8 @@ public class AwardAdminController {
     private final AwardAdminService awardAdminService;
 
     @ApiErrorCodeExamples(value = AwardErrorResponseCode.class, codes = {
-            "AWARD_ROUND_NOT_FINALIZED", "AWARD_NO_PASSED_ENTRY", "AWARD_ALREADY_CONFIRMED"})
+            "AWARD_FINAL_ROUND_REQUIRED", "AWARD_ROUND_NOT_FINALIZED",
+            "AWARD_NO_PASSED_ENTRY", "AWARD_ALREADY_CONFIRMED"})
     @PostMapping("/api/admin/review-rounds/{roundId}/awards")
     public ResponseEntity<SuccessResponse<List<AwardRes>>> calculateAwards(
             @AuthenticationPrincipal AuthPrincipal authPrincipal,
@@ -45,7 +46,12 @@ public class AwardAdminController {
                 awardAdminService.getAwards(authPrincipal.getId(), contestPublicId)));
     }
 
-    @ApiErrorCodeExamples(value = AwardErrorResponseCode.class, codes = {"AWARD_NO_CANDIDATE"})
+    @ApiErrorCodeExamples(value = AwardErrorResponseCode.class, codes = {
+            "AWARD_FINAL_ROUND_REQUIRED",
+            "AWARD_ROUND_NOT_FINALIZED",
+            "AWARD_NO_CANDIDATE",
+            "AWARD_CANDIDATES_STALE"
+    })
     @PostMapping("/api/admin/contests/{contestPublicId}/awards/confirm")
     public ResponseEntity<SuccessResponse<List<AwardRes>>> confirmAwards(
             @AuthenticationPrincipal AuthPrincipal authPrincipal,

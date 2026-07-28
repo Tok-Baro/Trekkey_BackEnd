@@ -20,15 +20,20 @@ import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.user.entity.User;
+import com.api.trekkey.domain.user.entity.UserRole;
+import com.api.trekkey.domain.user.entity.UserStatus;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +54,7 @@ public class AwardAdminServiceImpl implements AwardAdminService {
     private final AwardRepository awardRepository;
     private final AwardCredentialIssuer awardCredentialIssuer;
     private final AdminAuditLogger adminAuditLogger;
+    private final EntityManager entityManager;
     private final Clock clock;
 
     @Override
@@ -56,13 +62,28 @@ public class AwardAdminServiceImpl implements AwardAdminService {
     public List<AwardRes> calculateAwards(Long adminUserId, Long roundId) {
         User admin = findAdmin(adminUserId);
 
-        ReviewRound round = reviewRoundRepository.findById(roundId)
+        ReviewRound requestedRound = reviewRoundRepository.findById(roundId)
                 .orElseThrow(() -> new CustomException(
                         ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND));
-        Contest contest = round.getContest();
+        Contest contest = requestedRound.getContest();
         validateSameOrganization(contest, admin);
 
-        //확정(마감)된 라운드만 수상 산출 근거가 된다
+        // 대회를 먼저 잠가 라운드 추가와 수상 산출이 서로 엇갈리지 않게 한다.
+        List<ReviewRound> rounds = lockContestAndRounds(contest);
+        ReviewRound round = rounds.stream()
+                .filter(candidate -> candidate.getId().equals(roundId))
+                .findFirst()
+                .orElseThrow(() -> new CustomException(
+                        ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND));
+        ReviewRound finalRound = findFinalRound(rounds);
+
+        // 최종 ERD 규칙상 가장 마지막 라운드만 수상의 공식 원천이 된다.
+        if (!finalRound.getId().equals(round.getId())) {
+            throw new CustomException(
+                    AwardErrorResponseCode.AWARD_FINAL_ROUND_REQUIRED);
+        }
+        validateAllRoundsFinalized(rounds);
+        // 확정(마감)된 라운드만 수상 산출 근거가 된다.
         if (round.getStatus() != ReviewRoundStatus.FINALIZED) {
             throw new CustomException(AwardErrorResponseCode.AWARD_ROUND_NOT_FINALIZED);
         }
@@ -77,7 +98,11 @@ public class AwardAdminServiceImpl implements AwardAdminService {
                         round.getId(),
                         ReviewRoundEntryStatus.SELECTED).stream()
                 .filter(ReviewRoundEntry::isFinalized)
-                .sorted(Comparator.comparing(ReviewRoundEntry::getRankNo))
+                .sorted(Comparator
+                        .comparing(
+                                ReviewRoundEntry::getRankNo,
+                                Comparator.nullsLast(Integer::compareTo))
+                        .thenComparing(ReviewRoundEntry::getId))
                 .toList();
         if (selectedEntries.isEmpty()) {
             throw new CustomException(AwardErrorResponseCode.AWARD_NO_PASSED_ENTRY);
@@ -125,6 +150,12 @@ public class AwardAdminServiceImpl implements AwardAdminService {
     public List<AwardRes> confirmAwards(Long adminUserId, String contestPublicId) {
         User admin = findAdmin(adminUserId);
         Contest contest = findContestInOrganization(contestPublicId, admin);
+        List<ReviewRound> rounds = lockContestAndRounds(contest);
+        ReviewRound finalRound = findFinalRound(rounds);
+        if (finalRound.getStatus() != ReviewRoundStatus.FINALIZED) {
+            throw new CustomException(
+                    AwardErrorResponseCode.AWARD_ROUND_NOT_FINALIZED);
+        }
 
         List<Award> awards = awardRepository.findAllByTeamContestIdOrderByAwardRankNoAsc(contest.getId());
         List<Award> candidates = awards.stream()
@@ -133,6 +164,19 @@ public class AwardAdminServiceImpl implements AwardAdminService {
         if (candidates.isEmpty()) {
             throw new CustomException(AwardErrorResponseCode.AWARD_NO_CANDIDATE);
         }
+        if (candidates.stream().anyMatch(award ->
+                !award.getReviewRoundEntry()
+                        .getReviewRound()
+                        .getId()
+                        .equals(finalRound.getId()))) {
+            throw new CustomException(
+                    AwardErrorResponseCode.AWARD_FINAL_ROUND_REQUIRED);
+        }
+        validateAllRoundsFinalized(rounds);
+        validateCandidatesCurrent(
+                contest,
+                finalRound,
+                candidates);
 
         LocalDateTime now = nowUtc();
         candidates.forEach(award -> award.confirm(now));
@@ -150,8 +194,15 @@ public class AwardAdminServiceImpl implements AwardAdminService {
     //======= 헬퍼 메서드 ==========
 
     private User findAdmin(Long adminUserId) {
-        return userRepository.findById(adminUserId)
+        User user = userRepository.findById(adminUserId)
                 .orElseThrow(() -> new CustomException(UserErrorResponseCode.USER_NOT_FOUND));
+        if ((user.getRole() != UserRole.ADMIN
+                && user.getRole() != UserRole.ROOT_ADMIN)
+                || user.getStatus() != UserStatus.ACTIVE) {
+            throw new CustomException(
+                    UserErrorResponseCode.USER_INVALID_TOKEN);
+        }
+        return user;
     }
 
     private Contest findContestInOrganization(String contestPublicId, User admin) {
@@ -164,6 +215,80 @@ public class AwardAdminServiceImpl implements AwardAdminService {
     private void validateSameOrganization(Contest contest, User admin) {
         if (!contest.getOrganization().getId().equals(admin.getOrganization().getId())) {
             throw new CustomException(ContestErrorResponseCode.CONTEST_FORBIDDEN);
+        }
+    }
+
+    private List<ReviewRound> lockContestAndRounds(Contest contest) {
+        entityManager.refresh(contest, LockModeType.PESSIMISTIC_WRITE);
+        List<ReviewRound> rounds = reviewRoundRepository
+                .findAllForUpdateByContestIdOrderByRoundNoAsc(
+                        contest.getId());
+        if (rounds.isEmpty()) {
+            throw new CustomException(
+                    AwardErrorResponseCode.AWARD_ROUND_NOT_FINALIZED);
+        }
+        return rounds;
+    }
+
+    private ReviewRound findFinalRound(List<ReviewRound> rounds) {
+        return rounds.stream()
+                .max(Comparator.comparingInt(ReviewRound::getRoundNo))
+                .orElseThrow(() -> new CustomException(
+                        AwardErrorResponseCode.AWARD_ROUND_NOT_FINALIZED));
+    }
+
+    private void validateAllRoundsFinalized(List<ReviewRound> rounds) {
+        if (rounds.stream().anyMatch(round ->
+                round.getStatus() != ReviewRoundStatus.FINALIZED)) {
+            throw new CustomException(
+                    AwardErrorResponseCode.AWARD_ROUND_NOT_FINALIZED);
+        }
+    }
+
+    private void validateCandidatesCurrent(
+            Contest contest,
+            ReviewRound finalRound,
+            List<Award> candidates
+    ) {
+        List<ReviewRoundEntry> selectedEntries = entryRepository
+                .findAllByReviewRoundIdAndStatus(
+                        finalRound.getId(),
+                        ReviewRoundEntryStatus.SELECTED)
+                .stream()
+                .filter(ReviewRoundEntry::isFinalized)
+                .sorted(Comparator
+                        .comparing(
+                                ReviewRoundEntry::getRankNo,
+                                Comparator.nullsLast(
+                                        Integer::compareTo))
+                        .thenComparing(ReviewRoundEntry::getId))
+                .toList();
+        int expectedCount = Math.min(
+                contest.getAwardCount(),
+                selectedEntries.size());
+        List<Award> orderedCandidates = candidates.stream()
+                .sorted(Comparator
+                        .comparingInt(Award::getAwardRankNo)
+                        .thenComparing(Award::getId,
+                                Comparator.nullsLast(Long::compareTo)))
+                .toList();
+
+        if (orderedCandidates.size() != expectedCount) {
+            throw new CustomException(
+                    AwardErrorResponseCode.AWARD_CANDIDATES_STALE);
+        }
+        for (int index = 0; index < expectedCount; index++) {
+            Award candidate = orderedCandidates.get(index);
+            ReviewRoundEntry expectedEntry =
+                    selectedEntries.get(index);
+            if (candidate.getAwardRankNo() != index + 1
+                    || !Objects.equals(
+                    candidate.getReviewRoundEntry().getId(),
+                    expectedEntry.getId())) {
+                throw new CustomException(
+                        AwardErrorResponseCode
+                                .AWARD_CANDIDATES_STALE);
+            }
         }
     }
 

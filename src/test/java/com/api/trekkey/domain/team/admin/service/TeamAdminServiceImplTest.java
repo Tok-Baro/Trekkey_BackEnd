@@ -10,6 +10,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
@@ -27,6 +28,9 @@ import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
 import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
+import com.api.trekkey.domain.user.entity.UserRole;
+import com.api.trekkey.domain.user.entity.UserStatus;
+import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
 import java.time.Clock;
@@ -80,6 +84,8 @@ class TeamAdminServiceImplTest {
         admin = mock(User.class);
         lenient().when(admin.getId()).thenReturn(100L);
         lenient().when(admin.getOrganization()).thenReturn(organization);
+        lenient().when(admin.getRole()).thenReturn(UserRole.ADMIN);
+        lenient().when(admin.getStatus()).thenReturn(UserStatus.ACTIVE);
 
         contest = mock(Contest.class);
         lenient().when(contest.getId()).thenReturn(200L);
@@ -109,6 +115,26 @@ class TeamAdminServiceImplTest {
     }
 
     @Test
+    @DisplayName("DB에서 비활성화된 관리자는 남은 JWT로 팀 확정 작업을 수행할 수 없다")
+    void finalizeParticipation_rejectsInactiveAdmin() {
+        given(admin.getStatus()).willReturn(UserStatus.INACTIVE);
+
+        assertThatThrownBy(() ->
+                teamAdminService.finalizeParticipation(
+                        100L,
+                        "team-pub-1"))
+                .isInstanceOf(CustomException.class)
+                .extracting(e ->
+                        ((CustomException) e).getBaseResponseCode())
+                .isEqualTo(
+                        UserErrorResponseCode.USER_INVALID_TOKEN);
+
+        verifyNoInteractions(
+                teamRepository,
+                participationCredentialIssuer);
+    }
+
+    @Test
     @DisplayName("타 조직 대회의 신청 목록은 조회할 수 없다")
     void getTeams_throwsWhenOtherOrganization() {
         Organization otherOrganization = mock(Organization.class);
@@ -126,7 +152,8 @@ class TeamAdminServiceImplTest {
     @DisplayName("신청 상태를 변경하면 감사 로그가 기록된다")
     void changeStatus_changesAndAudits() {
         Team team = teamFixture(1L, TeamStatus.PENDING, null);
-        given(teamRepository.findByPublicId("team-pub-1")).willReturn(Optional.of(team));
+        given(teamRepository.findByPublicIdForUpdate("team-pub-1"))
+                .willReturn(Optional.of(team));
 
         TeamAdminRes result = teamAdminService.changeStatus(
                 100L, "team-pub-1", new TeamStatusUpdateReq(TeamStatus.APPROVED));
@@ -143,7 +170,8 @@ class TeamAdminServiceImplTest {
         given(otherOrganization.getId()).willReturn(2L);
         given(contest.getOrganization()).willReturn(otherOrganization);
         Team team = teamFixture(1L, TeamStatus.PENDING, null);
-        given(teamRepository.findByPublicId("team-pub-1")).willReturn(Optional.of(team));
+        given(teamRepository.findByPublicIdForUpdate("team-pub-1"))
+                .willReturn(Optional.of(team));
 
         assertThatThrownBy(() -> teamAdminService.changeStatus(
                 100L, "team-pub-1", new TeamStatusUpdateReq(TeamStatus.APPROVED)))
@@ -153,10 +181,36 @@ class TeamAdminServiceImplTest {
     }
 
     @Test
+    @DisplayName("명단이 확정된 팀은 리뷰 원장과 어긋나지 않도록 신청 상태를 바꿀 수 없다")
+    void changeStatus_rejectsFinalizedTeamStatusChange() {
+        Team team = teamFixture(
+                1L,
+                TeamStatus.APPROVED,
+                LocalDateTime.of(2026, 7, 27, 12, 0));
+        given(teamRepository.findByPublicIdForUpdate("team-pub-1"))
+                .willReturn(Optional.of(team));
+
+        assertThatThrownBy(() -> teamAdminService.changeStatus(
+                100L,
+                "team-pub-1",
+                new TeamStatusUpdateReq(TeamStatus.REJECTED)
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(e ->
+                        ((CustomException) e).getBaseResponseCode())
+                .isEqualTo(
+                        TeamErrorResponseCode.TEAM_ALREADY_FINALIZED);
+
+        assertThat(team.getStatus()).isEqualTo(TeamStatus.APPROVED);
+        verifyNoInteractions(adminAuditLogger);
+    }
+
+    @Test
     @DisplayName("승인된 팀의 명단을 확정하면 잠금 시각이 기록되고 감사 로그가 남는다")
     void finalizeParticipation_finalizesApprovedTeam() {
         Team team = teamFixture(1L, TeamStatus.APPROVED, null);
-        given(teamRepository.findByPublicId("team-pub-1")).willReturn(Optional.of(team));
+        given(teamRepository.findByPublicIdForUpdate("team-pub-1"))
+                .willReturn(Optional.of(team));
 
         TeamAdminRes result = teamAdminService.finalizeParticipation(100L, "team-pub-1");
 
@@ -171,7 +225,8 @@ class TeamAdminServiceImplTest {
     @DisplayName("승인되지 않은 팀은 명단을 확정할 수 없다")
     void finalizeParticipation_throwsWhenNotApproved() {
         Team team = teamFixture(1L, TeamStatus.PENDING, null);
-        given(teamRepository.findByPublicId("team-pub-1")).willReturn(Optional.of(team));
+        given(teamRepository.findByPublicIdForUpdate("team-pub-1"))
+                .willReturn(Optional.of(team));
 
         assertThatThrownBy(() -> teamAdminService.finalizeParticipation(100L, "team-pub-1"))
                 .isInstanceOf(CustomException.class)
@@ -183,7 +238,8 @@ class TeamAdminServiceImplTest {
     @DisplayName("이미 확정된 팀은 다시 확정할 수 없다")
     void finalizeParticipation_throwsWhenAlreadyFinalized() {
         Team team = teamFixture(1L, TeamStatus.APPROVED, LocalDateTime.now());
-        given(teamRepository.findByPublicId("team-pub-1")).willReturn(Optional.of(team));
+        given(teamRepository.findByPublicIdForUpdate("team-pub-1"))
+                .willReturn(Optional.of(team));
 
         assertThatThrownBy(() -> teamAdminService.finalizeParticipation(100L, "team-pub-1"))
                 .isInstanceOf(CustomException.class)

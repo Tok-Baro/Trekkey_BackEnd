@@ -23,6 +23,8 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
     boolean existsByAssignmentId(Long assignmentId);
 
+    boolean existsByAssignmentIdIn(Collection<Long> assignmentIds);
+
     List<Review> findAllByAssignmentIdIn(Collection<Long> assignmentIds);
 
     // 라운드 확정 집계 — 심사 대상별 제출 점수를 조회한다.

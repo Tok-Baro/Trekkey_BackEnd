@@ -14,6 +14,21 @@ import org.springframework.data.repository.query.Param;
 public interface ReviewAssignmentRepository
         extends JpaRepository<ReviewAssignment, Long> {
 
+    interface JudgeProgressProjection {
+
+        Long getJudgeId();
+
+        String getJudgeName();
+
+        Long getAssignedCount();
+
+        Long getCompletedCount();
+
+        Long getPendingCount();
+
+        Long getOverdueCount();
+    }
+
     interface ReviewSubmissionScope {
 
         Long getReviewRoundId();
@@ -60,6 +75,20 @@ public interface ReviewAssignmentRepository
             @Param("judgeId") Long judgeId,
             @Param("entryIds") Collection<Long> entryIds);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select assignment
+            from ReviewAssignment assignment
+            where assignment.id = :assignmentId
+              and assignment.contestJudge.id = :judgeId
+              and assignment.reviewRoundEntry.reviewRound.id = :reviewRoundId
+            """)
+    Optional<ReviewAssignment>
+            findByIdAndJudgeIdAndReviewRoundIdForUpdate(
+                    @Param("assignmentId") Long assignmentId,
+                    @Param("judgeId") Long judgeId,
+                    @Param("reviewRoundId") Long reviewRoundId);
+
     @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("""
             select assignment
@@ -69,6 +98,17 @@ public interface ReviewAssignmentRepository
             """)
     List<ReviewAssignment>
             findAllForShareByReviewRoundEntryIdInOrderByEntryIdAscIdAsc(
+                    @Param("entryIds") Collection<Long> entryIds);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select assignment
+            from ReviewAssignment assignment
+            where assignment.reviewRoundEntry.id in :entryIds
+            order by assignment.reviewRoundEntry.id, assignment.id
+            """)
+    List<ReviewAssignment>
+            findAllForUpdateByReviewRoundEntryIdInOrderByEntryIdAscIdAsc(
                     @Param("entryIds") Collection<Long> entryIds);
 
     @Query("""
@@ -119,17 +159,60 @@ public interface ReviewAssignmentRepository
 
     boolean existsByContestJudgeId(Long contestJudgeId);
 
-    boolean existsByContestJudgeIdAndReviewRoundEntrySubmissionIdAndStatusNot(
-            Long contestJudgeId,
-            Long submissionId,
-            ReviewAssignmentStatus status);
-
-    // 심사위원별 배정/완료 수 집계 — 관리자 심사 현황
     @Query("""
-            select ra.contestJudge.id, count(ra), sum(case when ra.status = 'COMPLETED' then 1 else 0 end)
-            from ReviewAssignment ra
-            where ra.contestJudge.id in :judgeIds
-            group by ra.contestJudge.id
+            select assignment
+            from ReviewAssignment assignment
+            join fetch assignment.reviewRoundEntry entry
+            join fetch entry.reviewRound
+            where assignment.contestJudge.id = :judgeId
+              and entry.submission.id = :submissionId
+            order by assignment.id
             """)
-    List<Object[]> countByJudgeIds(@Param("judgeIds") Collection<Long> judgeIds);
+    List<ReviewAssignment> findAllWithRoundByJudgeIdAndSubmissionId(
+            @Param("judgeId") Long judgeId,
+            @Param("submissionId") Long submissionId);
+
+    @Query("""
+            select judge.id as judgeId,
+                   judge.name as judgeName,
+                   coalesce(sum(case
+                       when (:reviewRoundId is null
+                             or reviewRound.id = :reviewRoundId)
+                            and assignment.status in (
+                                'ASSIGNED',
+                                'COMPLETED'
+                            )
+                       then 1 else 0 end), 0) as assignedCount,
+                   coalesce(sum(case
+                       when (:reviewRoundId is null
+                             or reviewRound.id = :reviewRoundId)
+                            and assignment.status = 'COMPLETED'
+                       then 1 else 0 end), 0) as completedCount,
+                   coalesce(sum(case
+                       when (:reviewRoundId is null
+                             or reviewRound.id = :reviewRoundId)
+                            and assignment.status = 'ASSIGNED'
+                            and (assignment.dueAt is null
+                                 or assignment.dueAt > :now)
+                       then 1 else 0 end), 0) as pendingCount,
+                   coalesce(sum(case
+                       when (:reviewRoundId is null
+                             or reviewRound.id = :reviewRoundId)
+                            and assignment.status = 'ASSIGNED'
+                            and assignment.dueAt is not null
+                            and assignment.dueAt <= :now
+                       then 1 else 0 end), 0) as overdueCount
+            from ContestJudge judge
+            left join ReviewAssignment assignment
+              on assignment.contestJudge = judge
+            left join assignment.reviewRoundEntry entry
+            left join entry.reviewRound reviewRound
+            where judge.contest.id = :contestId
+            group by judge.id, judge.name, judge.createdAt
+            order by judge.createdAt, judge.id
+            """)
+    List<JudgeProgressProjection> findJudgeProgressByContestId(
+            @Param("contestId") Long contestId,
+            @Param("reviewRoundId") Long reviewRoundId,
+            @Param("now") java.time.LocalDateTime now);
 }

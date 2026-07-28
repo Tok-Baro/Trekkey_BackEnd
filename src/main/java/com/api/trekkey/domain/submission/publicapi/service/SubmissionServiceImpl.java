@@ -1,7 +1,6 @@
 package com.api.trekkey.domain.submission.publicapi.service;
 
 import com.api.trekkey.domain.contest.entity.ContestStage;
-import com.api.trekkey.domain.contest.entity.StageStatus;
 import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
 import com.api.trekkey.domain.submission.entity.Submission;
@@ -175,8 +174,7 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .orElse(null);
 
         boolean open = submissionStage != null
-                && submissionStage.getStatus() == StageStatus.OPEN
-                && (submissionStage.getEndsAt() == null || !now.isAfter(submissionStage.getEndsAt()));
+                && submissionStage.isOpenAt(now);
         if (!open) {
             throw new CustomException(SubmissionErrorResponseCode.SUBMISSION_NOT_OPEN);
         }

@@ -17,6 +17,7 @@ import com.api.trekkey.domain.review.repository.ContestJudgeRepository;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewAssignmentDueAtReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewAssignmentPrepareReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewAssignmentRes;
 import com.api.trekkey.domain.user.entity.User;
@@ -43,6 +44,8 @@ public class ReviewAssignmentAdminServiceImpl
         implements ReviewAssignmentAdminService {
 
     private static final String TARGET_TYPE_REVIEW_ROUND = "REVIEW_ROUND";
+    private static final String TARGET_TYPE_REVIEW_ASSIGNMENT =
+            "REVIEW_ASSIGNMENT";
 
     private final UserRepository userRepository;
     private final ContestRepository contestRepository;
@@ -93,7 +96,9 @@ public class ReviewAssignmentAdminServiceImpl
                                 entryIds
                         );
         if (hasAllActiveAssignments(entries, existingAssignments)) {
-            return getAssignmentResponses(judgeId, reviewRoundId);
+            return existingAssignments.stream()
+                    .map(ReviewAssignmentRes::from)
+                    .toList();
         }
 
         validateRoundAssignable(reviewRound);
@@ -171,6 +176,111 @@ public class ReviewAssignmentAdminServiceImpl
         return getAssignmentResponses(judgeId, reviewRound.getId());
     }
 
+    @Override
+    @Transactional
+    public ReviewAssignmentRes cancelAssignment(
+            Long adminUserId,
+            String contestPublicId,
+            Long reviewRoundId,
+            Long judgeId,
+            Long assignmentId
+    ) {
+        AssignmentManagementContext context = findManagementContext(
+                adminUserId,
+                contestPublicId,
+                reviewRoundId,
+                judgeId,
+                assignmentId
+        );
+        if (!context.assignment().cancel()) {
+            throw invalidAssignmentTransition();
+        }
+        reviewAssignmentRepository.flush();
+
+        logAssignmentChange(
+                context,
+                AuditAction.REVIEW_ASSIGNMENT_CANCEL,
+                "judgeId=" + judgeId
+                        + ", reviewRoundId=" + reviewRoundId
+        );
+        return ReviewAssignmentRes.from(context.assignment());
+    }
+
+    @Override
+    @Transactional
+    public ReviewAssignmentRes reassignAssignment(
+            Long adminUserId,
+            String contestPublicId,
+            Long reviewRoundId,
+            Long judgeId,
+            Long assignmentId,
+            ReviewAssignmentDueAtReq req
+    ) {
+        AssignmentManagementContext context = findManagementContext(
+                adminUserId,
+                contestPublicId,
+                reviewRoundId,
+                judgeId,
+                assignmentId
+        );
+        LocalDateTime now = LocalDateTime.now(clock);
+        LocalDateTime dueAt = resolveRequiredDueAt(
+                req,
+                context.reviewRound(),
+                now
+        );
+        if (!context.assignment().reassign(now, dueAt)) {
+            throw invalidAssignmentTransition();
+        }
+        reviewAssignmentRepository.flush();
+
+        logAssignmentChange(
+                context,
+                AuditAction.REVIEW_ASSIGNMENT_REASSIGN,
+                "judgeId=" + judgeId
+                        + ", reviewRoundId=" + reviewRoundId
+                        + ", dueAt=" + dueAt
+        );
+        return ReviewAssignmentRes.from(context.assignment());
+    }
+
+    @Override
+    @Transactional
+    public ReviewAssignmentRes updateDueAt(
+            Long adminUserId,
+            String contestPublicId,
+            Long reviewRoundId,
+            Long judgeId,
+            Long assignmentId,
+            ReviewAssignmentDueAtReq req
+    ) {
+        AssignmentManagementContext context = findManagementContext(
+                adminUserId,
+                contestPublicId,
+                reviewRoundId,
+                judgeId,
+                assignmentId
+        );
+        LocalDateTime dueAt = resolveRequiredDueAt(
+                req,
+                context.reviewRound(),
+                LocalDateTime.now(clock)
+        );
+        if (!context.assignment().updateDueAt(dueAt)) {
+            throw invalidAssignmentTransition();
+        }
+        reviewAssignmentRepository.flush();
+
+        logAssignmentChange(
+                context,
+                AuditAction.REVIEW_ASSIGNMENT_DUE_AT_UPDATE,
+                "judgeId=" + judgeId
+                        + ", reviewRoundId=" + reviewRoundId
+                        + ", dueAt=" + dueAt
+        );
+        return ReviewAssignmentRes.from(context.assignment());
+    }
+
     private User findActiveAdmin(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(
@@ -236,8 +346,9 @@ public class ReviewAssignmentAdminServiceImpl
     }
 
     private void validateRoundAssignable(ReviewRound reviewRound) {
-        if (reviewRound.getStatus() != ReviewRoundStatus.PREPARING
-                && reviewRound.getStatus() != ReviewRoundStatus.OPEN) {
+        if (reviewRound.isManualWithoutReview()
+                || (reviewRound.getStatus() != ReviewRoundStatus.PREPARING
+                && reviewRound.getStatus() != ReviewRoundStatus.OPEN)) {
             throw new CustomException(
                     ReviewErrorResponseCode
                             .REVIEW_ASSIGNMENT_PREPARATION_NOT_ALLOWED);
@@ -279,6 +390,101 @@ public class ReviewAssignmentAdminServiceImpl
         return dueAt;
     }
 
+    private LocalDateTime resolveRequiredDueAt(
+            ReviewAssignmentDueAtReq req,
+            ReviewRound reviewRound,
+            LocalDateTime now
+    ) {
+        if (req == null || req.dueAt() == null) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ASSIGNMENT_DUE_AT_INVALID);
+        }
+        LocalDateTime dueAt = req.dueAt();
+        if (!dueAt.isAfter(now)
+                || (reviewRound.getEndsAt() != null
+                && dueAt.isAfter(reviewRound.getEndsAt()))) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ASSIGNMENT_DUE_AT_INVALID);
+        }
+        return dueAt;
+    }
+
+    private AssignmentManagementContext findManagementContext(
+            Long adminUserId,
+            String contestPublicId,
+            Long reviewRoundId,
+            Long judgeId,
+            Long assignmentId
+    ) {
+        User admin = findActiveAdmin(adminUserId);
+        Contest contest = findContest(contestPublicId, admin);
+        validateRoundOrganization(reviewRoundId, admin);
+        findJudgeForUpdate(judgeId, contest.getId());
+
+        ReviewRound reviewRound = reviewRoundRepository
+                .findByIdForShare(reviewRoundId)
+                .orElseThrow(this::reviewRoundNotFound);
+        validateRoundContest(reviewRound, contest);
+        validateRoundManageable(reviewRound);
+
+        ReviewAssignment assignment = reviewAssignmentRepository
+                .findByIdAndJudgeIdAndReviewRoundIdForUpdate(
+                        assignmentId,
+                        judgeId,
+                        reviewRoundId
+                )
+                .orElseThrow(() -> new CustomException(
+                        ReviewErrorResponseCode
+                                .REVIEW_ASSIGNMENT_NOT_FOUND));
+        return new AssignmentManagementContext(
+                admin,
+                reviewRound,
+                assignment
+        );
+    }
+
+    private ContestJudge findJudgeForUpdate(
+            Long judgeId,
+            Long contestId
+    ) {
+        return contestJudgeRepository
+                .findByIdAndContestIdForUpdate(judgeId, contestId)
+                .orElseThrow(() -> new CustomException(
+                        ReviewErrorResponseCode.CONTEST_JUDGE_NOT_FOUND));
+    }
+
+    private void validateRoundManageable(ReviewRound reviewRound) {
+        if (reviewRound.getStatus() != ReviewRoundStatus.PREPARING
+                && reviewRound.getStatus() != ReviewRoundStatus.OPEN) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ASSIGNMENT_MANAGEMENT_NOT_ALLOWED);
+        }
+    }
+
+    private void logAssignmentChange(
+            AssignmentManagementContext context,
+            AuditAction action,
+            String detail
+    ) {
+        adminAuditLogger.log(
+                context.admin().getId(),
+                context.admin().getOrganization().getId(),
+                action,
+                TARGET_TYPE_REVIEW_ASSIGNMENT,
+                context.assignment().getId(),
+                detail
+        );
+    }
+
+    private CustomException invalidAssignmentTransition() {
+        return new CustomException(
+                ReviewErrorResponseCode
+                        .REVIEW_ASSIGNMENT_STATUS_TRANSITION_INVALID);
+    }
+
     private boolean hasAllActiveAssignments(
             List<ReviewRoundEntry> entries,
             List<ReviewAssignment> assignments
@@ -309,5 +515,12 @@ public class ReviewAssignmentAdminServiceImpl
     private CustomException reviewRoundNotFound() {
         return new CustomException(
                 ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND);
+    }
+
+    private record AssignmentManagementContext(
+            User admin,
+            ReviewRound reviewRound,
+            ReviewAssignment assignment
+    ) {
     }
 }

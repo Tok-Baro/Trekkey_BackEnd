@@ -39,6 +39,10 @@ public enum ReviewErrorResponseCode implements BaseResponseCode {
             "REVIEW_ROUND_DUPLICATED",
             409,
             "같은 순서의 심사 라운드가 이미 존재합니다."),
+    REVIEW_ROUND_SEQUENCE_INVALID(
+            "REVIEW_ROUND_SEQUENCE_INVALID",
+            409,
+            "심사 라운드 순서는 1부터 빈 번호 없이 이어져야 합니다."),
     REVIEW_ROUND_CONFIGURATION_LOCKED(
             "REVIEW_ROUND_CONFIGURATION_LOCKED",
             409,
@@ -51,10 +55,42 @@ public enum ReviewErrorResponseCode implements BaseResponseCode {
             "REVIEW_ROUND_STATUS_TRANSITION_INVALID",
             409,
             "허용되지 않는 심사 라운드 상태 변경입니다."),
+    REVIEW_ROUND_FINALIZATION_NOT_ALLOWED(
+            "REVIEW_ROUND_FINALIZATION_NOT_ALLOWED",
+            409,
+            "진행 중인 심사 라운드만 확정할 수 있습니다."),
+    REVIEW_ROUND_ASSIGNMENTS_INCOMPLETE(
+            "REVIEW_ROUND_ASSIGNMENTS_INCOMPLETE",
+            409,
+            "완료되지 않은 심사 배정이 있어 라운드를 확정할 수 없습니다."),
+    REVIEW_ROUND_RESULT_INVALID(
+            "REVIEW_ROUND_RESULT_INVALID",
+            409,
+            "심사 라운드 결과를 확정할 수 없는 상태입니다."),
+    REVIEW_MANUAL_DECISION_INVALID(
+            "REVIEW_MANUAL_DECISION_INVALID",
+            400,
+            "수동 판정 요청이 올바르지 않습니다."),
     REVIEW_ROUND_OPEN_WINDOW_EXPIRED(
             "REVIEW_ROUND_OPEN_WINDOW_EXPIRED",
             409,
             "종료 시각이 지난 심사 라운드는 시작할 수 없습니다."),
+    REVIEW_ROUND_DEADLINE_INVALID(
+            "REVIEW_ROUND_DEADLINE_INVALID",
+            400,
+            "새 종료 시각은 현재 시각과 기존 종료 시각보다 이후여야 합니다."),
+    REVIEW_ROUND_SUBMISSION_WINDOW_INVALID(
+            "REVIEW_ROUND_SUBMISSION_WINDOW_INVALID",
+            409,
+            "첫 심사 라운드는 제출 마감 이후에 시작해야 합니다."),
+    REVIEW_ROUND_PREVIOUS_NOT_FINALIZED(
+            "REVIEW_ROUND_PREVIOUS_NOT_FINALIZED",
+            409,
+            "앞선 심사 라운드를 모두 확정한 뒤 다음 라운드를 시작할 수 있습니다."),
+    REVIEW_ROUND_ALREADY_OPEN(
+            "REVIEW_ROUND_ALREADY_OPEN",
+            409,
+            "같은 대회에서 두 개의 심사 라운드를 동시에 진행할 수 없습니다."),
     REVIEW_ROUND_CRITERION_NOT_FOUND(
             "REVIEW_ROUND_CRITERION_NOT_FOUND",
             404,
@@ -87,10 +123,18 @@ public enum ReviewErrorResponseCode implements BaseResponseCode {
             "REVIEW_ENTRY_PREPARATION_NOT_ALLOWED",
             409,
             "준비 중인 심사 라운드에서만 심사 대상을 생성할 수 있습니다."),
-    REVIEW_ENTRY_TARGET_TYPE_UNSUPPORTED(
-            "REVIEW_ENTRY_TARGET_TYPE_UNSUPPORTED",
+    REVIEW_ENTRY_PREVIOUS_ROUND_REQUIRED(
+            "REVIEW_ENTRY_PREVIOUS_ROUND_REQUIRED",
             409,
-            "현재 심사 대상 선정 방식은 아직 지원하지 않습니다."),
+            "바로 이전 심사 라운드가 확정되어야 다음 라운드 대상을 준비할 수 있습니다."),
+    REVIEW_ENTRY_PREVIOUS_SELECTION_REQUIRED(
+            "REVIEW_ENTRY_PREVIOUS_SELECTION_REQUIRED",
+            409,
+            "바로 이전 심사 라운드에 선정된 제출물이 없습니다."),
+    REVIEW_ENTRY_MANUAL_SUBMISSIONS_REQUIRED(
+            "REVIEW_ENTRY_MANUAL_SUBMISSIONS_REQUIRED",
+            400,
+            "수동 심사 대상 제출물을 하나 이상 선택해야 합니다."),
     REVIEW_ENTRY_SUBMISSION_REQUIRED(
             "REVIEW_ENTRY_SUBMISSION_REQUIRED",
             409,
@@ -99,10 +143,22 @@ public enum ReviewErrorResponseCode implements BaseResponseCode {
             "REVIEW_ENTRY_SUBMISSION_INVALID",
             409,
             "심사 대상으로 확정할 수 없는 제출물이 포함되어 있습니다."),
+    REVIEW_ENTRY_TEAM_NOT_FINALIZED(
+            "REVIEW_ENTRY_TEAM_NOT_FINALIZED",
+            409,
+            "심사 대상 팀의 참가 명단을 먼저 확정해야 합니다."),
     REVIEW_ENTRY_DUPLICATED(
             "REVIEW_ENTRY_DUPLICATED",
             409,
             "심사 대상이 이미 등록되어 있습니다."),
+    REVIEW_ENTRY_SYNC_REQUIRED(
+            "REVIEW_ENTRY_SYNC_REQUIRED",
+            409,
+            "제출 현황이 변경되었습니다. 심사 대상을 다시 동기화한 뒤 라운드를 시작해 주세요."),
+    REVIEW_ENTRY_RESET_NOT_ALLOWED(
+            "REVIEW_ENTRY_RESET_NOT_ALLOWED",
+            409,
+            "채점 이력이 있는 심사 대상은 초기화할 수 없습니다."),
     REVIEW_ENTRY_REQUIRED(
             "REVIEW_ENTRY_REQUIRED",
             409,
@@ -131,6 +187,14 @@ public enum ReviewErrorResponseCode implements BaseResponseCode {
             "REVIEW_ASSIGNMENT_DUPLICATED",
             409,
             "심사 대상 배정이 이미 처리되었습니다."),
+    REVIEW_ASSIGNMENT_MANAGEMENT_NOT_ALLOWED(
+            "REVIEW_ASSIGNMENT_MANAGEMENT_NOT_ALLOWED",
+            409,
+            "준비 중이거나 진행 중인 심사 라운드의 배정만 변경할 수 있습니다."),
+    REVIEW_ASSIGNMENT_STATUS_TRANSITION_INVALID(
+            "REVIEW_ASSIGNMENT_STATUS_TRANSITION_INVALID",
+            409,
+            "현재 심사 배정 상태에서는 요청한 변경을 처리할 수 없습니다."),
     REVIEW_ASSIGNMENT_NOT_FOUND(
             "REVIEW_ASSIGNMENT_NOT_FOUND",
             404,

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -16,6 +17,7 @@ import com.api.trekkey.domain.review.admin.service.ContestJudgeAdminService;
 import com.api.trekkey.domain.review.admin.web.dto.request.ContestJudgeCreateReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewLinkIssueReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ContestJudgeRes;
+import com.api.trekkey.domain.review.admin.web.dto.response.ReviewJudgeProgressRes;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewLinkIssueRes;
 import com.api.trekkey.global.exception.GlobalExceptionHandler;
 import com.api.trekkey.global.security.AuthPrincipal;
@@ -113,6 +115,40 @@ class ContestJudgeAdminControllerTest {
     }
 
     @Test
+    @DisplayName("심사위원별 진행 현황과 선택한 라운드 ID를 서비스에 전달한다")
+    void getJudgeProgress_returnsList() throws Exception {
+        given(contestJudgeAdminService.getJudgeProgress(
+                10L,
+                "contest-public-id",
+                300L
+        )).willReturn(List.of(new ReviewJudgeProgressRes(
+                200L,
+                "김심사",
+                5L,
+                2L,
+                1L,
+                2L
+        )));
+
+        mockMvc.perform(get(
+                        "/api/admin/contests/{publicId}/judges/progress",
+                        "contest-public-id"
+                ).param("roundId", "300"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].judgeId").value(200L))
+                .andExpect(jsonPath("$.data[0].assignedCount").value(5L))
+                .andExpect(jsonPath("$.data[0].completedCount").value(2L))
+                .andExpect(jsonPath("$.data[0].pendingCount").value(1L))
+                .andExpect(jsonPath("$.data[0].overdueCount").value(2L));
+
+        verify(contestJudgeAdminService).getJudgeProgress(
+                10L,
+                "contest-public-id",
+                300L
+        );
+    }
+
+    @Test
     @DisplayName("심사 링크 발급에 성공하면 원본 토큰이 포함된 fragment URL을 한 번 반환한다")
     void issueReviewLink_returnsCreatedWithUrl() throws Exception {
         given(contestJudgeAdminService.issueReviewLink(
@@ -137,7 +173,9 @@ class ContestJudgeAdminControllerTest {
                 .andExpect(jsonPath("$.message").value("심사 링크를 발급했습니다."))
                 .andExpect(jsonPath("$.data.judgeId").value(200L))
                 .andExpect(jsonPath("$.data.reviewUrl")
-                        .value("https://trekkey.example.com/judge/review#token=raw-token"));
+                        .value("https://trekkey.example.com/judge/review#token=raw-token"))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("Pragma", "no-cache"));
     }
 
     @Test
@@ -170,6 +208,22 @@ class ContestJudgeAdminControllerTest {
 
         verify(contestJudgeAdminService)
                 .revokeReviewLink(10L, "contest-public-id", 200L);
+    }
+
+    @Test
+    @DisplayName("배정 전 심사위원 삭제에 성공하면 200을 반환한다")
+    void deleteJudge_returnsOk() throws Exception {
+        mockMvc.perform(delete(
+                        "/api/admin/contests/{publicId}/judges/{judgeId}",
+                        "contest-public-id",
+                        200L
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value("심사위원을 삭제했습니다."));
+
+        verify(contestJudgeAdminService)
+                .deleteJudge(10L, "contest-public-id", 200L);
     }
 
     private HandlerMethodArgumentResolver authPrincipalResolver(AuthPrincipal principal) {

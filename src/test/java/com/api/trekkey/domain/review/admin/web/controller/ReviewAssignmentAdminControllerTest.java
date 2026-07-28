@@ -2,7 +2,9 @@ package com.api.trekkey.domain.review.admin.web.controller;
 
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -10,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.admin.service.ReviewAssignmentAdminService;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewAssignmentDueAtReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewAssignmentPrepareReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewAssignmentRes;
 import com.api.trekkey.global.exception.CustomException;
@@ -182,6 +185,147 @@ class ReviewAssignmentAdminControllerTest {
         );
     }
 
+    @Test
+    @DisplayName("개별 심사 배정 취소 요청을 서비스에 전달한다")
+    void cancelAssignment_returnsOk() throws Exception {
+        given(reviewAssignmentAdminService.cancelAssignment(
+                10L,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                JUDGE_ID,
+                500L
+        )).willReturn(assignmentRes(
+                ReviewAssignmentStatus.CANCELED,
+                DUE_AT
+        ));
+
+        mockMvc.perform(delete(
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}"
+                                + "/judges/{judgeId}/assignments/{assignmentId}",
+                        CONTEST_PUBLIC_ID,
+                        REVIEW_ROUND_ID,
+                        JUDGE_ID,
+                        500L
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value("심사 배정을 취소했습니다."))
+                .andExpect(jsonPath("$.data.status").value("CANCELED"));
+
+        verify(reviewAssignmentAdminService).cancelAssignment(
+                10L,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                JUDGE_ID,
+                500L
+        );
+    }
+
+    @Test
+    @DisplayName("취소된 배정의 재배정 요청과 마감 시각을 전달한다")
+    void reassignAssignment_returnsOk() throws Exception {
+        ReviewAssignmentDueAtReq request =
+                new ReviewAssignmentDueAtReq(DUE_AT);
+        given(reviewAssignmentAdminService.reassignAssignment(
+                10L,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                JUDGE_ID,
+                500L,
+                request
+        )).willReturn(assignmentRes(
+                ReviewAssignmentStatus.ASSIGNED,
+                DUE_AT
+        ));
+
+        mockMvc.perform(post(
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}"
+                                + "/judges/{judgeId}/assignments"
+                                + "/{assignmentId}/reassign",
+                        CONTEST_PUBLIC_ID,
+                        REVIEW_ROUND_ID,
+                        JUDGE_ID,
+                        500L
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dueAt\":\"2099-08-01T18:00:00\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value("심사 배정을 다시 배정했습니다."))
+                .andExpect(jsonPath("$.data.status").value("ASSIGNED"));
+
+        verify(reviewAssignmentAdminService).reassignAssignment(
+                10L,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                JUDGE_ID,
+                500L,
+                request
+        );
+    }
+
+    @Test
+    @DisplayName("배정 마감 시각 변경 요청을 서비스에 전달한다")
+    void updateDueAt_returnsOk() throws Exception {
+        ReviewAssignmentDueAtReq request =
+                new ReviewAssignmentDueAtReq(DUE_AT);
+        given(reviewAssignmentAdminService.updateDueAt(
+                10L,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                JUDGE_ID,
+                500L,
+                request
+        )).willReturn(assignmentRes(
+                ReviewAssignmentStatus.ASSIGNED,
+                DUE_AT
+        ));
+
+        mockMvc.perform(patch(
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}"
+                                + "/judges/{judgeId}/assignments"
+                                + "/{assignmentId}/due-at",
+                        CONTEST_PUBLIC_ID,
+                        REVIEW_ROUND_ID,
+                        JUDGE_ID,
+                        500L
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dueAt\":\"2099-08-01T18:00:00\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value("심사 배정 마감 시각을 변경했습니다."))
+                .andExpect(jsonPath("$.data.dueAt[0]").value(2099));
+
+        verify(reviewAssignmentAdminService).updateDueAt(
+                10L,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                JUDGE_ID,
+                500L,
+                request
+        );
+    }
+
+    @Test
+    @DisplayName("마감 시각 변경 요청에 dueAt이 없으면 400을 반환한다")
+    void updateDueAt_rejectsMissingDeadline() throws Exception {
+        mockMvc.perform(patch(
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}"
+                                + "/judges/{judgeId}/assignments"
+                                + "/{assignmentId}/due-at",
+                        CONTEST_PUBLIC_ID,
+                        REVIEW_ROUND_ID,
+                        JUDGE_ID,
+                        500L
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("GLOBAL_400_BODY"))
+                .andExpect(jsonPath("$.data[0].field").value("dueAt"));
+    }
+
     private HandlerMethodArgumentResolver authPrincipalResolver(
             AuthPrincipal principal
     ) {
@@ -205,6 +349,16 @@ class ReviewAssignmentAdminControllerTest {
     }
 
     private ReviewAssignmentRes assignmentRes() {
+        return assignmentRes(
+                ReviewAssignmentStatus.ASSIGNED,
+                DUE_AT
+        );
+    }
+
+    private ReviewAssignmentRes assignmentRes(
+            ReviewAssignmentStatus status,
+            LocalDateTime dueAt
+    ) {
         return new ReviewAssignmentRes(
                 500L,
                 JUDGE_ID,
@@ -213,10 +367,12 @@ class ReviewAssignmentAdminControllerTest {
                 400L,
                 "submission-public-id",
                 "AI 작품",
-                ReviewAssignmentStatus.ASSIGNED,
+                status,
                 LocalDateTime.of(2026, 7, 24, 10, 0),
-                DUE_AT,
-                null,
+                dueAt,
+                status == ReviewAssignmentStatus.COMPLETED
+                        ? LocalDateTime.of(2026, 7, 24, 11, 0)
+                        : null,
                 LocalDateTime.of(2026, 7, 24, 10, 0),
                 LocalDateTime.of(2026, 7, 24, 10, 0)
         );

@@ -66,6 +66,21 @@ public interface ReviewRoundEntryRepository
     @Query("""
             select entry
             from ReviewRoundEntry entry
+            join fetch entry.submission submission
+            join fetch submission.team
+            where entry.reviewRound.id = :reviewRoundId
+              and entry.status = :status
+            order by entry.rankNo, entry.id
+            """)
+    List<ReviewRoundEntry>
+            findAllForShareByReviewRoundIdAndStatusOrderByRankNoAscIdAsc(
+                    @Param("reviewRoundId") Long reviewRoundId,
+                    @Param("status") ReviewRoundEntryStatus status);
+
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("""
+            select entry
+            from ReviewRoundEntry entry
             join fetch entry.reviewRound
             join fetch entry.submission submission
             join fetch submission.team

@@ -18,6 +18,15 @@ public interface ContestRepository extends JpaRepository<Contest, Long> {
 
     java.util.Optional<Contest> findByPublicId(String publicId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select contest
+            from Contest contest
+            where contest.publicId = :publicId
+            """)
+    Optional<Contest> findByPublicIdForUpdate(
+            @Param("publicId") String publicId);
+
     Optional<Contest> findByPublicIdAndOrganizationId(
             String publicId,
             Long organizationId);

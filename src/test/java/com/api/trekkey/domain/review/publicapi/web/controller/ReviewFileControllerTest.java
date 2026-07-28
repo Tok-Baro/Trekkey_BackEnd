@@ -98,6 +98,66 @@ class ReviewFileControllerTest {
     }
 
     @Test
+    @DisplayName("대용량 다운로드 전 접근 권한을 확인하고 캐시를 금지한다")
+    void validateFileAccess_returnsNoStoreSuccess() throws Exception {
+        ReviewAccessReq request = new ReviewAccessReq(RAW_TOKEN);
+
+        mockMvc.perform(post(
+                                "/api/review/files/{fileId}/download/check",
+                                10L
+                        )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"" + RAW_TOKEN + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                        HttpHeaders.CACHE_CONTROL,
+                        "no-store"
+                ))
+                .andExpect(header().string(
+                        HttpHeaders.PRAGMA,
+                        "no-cache"
+                ))
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        verify(reviewFileService).validateFileAccess(10L, request);
+    }
+
+    @Test
+    @DisplayName("대용량 파일은 폼 POST로도 브라우저 기본 다운로드를 사용할 수 있다")
+    void downloadFileFromNativeForm_returnsAttachment() throws Exception {
+        byte[] content =
+                "large-review-file".getBytes(StandardCharsets.UTF_8);
+        ReviewAccessReq request = new ReviewAccessReq(RAW_TOKEN);
+        given(reviewFileService.downloadFile(10L, request))
+                .willReturn(new FileDownload(
+                        "대용량.zip",
+                        "application/zip",
+                        content.length,
+                        new ByteArrayInputStream(content)
+                ));
+
+        mockMvc.perform(post(
+                        "/api/review/files/{fileId}/download",
+                        10L
+                )
+                        .contentType(
+                                MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("token", RAW_TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                        HttpHeaders.CACHE_CONTROL,
+                        "no-store"
+                ))
+                .andExpect(header().string(
+                        HttpHeaders.CONTENT_TYPE,
+                        "application/zip"
+                ));
+
+        verify(reviewFileService).downloadFile(10L, request);
+    }
+
+    @Test
     @DisplayName("배정되지 않은 파일은 상세 정보를 노출하지 않고 404를 반환한다")
     void downloadFile_rejectsUnassignedFile() throws Exception {
         ReviewAccessReq request = new ReviewAccessReq(RAW_TOKEN);

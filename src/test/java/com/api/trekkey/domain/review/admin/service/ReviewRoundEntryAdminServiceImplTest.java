@@ -17,6 +17,8 @@ import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.organization.entity.Organization;
+import com.api.trekkey.domain.review.entity.ReviewAssignment;
+import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
 import com.api.trekkey.domain.review.entity.ReviewCriterion;
 import com.api.trekkey.domain.review.entity.ReviewRound;
 import com.api.trekkey.domain.review.entity.ReviewRoundDecisionRule;
@@ -25,9 +27,12 @@ import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
 import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
 import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
+import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewCriterionRepository;
+import com.api.trekkey.domain.review.repository.ReviewRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundEntryPrepareReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewRoundEntryRes;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
@@ -91,6 +96,12 @@ class ReviewRoundEntryAdminServiceImplTest {
     private ReviewRoundEntryRepository reviewRoundEntryRepository;
 
     @Mock
+    private ReviewAssignmentRepository reviewAssignmentRepository;
+
+    @Mock
+    private ReviewRepository reviewRepository;
+
+    @Mock
     private AdminAuditLogger adminAuditLogger;
 
     private ReviewRoundEntryAdminServiceImpl service;
@@ -108,6 +119,8 @@ class ReviewRoundEntryAdminServiceImplTest {
                 teamRepository,
                 submissionRepository,
                 reviewRoundEntryRepository,
+                reviewAssignmentRepository,
+                reviewRepository,
                 adminAuditLogger
         );
 
@@ -347,7 +360,7 @@ class ReviewRoundEntryAdminServiceImplTest {
     }
 
     @Test
-    @DisplayName("이미 준비된 심사 대상은 재호출해도 다시 잠그거나 생성하지 않는다")
+    @DisplayName("이미 준비된 전체 대상은 재호출 시 현재 제출 목록을 확인하고 중복 생성하지 않는다")
     void prepareEntries_returnsExistingEntriesIdempotently() {
         ReviewRound reviewRound = reviewRound(
                 ReviewRoundTargetType.ALL_SUBMISSIONS,
@@ -362,6 +375,15 @@ class ReviewRoundEntryAdminServiceImplTest {
                 .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
                         REVIEW_ROUND_ID))
                 .willReturn(List.of(existingEntry));
+        given(teamRepository
+                .findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
+                .willReturn(List.of(team));
+        given(submissionRepository
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        CONTEST_ID,
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED))
+                .willReturn(List.of(submission));
 
         List<ReviewRoundEntryRes> response = service.prepareEntries(
                 ADMIN_ID,
@@ -384,13 +406,88 @@ class ReviewRoundEntryAdminServiceImplTest {
     }
 
     @Test
-    @DisplayName("ALL_SUBMISSIONS가 아닌 대상 방식은 지원하지 않는 오류로 거부한다")
-    void prepareEntries_rejectsUnsupportedTargetType() {
+    @DisplayName("전체 대상 준비를 재호출하면 이후 제출된 작품을 추가한다")
+    @SuppressWarnings("unchecked")
+    void prepareEntries_addsNewlyEligibleSubmission() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
+        );
+        Team firstTeam = approvedTeam();
+        Team secondTeam = approvedTeam();
+        ReflectionTestUtils.setField(secondTeam, "id", 302L);
+        Submission firstSubmission = submittedSubmission(firstTeam);
+        Submission secondSubmission = submittedSubmission(secondTeam);
+        ReflectionTestUtils.setField(secondSubmission, "id", 402L);
+        ReflectionTestUtils.setField(
+                secondSubmission,
+                "publicId",
+                "second-submission-public-id");
+        ReviewRoundEntry existingEntry =
+                entry(501L, reviewRound, firstSubmission);
+        stubAdminContestAndLockedRound(reviewRound);
+        given(reviewRoundEntryRepository
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
+                .willReturn(List.of(existingEntry));
+        given(teamRepository
+                .findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
+                .willReturn(List.of(firstTeam, secondTeam));
+        given(submissionRepository
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        CONTEST_ID,
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED))
+                .willReturn(List.of(firstSubmission, secondSubmission));
+        given(reviewRoundEntryRepository.saveAllAndFlush(anyList()))
+                .willAnswer(invocation -> {
+                    List<ReviewRoundEntry> entries =
+                            invocation.getArgument(0);
+                    ReflectionTestUtils.setField(
+                            entries.getFirst(),
+                            "id",
+                            502L);
+                    return entries;
+                });
+
+        List<ReviewRoundEntryRes> response = service.prepareEntries(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID
+        );
+
+        assertThat(response)
+                .extracting(ReviewRoundEntryRes::submissionPublicId)
+                .containsExactly(
+                        "submission-public-id",
+                        "second-submission-public-id");
+        ArgumentCaptor<List<ReviewRoundEntry>> captor =
+                ArgumentCaptor.forClass(List.class);
+        verify(reviewRoundEntryRepository)
+                .saveAllAndFlush(captor.capture());
+        assertThat(captor.getValue()).singleElement()
+                .satisfies(entry -> assertThat(
+                        entry.getSubmission().getId()).isEqualTo(402L));
+    }
+
+    @Test
+    @DisplayName("PREVIOUS_SELECTED는 바로 이전 확정 라운드가 없으면 거부한다")
+    void prepareEntries_rejectsPreviousSelectedWithoutFinalizedPreviousRound() {
         ReviewRound reviewRound = reviewRound(
                 ReviewRoundTargetType.PREVIOUS_SELECTED,
                 ReviewRoundStatus.PREPARING
         );
+        ReflectionTestUtils.setField(reviewRound, "roundNo", 2);
         stubAdminContestAndLockedRound(reviewRound);
+        given(reviewRoundEntryRepository
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
+                .willReturn(List.of());
+        given(reviewRoundRepository
+                .findFirstByContestIdAndRoundNoLessThanOrderByRoundNoDesc(
+                        CONTEST_ID,
+                        2))
+                .willReturn(Optional.empty());
 
         assertReviewError(
                 () -> service.prepareEntries(
@@ -398,10 +495,343 @@ class ReviewRoundEntryAdminServiceImplTest {
                         CONTEST_PUBLIC_ID,
                         REVIEW_ROUND_ID
                 ),
-                ReviewErrorResponseCode.REVIEW_ENTRY_TARGET_TYPE_UNSUPPORTED
+                ReviewErrorResponseCode.REVIEW_ENTRY_PREVIOUS_ROUND_REQUIRED
         );
 
         verifyNoInteractions(teamRepository, submissionRepository);
+        verify(reviewRoundEntryRepository, never()).saveAllAndFlush(anyList());
+    }
+
+    @Test
+    @DisplayName("PREVIOUS_SELECTED는 바로 이전 라운드가 아직 진행 중이면 거부한다")
+    void prepareEntries_rejectsPreviousSelectedWhenImmediateRoundIsOpen() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.PREVIOUS_SELECTED,
+                ReviewRoundStatus.PREPARING
+        );
+        ReflectionTestUtils.setField(reviewRound, "roundNo", 3);
+        ReviewRound previousRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.OPEN
+        );
+        ReflectionTestUtils.setField(previousRound, "id", 201L);
+        ReflectionTestUtils.setField(previousRound, "roundNo", 2);
+        stubAdminContestAndLockedRound(reviewRound);
+        given(reviewRoundEntryRepository
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
+                .willReturn(List.of());
+        given(reviewRoundRepository
+                .findFirstByContestIdAndRoundNoLessThanOrderByRoundNoDesc(
+                        CONTEST_ID,
+                        3))
+                .willReturn(Optional.of(previousRound));
+
+        assertReviewError(
+                () -> service.prepareEntries(
+                        ADMIN_ID,
+                        CONTEST_PUBLIC_ID,
+                        REVIEW_ROUND_ID),
+                ReviewErrorResponseCode.REVIEW_ENTRY_PREVIOUS_ROUND_REQUIRED
+        );
+
+        verify(reviewRoundEntryRepository, never())
+                .findAllForShareByReviewRoundIdAndStatusOrderByRankNoAscIdAsc(
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.any());
+        verifyNoInteractions(teamRepository, submissionRepository);
+    }
+
+    @Test
+    @DisplayName("PREVIOUS_SELECTED는 바로 이전 확정 라운드의 선정작만 순서대로 복사한다")
+    @SuppressWarnings("unchecked")
+    void prepareEntries_copiesSelectedSubmissionsFromPreviousFinalizedRound() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.PREVIOUS_SELECTED,
+                ReviewRoundStatus.PREPARING
+        );
+        ReflectionTestUtils.setField(reviewRound, "roundNo", 2);
+        ReviewRound previousRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.FINALIZED
+        );
+        ReflectionTestUtils.setField(previousRound, "id", 201L);
+
+        Team firstTeam = approvedTeam();
+        Team secondTeam = approvedTeam();
+        ReflectionTestUtils.setField(secondTeam, "id", 302L);
+        Submission firstSubmission = submittedSubmission(firstTeam);
+        Submission secondSubmission = submittedSubmission(secondTeam);
+        ReflectionTestUtils.setField(secondSubmission, "id", 402L);
+        ReflectionTestUtils.setField(
+                secondSubmission,
+                "publicId",
+                "second-submission-public-id");
+        ReviewRoundEntry previousSelected = ReviewRoundEntry.builder()
+                .reviewRound(previousRound)
+                .submission(secondSubmission)
+                .status(ReviewRoundEntryStatus.SELECTED)
+                .rankNo(1)
+                .finalizedAt(NOW.minusHours(1))
+                .build();
+        ReflectionTestUtils.setField(previousSelected, "id", 500L);
+
+        stubAdminContestAndLockedRound(reviewRound);
+        given(reviewRoundEntryRepository
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
+                .willReturn(List.of());
+        given(reviewRoundRepository
+                .findFirstByContestIdAndRoundNoLessThanOrderByRoundNoDesc(
+                        CONTEST_ID,
+                        2))
+                .willReturn(Optional.of(previousRound));
+        given(reviewRoundEntryRepository
+                .findAllForShareByReviewRoundIdAndStatusOrderByRankNoAscIdAsc(
+                        201L,
+                        ReviewRoundEntryStatus.SELECTED))
+                .willReturn(List.of(previousSelected));
+        given(teamRepository.findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
+                .willReturn(List.of(firstTeam, secondTeam));
+        given(submissionRepository
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        CONTEST_ID,
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED))
+                .willReturn(List.of(firstSubmission, secondSubmission));
+        given(reviewRoundEntryRepository.saveAllAndFlush(anyList()))
+                .willAnswer(invocation -> {
+                    List<ReviewRoundEntry> entries = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(entries.getFirst(), "id", 501L);
+                    return entries;
+                });
+
+        List<ReviewRoundEntryRes> response = service.prepareEntries(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                null
+        );
+
+        assertThat(response)
+                .extracting(ReviewRoundEntryRes::submissionPublicId)
+                .containsExactly("second-submission-public-id");
+        ArgumentCaptor<List<ReviewRoundEntry>> captor =
+                ArgumentCaptor.forClass(List.class);
+        verify(reviewRoundEntryRepository).saveAllAndFlush(captor.capture());
+        assertThat(captor.getValue())
+                .extracting(entry -> entry.getSubmission().getPublicId())
+                .containsExactly("second-submission-public-id");
+
+        InOrder lockOrder = inOrder(
+                reviewRoundRepository,
+                reviewCriterionRepository,
+                reviewRoundEntryRepository,
+                teamRepository,
+                submissionRepository);
+        lockOrder.verify(reviewRoundRepository)
+                .findByIdForUpdate(REVIEW_ROUND_ID);
+        lockOrder.verify(reviewCriterionRepository)
+                .findAllForUpdateByReviewRoundIdInOrderBySortOrderAsc(
+                        List.of(REVIEW_ROUND_ID));
+        lockOrder.verify(reviewRoundEntryRepository)
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID);
+        lockOrder.verify(reviewRoundRepository)
+                .findFirstByContestIdAndRoundNoLessThanOrderByRoundNoDesc(
+                        CONTEST_ID,
+                        2);
+        lockOrder.verify(reviewRoundEntryRepository)
+                .findAllForShareByReviewRoundIdAndStatusOrderByRankNoAscIdAsc(
+                        201L,
+                        ReviewRoundEntryStatus.SELECTED);
+        lockOrder.verify(teamRepository)
+                .findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID);
+        lockOrder.verify(submissionRepository)
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        CONTEST_ID,
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED);
+    }
+
+    @Test
+    @DisplayName("MANUAL은 요청 순서를 유지하고 중복 제출물 ID는 한 번만 등록한다")
+    @SuppressWarnings("unchecked")
+    void prepareEntries_selectsDeduplicatedManualSubmissionsInRequestOrder() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.MANUAL,
+                ReviewRoundStatus.PREPARING
+        );
+        Team firstTeam = approvedTeam();
+        Team secondTeam = approvedTeam();
+        ReflectionTestUtils.setField(secondTeam, "id", 302L);
+        Submission firstSubmission = submittedSubmission(firstTeam);
+        Submission secondSubmission = submittedSubmission(secondTeam);
+        ReflectionTestUtils.setField(secondSubmission, "id", 402L);
+        ReflectionTestUtils.setField(
+                secondSubmission,
+                "publicId",
+                "second-submission-public-id");
+
+        stubAdminContestAndLockedRound(reviewRound);
+        given(reviewRoundEntryRepository
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
+                .willReturn(List.of());
+        given(teamRepository.findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
+                .willReturn(List.of(firstTeam, secondTeam));
+        given(submissionRepository
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        CONTEST_ID,
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED))
+                .willReturn(List.of(firstSubmission, secondSubmission));
+        given(reviewRoundEntryRepository.saveAllAndFlush(anyList()))
+                .willAnswer(invocation -> {
+                    List<ReviewRoundEntry> entries = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(entries.get(0), "id", 501L);
+                    ReflectionTestUtils.setField(entries.get(1), "id", 502L);
+                    return entries;
+                });
+
+        List<ReviewRoundEntryRes> response = service.prepareEntries(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                new ReviewRoundEntryPrepareReq(List.of(
+                        "second-submission-public-id",
+                        "submission-public-id",
+                        "second-submission-public-id"))
+        );
+
+        assertThat(response)
+                .extracting(ReviewRoundEntryRes::submissionPublicId)
+                .containsExactly(
+                        "second-submission-public-id",
+                        "submission-public-id");
+    }
+
+    @Test
+    @DisplayName("심사 없는 수동 라운드는 평가 기준 없이 대상을 준비한다")
+    @SuppressWarnings("unchecked")
+    void prepareEntries_supportsManualRoundWithoutCriteria() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.MANUAL,
+                ReviewRoundStatus.PREPARING
+        );
+        ReflectionTestUtils.setField(
+                reviewRound,
+                "decisionRule",
+                ReviewRoundDecisionRule.MANUAL);
+        ReflectionTestUtils.setField(reviewRound, "selectCount", null);
+        Team team = approvedTeam();
+        Submission submission = submittedSubmission(team);
+        stubAdminAndContest();
+        given(reviewRoundRepository
+                .findOrganizationIdById(REVIEW_ROUND_ID))
+                .willReturn(Optional.of(ORGANIZATION_ID));
+        given(reviewRoundRepository.findByIdForUpdate(REVIEW_ROUND_ID))
+                .willReturn(Optional.of(reviewRound));
+        given(reviewCriterionRepository
+                .findAllForUpdateByReviewRoundIdInOrderBySortOrderAsc(
+                        List.of(REVIEW_ROUND_ID)))
+                .willReturn(List.of());
+        given(reviewRoundEntryRepository
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
+                .willReturn(List.of());
+        given(teamRepository
+                .findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
+                .willReturn(List.of(team));
+        given(submissionRepository
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        CONTEST_ID,
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED))
+                .willReturn(List.of(submission));
+        given(reviewRoundEntryRepository.saveAllAndFlush(anyList()))
+                .willAnswer(invocation -> {
+                    List<ReviewRoundEntry> entries =
+                            invocation.getArgument(0);
+                    ReflectionTestUtils.setField(
+                            entries.getFirst(),
+                            "id",
+                            501L);
+                    return entries;
+                });
+
+        List<ReviewRoundEntryRes> response = service.prepareEntries(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                new ReviewRoundEntryPrepareReq(
+                        List.of("submission-public-id"))
+        );
+
+        assertThat(response).singleElement().satisfies(entry ->
+                assertThat(entry.submissionPublicId())
+                        .isEqualTo("submission-public-id"));
+    }
+
+    @Test
+    @DisplayName("MANUAL은 명시적인 제출물 목록이 없으면 거부한다")
+    void prepareEntries_rejectsManualWithoutSubmissionIds() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.MANUAL,
+                ReviewRoundStatus.PREPARING
+        );
+        stubAdminContestAndLockedRound(reviewRound);
+        given(reviewRoundEntryRepository
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
+                .willReturn(List.of());
+
+        assertReviewError(
+                () -> service.prepareEntries(
+                        ADMIN_ID,
+                        CONTEST_PUBLIC_ID,
+                        REVIEW_ROUND_ID,
+                        new ReviewRoundEntryPrepareReq(List.of())),
+                ReviewErrorResponseCode
+                        .REVIEW_ENTRY_MANUAL_SUBMISSIONS_REQUIRED
+        );
+
+        verifyNoInteractions(teamRepository, submissionRepository);
+    }
+
+    @Test
+    @DisplayName("MANUAL은 현재 대회의 승인·제출 완료 후보가 아닌 제출물을 거부한다")
+    void prepareEntries_rejectsIneligibleManualSubmission() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.MANUAL,
+                ReviewRoundStatus.PREPARING
+        );
+        Team team = approvedTeam();
+        Submission submission = submittedSubmission(team);
+        stubAdminContestAndLockedRound(reviewRound);
+        given(reviewRoundEntryRepository
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
+                .willReturn(List.of());
+        given(teamRepository.findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
+                .willReturn(List.of(team));
+        given(submissionRepository
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        CONTEST_ID,
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED))
+                .willReturn(List.of(submission));
+
+        assertReviewError(
+                () -> service.prepareEntries(
+                        ADMIN_ID,
+                        CONTEST_PUBLIC_ID,
+                        REVIEW_ROUND_ID,
+                        new ReviewRoundEntryPrepareReq(
+                                List.of("other-submission-public-id"))),
+                ReviewErrorResponseCode.REVIEW_ENTRY_SUBMISSION_INVALID
+        );
+
         verify(reviewRoundEntryRepository, never()).saveAllAndFlush(anyList());
     }
 
@@ -719,6 +1149,97 @@ class ReviewRoundEntryAdminServiceImplTest {
                 org.mockito.ArgumentMatchers.anyLong(),
                 org.mockito.ArgumentMatchers.anyString()
         );
+    }
+
+    @Test
+    @DisplayName("준비 중인 라운드는 미완료 배정과 심사 대상을 함께 초기화할 수 있다")
+    void resetEntries_deletesPendingAssignmentsAndEntries() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
+        );
+        Submission submission = submittedSubmission(approvedTeam());
+        ReviewRoundEntry entry = entry(501L, reviewRound, submission);
+        ReviewAssignment assignment = ReviewAssignment.builder()
+                .reviewRoundEntry(entry)
+                .status(ReviewAssignmentStatus.ASSIGNED)
+                .assignedAt(NOW.minusHours(1))
+                .dueAt(NOW.plusHours(1))
+                .build();
+        ReflectionTestUtils.setField(assignment, "id", 701L);
+        stubAdminContestAndLockedRound(reviewRound);
+        given(reviewRoundEntryRepository
+                .findAllForUpdateByReviewRoundIdOrderByIdAsc(
+                        REVIEW_ROUND_ID))
+                .willReturn(List.of(entry));
+        given(reviewAssignmentRepository
+                .findAllForUpdateByReviewRoundEntryIdInOrderByEntryIdAscIdAsc(
+                        List.of(501L)))
+                .willReturn(List.of(assignment));
+
+        service.resetEntries(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID
+        );
+
+        verify(reviewRepository).existsByAssignmentIdIn(List.of(701L));
+        verify(reviewAssignmentRepository)
+                .deleteAllInBatch(List.of(assignment));
+        verify(reviewAssignmentRepository).flush();
+        verify(reviewRoundEntryRepository)
+                .deleteAllInBatch(List.of(entry));
+        verify(reviewRoundEntryRepository).flush();
+        verify(adminAuditLogger).log(
+                ADMIN_ID,
+                ORGANIZATION_ID,
+                AuditAction.REVIEW_ENTRIES_RESET,
+                "REVIEW_ROUND",
+                REVIEW_ROUND_ID,
+                "contestId=100, entryCount=1, assignmentCount=1"
+        );
+    }
+
+    @Test
+    @DisplayName("완료된 채점 배정이 있으면 심사 대상을 초기화할 수 없다")
+    void resetEntries_rejectsCompletedAssignment() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
+        );
+        ReviewRoundEntry entry = entry(
+                501L,
+                reviewRound,
+                submittedSubmission(approvedTeam()));
+        ReviewAssignment assignment = ReviewAssignment.builder()
+                .reviewRoundEntry(entry)
+                .status(ReviewAssignmentStatus.COMPLETED)
+                .assignedAt(NOW.minusHours(1))
+                .completedAt(NOW.minusMinutes(10))
+                .build();
+        ReflectionTestUtils.setField(assignment, "id", 701L);
+        stubAdminContestAndLockedRound(reviewRound);
+        given(reviewRoundEntryRepository
+                .findAllForUpdateByReviewRoundIdOrderByIdAsc(
+                        REVIEW_ROUND_ID))
+                .willReturn(List.of(entry));
+        given(reviewAssignmentRepository
+                .findAllForUpdateByReviewRoundEntryIdInOrderByEntryIdAscIdAsc(
+                        List.of(501L)))
+                .willReturn(List.of(assignment));
+
+        assertReviewError(
+                () -> service.resetEntries(
+                        ADMIN_ID,
+                        CONTEST_PUBLIC_ID,
+                        REVIEW_ROUND_ID),
+                ReviewErrorResponseCode.REVIEW_ENTRY_RESET_NOT_ALLOWED
+        );
+
+        verify(reviewAssignmentRepository, never())
+                .deleteAllInBatch(anyList());
+        verify(reviewRoundEntryRepository, never())
+                .deleteAllInBatch(anyList());
     }
 
     @Test

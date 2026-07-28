@@ -13,6 +13,12 @@ public interface ReviewRoundRepository extends JpaRepository<ReviewRound, Long> 
 
     List<ReviewRound> findAllByContestIdOrderByRoundNoAsc(Long contestId);
 
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    Optional<ReviewRound>
+            findFirstByContestIdAndRoundNoLessThanOrderByRoundNoDesc(
+                    Long contestId,
+                    int roundNo);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select reviewRound

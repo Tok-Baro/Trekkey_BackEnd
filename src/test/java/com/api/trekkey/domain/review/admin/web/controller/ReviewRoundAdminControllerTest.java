@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -13,6 +14,7 @@ import com.api.trekkey.domain.review.entity.ReviewRoundDecisionRule;
 import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
 import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
 import com.api.trekkey.domain.review.admin.service.ReviewRoundAdminService;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundDeadlineExtendReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundSaveReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewRoundCriterionRes;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewRoundRes;
@@ -153,6 +155,58 @@ class ReviewRoundAdminControllerTest {
 
         verify(reviewRoundAdminService)
                 .openRound(10L, "contest-public-id", 40L);
+    }
+
+    @Test
+    @DisplayName("진행 중인 심사 라운드의 종료 시각을 연장한다")
+    void extendDeadline_returnsOk() throws Exception {
+        given(reviewRoundAdminService.extendDeadline(
+                org.mockito.ArgumentMatchers.eq(10L),
+                org.mockito.ArgumentMatchers.eq("contest-public-id"),
+                org.mockito.ArgumentMatchers.eq(40L),
+                any(ReviewRoundDeadlineExtendReq.class)
+        )).willReturn(roundRes(ReviewRoundStatus.OPEN));
+
+        mockMvc.perform(patch(
+                        "/api/admin/contests/{publicId}"
+                                + "/review-rounds/{roundId}/deadline",
+                        "contest-public-id",
+                        40L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "endsAt": "2026-08-03T18:00:00"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value("심사 라운드 종료 시각을 연장했습니다."))
+                .andExpect(jsonPath("$.data.status").value("OPEN"));
+
+        verify(reviewRoundAdminService).extendDeadline(
+                org.mockito.ArgumentMatchers.eq(10L),
+                org.mockito.ArgumentMatchers.eq("contest-public-id"),
+                org.mockito.ArgumentMatchers.eq(40L),
+                org.mockito.ArgumentMatchers.argThat(req ->
+                        req.endsAt().equals(LocalDateTime.of(
+                                2026, 8, 3, 18, 0)))
+        );
+    }
+
+    @Test
+    @DisplayName("새 종료 시각이 없으면 서비스 호출 전에 400을 반환한다")
+    void extendDeadline_rejectsMissingDeadline() throws Exception {
+        mockMvc.perform(patch(
+                        "/api/admin/contests/{publicId}"
+                                + "/review-rounds/{roundId}/deadline",
+                        "contest-public-id",
+                        40L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+
+        org.mockito.Mockito.verifyNoInteractions(
+                reviewRoundAdminService);
     }
 
     private String validRequestJson() {

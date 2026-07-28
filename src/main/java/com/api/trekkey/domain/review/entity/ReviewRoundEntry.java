@@ -77,11 +77,114 @@ public class ReviewRoundEntry extends BaseEntity {
         return true;
     }
 
+    public boolean finalizeByRule(
+            BigDecimal finalScore,
+            int rankNo,
+            ReviewRoundEntryStatus nextStatus,
+            LocalDateTime finalizedAt
+    ) {
+        return finalizeResult(
+                finalScore,
+                rankNo,
+                nextStatus,
+                ReviewDecisionType.RULE,
+                null,
+                null,
+                finalizedAt
+        );
+    }
+
+    public boolean finalizeManually(
+            BigDecimal finalScore,
+            Integer rankNo,
+            ReviewRoundEntryStatus nextStatus,
+            User decidedByUser,
+            String decisionReason,
+            LocalDateTime finalizedAt
+    ) {
+        if (decidedByUser == null
+                || decisionReason == null
+                || decisionReason.isBlank()) {
+            return false;
+        }
+        return finalizeResult(
+                finalScore,
+                rankNo,
+                nextStatus,
+                ReviewDecisionType.MANUAL,
+                decidedByUser,
+                decisionReason.trim(),
+                finalizedAt
+        );
+    }
+
     public boolean isFinalized() {
-        return finalizedAt != null
-                && (status == ReviewRoundEntryStatus.SELECTED
-                || status == ReviewRoundEntryStatus.NOT_SELECTED
-                || status == ReviewRoundEntryStatus.WITHDRAWN
-                || status == ReviewRoundEntryStatus.DISQUALIFIED);
+        if (finalizedAt == null) {
+            return false;
+        }
+        if (status == ReviewRoundEntryStatus.WITHDRAWN
+                || status == ReviewRoundEntryStatus.DISQUALIFIED) {
+            return true;
+        }
+        if (status != ReviewRoundEntryStatus.SELECTED
+                && status != ReviewRoundEntryStatus.NOT_SELECTED) {
+            return false;
+        }
+        if (decisionType == ReviewDecisionType.RULE) {
+            return hasScoredResult();
+        }
+        if (decisionType != ReviewDecisionType.MANUAL
+                || decidedByUser == null
+                || decisionReason == null
+                || decisionReason.isBlank()) {
+            return false;
+        }
+        return hasValidManualRank(rankNo);
+    }
+
+    private boolean finalizeResult(
+            BigDecimal finalScore,
+            Integer rankNo,
+            ReviewRoundEntryStatus nextStatus,
+            ReviewDecisionType decisionType,
+            User decidedByUser,
+            String decisionReason,
+            LocalDateTime finalizedAt
+    ) {
+        if (status != ReviewRoundEntryStatus.IN_REVIEW
+                || finalizedAt == null
+                || (nextStatus != ReviewRoundEntryStatus.SELECTED
+                && nextStatus != ReviewRoundEntryStatus.NOT_SELECTED)
+                || (decisionType != ReviewDecisionType.RULE
+                && decisionType != ReviewDecisionType.MANUAL)
+                || (decisionType == ReviewDecisionType.RULE
+                && !hasValidScoreAndRank(finalScore, rankNo))
+                || (decisionType == ReviewDecisionType.MANUAL
+                && !hasValidManualRank(rankNo))) {
+            return false;
+        }
+        this.finalScore = finalScore;
+        this.rankNo = rankNo;
+        this.status = nextStatus;
+        this.decisionType = decisionType;
+        this.decidedByUser = decidedByUser;
+        this.decisionReason = decisionReason;
+        this.finalizedAt = finalizedAt;
+        return true;
+    }
+
+    private boolean hasScoredResult() {
+        return hasValidScoreAndRank(finalScore, rankNo);
+    }
+
+    private boolean hasValidScoreAndRank(
+            BigDecimal score,
+            Integer rank
+    ) {
+        return score != null && rank != null && rank > 0;
+    }
+
+    private boolean hasValidManualRank(Integer rank) {
+        return rank != null && rank > 0;
     }
 }

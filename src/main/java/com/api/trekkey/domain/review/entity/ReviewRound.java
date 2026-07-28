@@ -100,6 +100,11 @@ public class ReviewRound extends BaseEntity {
         return status == ReviewRoundStatus.PREPARING;
     }
 
+    public boolean isManualWithoutReview() {
+        return targetType == ReviewRoundTargetType.MANUAL
+                && decisionRule == ReviewRoundDecisionRule.MANUAL;
+    }
+
     public boolean hasValidConfigurationForOpening() {
         if (roundNo < 1
                 || name == null
@@ -169,6 +174,17 @@ public class ReviewRound extends BaseEntity {
                 && status == ReviewRoundStatus.OPEN
                 && !now.isBefore(startsAt)
                 && now.isBefore(endsAt);
+    }
+
+    public boolean extendEndsAt(LocalDateTime newEndsAt) {
+        if (status != ReviewRoundStatus.OPEN
+                || newEndsAt == null
+                || endsAt == null
+                || !newEndsAt.isAfter(endsAt)) {
+            return false;
+        }
+        endsAt = newEndsAt;
+        return true;
     }
 
     private boolean hasSameDecimal(

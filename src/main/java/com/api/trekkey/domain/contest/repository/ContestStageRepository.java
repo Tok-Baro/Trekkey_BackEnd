@@ -21,6 +21,8 @@ public interface ContestStageRepository extends JpaRepository<ContestStage, Long
             Long contestId,
             Collection<StageType> stageTypes);
 
+    List<ContestStage> findAllByContestIdOrderBySequenceNoAsc(Long contestId);
+
     @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("""
             select stage

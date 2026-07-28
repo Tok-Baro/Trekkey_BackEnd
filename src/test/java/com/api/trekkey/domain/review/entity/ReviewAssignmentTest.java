@@ -2,6 +2,9 @@ package com.api.trekkey.domain.review.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.api.trekkey.domain.contest.entity.Contest;
+import com.api.trekkey.domain.submission.entity.Submission;
+import com.api.trekkey.domain.team.entity.Team;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -161,6 +164,40 @@ class ReviewAssignmentTest {
     }
 
     @Test
+    @DisplayName("ASSIGNED 배정의 마감 시각을 변경할 수 있다")
+    void updateDueAt_updatesAssignedDeadline() {
+        ReviewAssignment assignment =
+                assignment(ReviewAssignmentStatus.ASSIGNED);
+        LocalDateTime newDueAt = DUE_AT.plusHours(1);
+
+        boolean changed = assignment.updateDueAt(newDueAt);
+
+        assertThat(changed).isTrue();
+        assertThat(assignment.getDueAt()).isEqualTo(newDueAt);
+    }
+
+    @Test
+    @DisplayName("ASSIGNED가 아니거나 마감 시각이 없으면 변경하지 않는다")
+    void updateDueAt_rejectsInvalidStateOrNullDeadline() {
+        ReviewAssignment canceled =
+                assignment(ReviewAssignmentStatus.CANCELED);
+        ReviewAssignment completed =
+                assignment(ReviewAssignmentStatus.COMPLETED);
+        ReviewAssignment assigned =
+                assignment(ReviewAssignmentStatus.ASSIGNED);
+
+        assertThat(canceled.updateDueAt(DUE_AT.plusHours(1)))
+                .isFalse();
+        assertThat(completed.updateDueAt(DUE_AT.plusHours(1)))
+                .isFalse();
+        assertThat(assigned.updateDueAt(null)).isFalse();
+
+        assertThat(canceled.getDueAt()).isEqualTo(DUE_AT);
+        assertThat(completed.getDueAt()).isEqualTo(DUE_AT);
+        assertThat(assigned.getDueAt()).isEqualTo(DUE_AT);
+    }
+
+    @Test
     @DisplayName("ASSIGNED 배정은 마감 전만 이용할 수 있고 now와 dueAt이 같으면 이용할 수 없다")
     void isAvailableAt_usesExclusiveDueAtBoundary() {
         ReviewAssignment assignment =
@@ -198,6 +235,55 @@ class ReviewAssignmentTest {
         )).isFalse();
     }
 
+    @Test
+    @DisplayName("심사위원에게는 열린 라운드의 이용 가능한 배정만 표시한다")
+    void isVisibleToJudgeAt_appliesRoundAndAssignmentWindow() {
+        LocalDateTime now = ASSIGNED_AT.plusHours(1);
+        ReviewAssignment assigned = visibleAssignment(
+                ReviewRoundStatus.OPEN,
+                ReviewAssignmentStatus.ASSIGNED,
+                now.plusHours(1)
+        );
+        ReviewAssignment overdue = visibleAssignment(
+                ReviewRoundStatus.OPEN,
+                ReviewAssignmentStatus.ASSIGNED,
+                now
+        );
+        ReviewAssignment completed = visibleAssignment(
+                ReviewRoundStatus.OPEN,
+                ReviewAssignmentStatus.COMPLETED,
+                now.minusMinutes(1)
+        );
+        ReviewAssignment finalized = visibleAssignment(
+                ReviewRoundStatus.FINALIZED,
+                ReviewAssignmentStatus.COMPLETED,
+                now.plusHours(1)
+        );
+
+        assertThat(assigned.isVisibleToJudgeAt(now)).isTrue();
+        assertThat(overdue.isVisibleToJudgeAt(now)).isFalse();
+        assertThat(completed.isVisibleToJudgeAt(now)).isTrue();
+        assertThat(finalized.isVisibleToJudgeAt(now)).isFalse();
+    }
+
+    @Test
+    @DisplayName("심사위원·라운드·제출 팀의 대회가 다르면 배정을 노출하지 않는다")
+    void isVisibleToJudgeAt_rejectsInconsistentContestScope() {
+        LocalDateTime now = ASSIGNED_AT.plusHours(1);
+        Contest judgeContest = Contest.builder().id(1L).build();
+        Contest roundContest = Contest.builder().id(2L).build();
+        Contest teamContest = Contest.builder().id(3L).build();
+        ReviewAssignment assignment = visibleAssignment(
+                judgeContest,
+                roundContest,
+                teamContest,
+                ReviewRoundStatus.OPEN,
+                ReviewAssignmentStatus.ASSIGNED,
+                now.plusHours(1));
+
+        assertThat(assignment.isVisibleToJudgeAt(now)).isFalse();
+    }
+
     private ReviewAssignment assignment(
             ReviewAssignmentStatus status
     ) {
@@ -210,6 +296,61 @@ class ReviewAssignmentTest {
                                 ? ASSIGNED_AT.plusHours(1)
                                 : null
                 )
+                .build();
+    }
+
+    private ReviewAssignment visibleAssignment(
+            ReviewRoundStatus roundStatus,
+            ReviewAssignmentStatus assignmentStatus,
+            LocalDateTime dueAt
+    ) {
+        Contest contest = Contest.builder().id(1L).build();
+        return visibleAssignment(
+                contest,
+                contest,
+                contest,
+                roundStatus,
+                assignmentStatus,
+                dueAt);
+    }
+
+    private ReviewAssignment visibleAssignment(
+            Contest judgeContest,
+            Contest roundContest,
+            Contest teamContest,
+            ReviewRoundStatus roundStatus,
+            ReviewAssignmentStatus assignmentStatus,
+            LocalDateTime dueAt
+    ) {
+        ReviewRound round = ReviewRound.builder()
+                .contest(roundContest)
+                .status(roundStatus)
+                .startsAt(ASSIGNED_AT.minusHours(1))
+                .endsAt(DUE_AT.plusHours(1))
+                .build();
+        Team team = Team.builder()
+                .contest(teamContest)
+                .build();
+        Submission submission = Submission.builder()
+                .team(team)
+                .build();
+        ReviewRoundEntry entry = ReviewRoundEntry.builder()
+                .reviewRound(round)
+                .submission(submission)
+                .build();
+        return ReviewAssignment.builder()
+                .contestJudge(ContestJudge.builder()
+                        .contest(judgeContest)
+                        .build())
+                .reviewRoundEntry(entry)
+                .status(assignmentStatus)
+                .assignedAt(ASSIGNED_AT)
+                .dueAt(dueAt)
+                .completedAt(
+                        assignmentStatus
+                                == ReviewAssignmentStatus.COMPLETED
+                                ? ASSIGNED_AT.plusMinutes(30)
+                                : null)
                 .build();
     }
 }

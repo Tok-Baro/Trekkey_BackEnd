@@ -154,7 +154,8 @@ class ReviewSheetControllerTest {
                                 "AI 작품",
                                 ReviewAssignmentStatus.ASSIGNED,
                                 LocalDateTime.of(2099, 8, 1, 18, 0),
-                                null
+                                null,
+                                List.of()
                         ))
                 ))
         );

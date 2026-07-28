@@ -126,4 +126,24 @@ public class ContestAdminController {
 
         return ResponseEntity.ok(SuccessResponse.ok(response));
     }
+
+    @ApiErrorCodeExamples(
+            value = ContestErrorResponseCode.class,
+            codes = {
+                    "CONTEST_NOT_FOUND",
+                    "CONTEST_FORBIDDEN"
+            })
+    @ApiErrorCodeExamples(value = UserErrorResponseCode.class, codes = {
+            "USER_NOT_FOUND",
+            "USER_INVALID_TOKEN"
+    })
+    @GetMapping("/api/admin/contests/{publicId}")
+    public ResponseEntity<SuccessResponse<ContestDetailRes>> getAdminContest(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String publicId) {
+        ContestDetailRes response =
+                contestAdminQueryService.getContest(principal.getId(), publicId);
+
+        return ResponseEntity.ok(SuccessResponse.ok(response));
+    }
 }

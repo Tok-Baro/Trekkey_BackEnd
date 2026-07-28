@@ -136,6 +136,22 @@ class ContestControllerTest {
     }
 
     @Test
+    @DisplayName("조회 수 제외 옵션은 미리보기 상세 서비스를 사용한다")
+    void getContestDetail_withoutTrackingUsesPreviewQuery() throws Exception {
+        String publicId = "f04739b5-bb66-4c3f-bf91-31b8712011be";
+        given(contestService.getContestDetailWithoutViewIncrement(10L, publicId))
+                .willReturn(detailResponse());
+
+        mockMvc.perform(get("/api/contests/{publicId}", publicId)
+                        .param("trackView", "false"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.publicId").value(publicId));
+
+        verify(contestService)
+                .getContestDetailWithoutViewIncrement(10L, publicId);
+    }
+
+    @Test
     @DisplayName("좋아요를 토글하고 변경된 상태와 개수를 반환한다")
     void toggleLike_returnsChangedLikeState() throws Exception {
         String publicId = "f04739b5-bb66-4c3f-bf91-31b8712011be";

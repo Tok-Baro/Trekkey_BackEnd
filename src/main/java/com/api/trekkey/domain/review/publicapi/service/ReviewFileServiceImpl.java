@@ -1,7 +1,6 @@
 package com.api.trekkey.domain.review.publicapi.service;
 
 import com.api.trekkey.domain.review.entity.ContestJudge;
-import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.support.ReviewLinkAuthenticator;
@@ -19,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
+@Transactional
 public class ReviewFileServiceImpl implements ReviewFileService {
 
     private final ReviewLinkAuthenticator reviewLinkAuthenticator;
@@ -29,31 +28,49 @@ public class ReviewFileServiceImpl implements ReviewFileService {
     private final Clock clock;
 
     @Override
+    public void validateFileAccess(
+            Long fileId,
+            ReviewAccessReq req
+    ) {
+        findAccessibleFile(fileId, req);
+    }
+
+    @Override
     public FileDownload downloadFile(
             Long fileId,
             ReviewAccessReq req
     ) {
-        String rawToken = req == null ? null : req.token();
-        ContestJudge judge = reviewLinkAuthenticator.authenticate(
-                rawToken,
-                LocalDateTime.now(clock));
-        SubmissionFile file = submissionFileRepository.findById(fileId)
-                .orElseThrow(this::assignmentNotFound);
-
-        boolean assigned = reviewAssignmentRepository
-                .existsByContestJudgeIdAndReviewRoundEntrySubmissionIdAndStatusNot(
-                        judge.getId(),
-                        file.getSubmission().getId(),
-                        ReviewAssignmentStatus.CANCELED);
-        if (!assigned) {
-            throw assignmentNotFound();
-        }
-
+        SubmissionFile file = findAccessibleFile(fileId, req);
         return new FileDownload(
                 file.getOriginalName(),
                 file.getContentType(),
                 file.getSizeBytes(),
                 fileStoragePort.open(file.getStorageKey()));
+    }
+
+    private SubmissionFile findAccessibleFile(
+            Long fileId,
+            ReviewAccessReq req
+    ) {
+        LocalDateTime now = LocalDateTime.now(clock);
+        String rawToken = req == null ? null : req.token();
+        ContestJudge judge = reviewLinkAuthenticator.authenticate(
+                rawToken,
+                now);
+        SubmissionFile file = submissionFileRepository.findById(fileId)
+                .orElseThrow(this::assignmentNotFound);
+
+        boolean assigned = reviewAssignmentRepository
+                .findAllWithRoundByJudgeIdAndSubmissionId(
+                        judge.getId(),
+                        file.getSubmission().getId())
+                .stream()
+                .anyMatch(assignment ->
+                        assignment.isVisibleToJudgeAt(now));
+        if (!assigned) {
+            throw assignmentNotFound();
+        }
+        return file;
     }
 
     private CustomException assignmentNotFound() {

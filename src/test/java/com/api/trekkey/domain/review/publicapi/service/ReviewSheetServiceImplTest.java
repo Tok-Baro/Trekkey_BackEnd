@@ -24,10 +24,14 @@ import com.api.trekkey.domain.review.support.ReviewLinkAuthenticator;
 import com.api.trekkey.domain.review.publicapi.web.dto.request.ReviewAccessReq;
 import com.api.trekkey.domain.review.publicapi.web.dto.response.ReviewSheetAssignmentRes;
 import com.api.trekkey.domain.review.publicapi.web.dto.response.ReviewSheetCriterionRes;
+import com.api.trekkey.domain.review.publicapi.web.dto.response.ReviewSheetFileRes;
 import com.api.trekkey.domain.review.publicapi.web.dto.response.ReviewSheetRes;
 import com.api.trekkey.domain.review.publicapi.web.dto.response.ReviewSheetRoundRes;
 import com.api.trekkey.domain.submission.entity.Submission;
+import com.api.trekkey.domain.submission.entity.SubmissionFile;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
+import com.api.trekkey.domain.submission.repository.SubmissionFileRepository;
+import com.api.trekkey.domain.team.entity.Team;
 import java.lang.reflect.RecordComponent;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -61,6 +65,9 @@ class ReviewSheetServiceImplTest {
     @Mock
     private ReviewCriterionRepository reviewCriterionRepository;
 
+    @Mock
+    private SubmissionFileRepository submissionFileRepository;
+
     private ReviewSheetServiceImpl service;
 
     @BeforeEach
@@ -73,6 +80,7 @@ class ReviewSheetServiceImplTest {
                 reviewLinkAuthenticator,
                 reviewAssignmentRepository,
                 reviewCriterionRepository,
+                submissionFileRepository,
                 clock
         );
     }
@@ -381,6 +389,55 @@ class ReviewSheetServiceImplTest {
     }
 
     @Test
+    @DisplayName("평가표에는 해당 배정 제출물의 다운로드 가능한 파일 정보만 포함한다")
+    void getReviewSheet_includesAssignedSubmissionFiles() {
+        Contest contest = contest(100L, ContestStatus.PREPARING);
+        ContestJudge judge = judge(200L, contest, "김심사");
+        ReviewRound round = openRound(300L, contest, 1);
+        ReviewAssignment assignment =
+                assignment(401L, judge, round, "submission-a");
+        Submission submission = assignment
+                .getReviewRoundEntry()
+                .getSubmission();
+        SubmissionFile file = SubmissionFile.builder()
+                .id(600L)
+                .submission(submission)
+                .originalName("작품.pdf")
+                .contentType("application/pdf")
+                .sizeBytes(1024L)
+                .storageKey("submissions/a/work.pdf")
+                .sha256("a".repeat(64))
+                .build();
+        given(reviewLinkAuthenticator.authenticate(RAW_TOKEN_A, NOW))
+                .willReturn(judge);
+        given(reviewAssignmentRepository.findAllWithDetailsByJudgeId(200L))
+                .willReturn(List.of(assignment));
+        given(reviewCriterionRepository
+                .findAllByReviewRoundIdInOrderBySortOrderAsc(List.of(300L)))
+                .willReturn(List.of());
+        given(submissionFileRepository.findAllBySubmissionIdIn(
+                List.of(submission.getId())))
+                .willReturn(List.of(file));
+
+        ReviewSheetRes response =
+                service.getReviewSheet(new ReviewAccessReq(RAW_TOKEN_A));
+
+        assertThat(response.rounds().getFirst()
+                .assignments().getFirst().files())
+                .extracting(
+                        ReviewSheetFileRes::fileId,
+                        ReviewSheetFileRes::originalName,
+                        ReviewSheetFileRes::contentType,
+                        ReviewSheetFileRes::sizeBytes)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(
+                        600L,
+                        "작품.pdf",
+                        "application/pdf",
+                        1024L
+                ));
+    }
+
+    @Test
     @DisplayName("심사위원 평가표 응답 모델은 팀·사용자·토큰과 공식 결과를 노출하지 않는다")
     void getReviewSheet_responseModelDoesNotExposeSensitiveFields() {
         Contest contest = contest(100L, ContestStatus.PREPARING);
@@ -532,11 +589,17 @@ class ReviewSheetServiceImplTest {
             ReviewRound round,
             String submissionPublicId
     ) {
+        Team team = Team.builder()
+                .id(id + 2000)
+                .contest(round.getContest())
+                .build();
         Submission submission = Submission.builder()
                 .publicId(submissionPublicId)
+                .team(team)
                 .title(submissionPublicId + " 제목")
                 .status(SubmissionStatus.SUBMITTED)
                 .build();
+        ReflectionTestUtils.setField(submission, "id", id + 1000);
         ReviewRoundEntry entry = ReviewRoundEntry.builder()
                 .reviewRound(round)
                 .submission(submission)

@@ -13,7 +13,6 @@ import static org.mockito.Mockito.verify;
 
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
-import com.api.trekkey.domain.contest.entity.StageStatus;
 import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
 import com.api.trekkey.domain.submission.entity.Submission;
@@ -212,7 +211,7 @@ class SubmissionServiceImplTest {
     @DisplayName("제출 단계가 열려 있지 않으면 제출할 수 없다")
     void submit_throwsWhenStageNotOpen() {
         ContestStage closedStage = mock(ContestStage.class);
-        given(closedStage.getStatus()).willReturn(StageStatus.COMPLETED);
+        given(closedStage.isOpenAt(any(LocalDateTime.class))).willReturn(false);
         given(contestStageRepository
                 .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
                         200L, StageType.SUBMISSION))
@@ -284,8 +283,7 @@ class SubmissionServiceImplTest {
     private void givenSubmissionStageOpen() {
         ContestStage stage = mock(ContestStage.class);
         lenient().when(stage.getStageType()).thenReturn(StageType.SUBMISSION);
-        lenient().when(stage.getStatus()).thenReturn(StageStatus.OPEN);
-        lenient().when(stage.getEndsAt()).thenReturn(LocalDateTime.now().plusDays(7));
+        lenient().when(stage.isOpenAt(any(LocalDateTime.class))).thenReturn(true);
         lenient().when(contestStageRepository
                         .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
                                 200L, StageType.SUBMISSION))

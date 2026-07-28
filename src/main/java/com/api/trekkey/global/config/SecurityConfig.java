@@ -74,6 +74,10 @@ public class SecurityConfig {
                         ).permitAll()
                         .requestMatchers(
                                 HttpMethod.POST,
+                                "/api/review/files/*/download/check"
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.POST,
                                 "/api/review/files/*/download"
                         ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/contests").hasRole("PARTICIPANT")

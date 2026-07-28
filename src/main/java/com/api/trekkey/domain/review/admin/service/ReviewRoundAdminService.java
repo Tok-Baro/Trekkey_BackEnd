@@ -1,6 +1,7 @@
 package com.api.trekkey.domain.review.admin.service;
 
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundSaveReq;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundDeadlineExtendReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewRoundRes;
 import java.util.List;
 
@@ -34,5 +35,12 @@ public interface ReviewRoundAdminService {
             Long adminUserId,
             String contestPublicId,
             Long roundId
+    );
+
+    ReviewRoundRes extendDeadline(
+            Long adminUserId,
+            String contestPublicId,
+            Long roundId,
+            ReviewRoundDeadlineExtendReq req
     );
 }

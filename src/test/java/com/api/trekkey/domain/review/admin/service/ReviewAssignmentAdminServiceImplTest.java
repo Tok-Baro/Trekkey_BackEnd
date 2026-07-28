@@ -30,6 +30,7 @@ import com.api.trekkey.domain.review.repository.ContestJudgeRepository;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewAssignmentDueAtReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewAssignmentPrepareReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewAssignmentRes;
 import com.api.trekkey.domain.submission.entity.Submission;
@@ -256,11 +257,6 @@ class ReviewAssignmentAdminServiceImplTest {
                 List.of(first, second),
                 List.of(assigned, completed)
         );
-        given(reviewAssignmentRepository
-                .findAllWithDetailsByJudgeIdAndReviewRoundId(
-                        JUDGE_ID,
-                        REVIEW_ROUND_ID
-                )).willReturn(List.of(assigned, completed));
 
         List<ReviewAssignmentRes> response = service.prepareAssignments(
                 ADMIN_ID,
@@ -416,6 +412,40 @@ class ReviewAssignmentAdminServiceImplTest {
     }
 
     @Test
+    @DisplayName("심사 없는 수동 라운드에는 심사위원을 배정할 수 없다")
+    void prepareAssignments_rejectsManualRoundWithoutReview() {
+        ReviewRound round = reviewRound(ReviewRoundStatus.PREPARING);
+        ReflectionTestUtils.setField(
+                round,
+                "targetType",
+                ReviewRoundTargetType.MANUAL);
+        ReflectionTestUtils.setField(
+                round,
+                "decisionRule",
+                ReviewRoundDecisionRule.MANUAL);
+        ReflectionTestUtils.setField(round, "selectCount", null);
+        ReviewRoundEntry entry =
+                entry(401L, round, ReviewRoundEntryStatus.ELIGIBLE);
+        stubLockedContext(round, List.of(entry), List.of());
+
+        assertCode(
+                () -> service.prepareAssignments(
+                        ADMIN_ID,
+                        CONTEST_PUBLIC_ID,
+                        REVIEW_ROUND_ID,
+                        JUDGE_ID,
+                        new ReviewAssignmentPrepareReq(ROUND_ENDS_AT)
+                ),
+                ReviewErrorResponseCode
+                        .REVIEW_ASSIGNMENT_PREPARATION_NOT_ALLOWED
+        );
+
+        verify(reviewAssignmentRepository, never())
+                .saveAllAndFlush(anyList());
+        verifyNoInteractions(adminAuditLogger);
+    }
+
+    @Test
     @DisplayName("배정 가능 여부는 기존 대회 상태가 아니라 리뷰 라운드 상태로 판단한다")
     void prepareAssignments_doesNotDependOnLegacyContestStatus() {
         ReflectionTestUtils.setField(
@@ -434,11 +464,6 @@ class ReviewAssignmentAdminServiceImplTest {
                 ROUND_ENDS_AT
         );
         stubLockedContext(round, List.of(entry), List.of(existing));
-        given(reviewAssignmentRepository
-                .findAllWithDetailsByJudgeIdAndReviewRoundId(
-                        JUDGE_ID,
-                        REVIEW_ROUND_ID
-                )).willReturn(List.of(existing));
 
         List<ReviewAssignmentRes> response = service.prepareAssignments(
                 ADMIN_ID,
@@ -672,6 +697,250 @@ class ReviewAssignmentAdminServiceImplTest {
                         JUDGE_ID,
                         REVIEW_ROUND_ID
                 );
+    }
+
+    @Test
+    @DisplayName("ASSIGNED 배정을 취소하고 잠금 순서와 감사 로그를 지킨다")
+    void cancelAssignment_cancelsAssignedInLockOrder() {
+        ReviewRound round = reviewRound(ReviewRoundStatus.OPEN);
+        ReviewRoundEntry entry =
+                entry(401L, round, ReviewRoundEntryStatus.IN_REVIEW);
+        ReviewAssignment assignment = assignment(
+                501L,
+                entry,
+                ReviewAssignmentStatus.ASSIGNED,
+                NOW.minusHours(1),
+                ROUND_ENDS_AT
+        );
+        stubManagementContext(round, assignment);
+
+        ReviewAssignmentRes response = service.cancelAssignment(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                JUDGE_ID,
+                501L
+        );
+
+        assertThat(response.status())
+                .isEqualTo(ReviewAssignmentStatus.CANCELED);
+        InOrder lockOrder = inOrder(
+                contestJudgeRepository,
+                reviewRoundRepository,
+                reviewAssignmentRepository
+        );
+        lockOrder.verify(contestJudgeRepository)
+                .findByIdAndContestIdForUpdate(JUDGE_ID, CONTEST_ID);
+        lockOrder.verify(reviewRoundRepository)
+                .findByIdForShare(REVIEW_ROUND_ID);
+        lockOrder.verify(reviewAssignmentRepository)
+                .findByIdAndJudgeIdAndReviewRoundIdForUpdate(
+                        501L,
+                        JUDGE_ID,
+                        REVIEW_ROUND_ID
+                );
+        lockOrder.verify(reviewAssignmentRepository).flush();
+        verify(adminAuditLogger).log(
+                ADMIN_ID,
+                ORGANIZATION_ID,
+                AuditAction.REVIEW_ASSIGNMENT_CANCEL,
+                "REVIEW_ASSIGNMENT",
+                501L,
+                "judgeId=300, reviewRoundId=200"
+        );
+    }
+
+    @Test
+    @DisplayName("COMPLETED 배정은 취소할 수 없다")
+    void cancelAssignment_rejectsCompletedAssignment() {
+        ReviewRound round = reviewRound(ReviewRoundStatus.OPEN);
+        ReviewAssignment completed = assignment(
+                501L,
+                entry(401L, round, ReviewRoundEntryStatus.IN_REVIEW),
+                ReviewAssignmentStatus.COMPLETED,
+                NOW.minusHours(2),
+                ROUND_ENDS_AT
+        );
+        stubManagementContext(round, completed);
+
+        assertCode(
+                () -> service.cancelAssignment(
+                        ADMIN_ID,
+                        CONTEST_PUBLIC_ID,
+                        REVIEW_ROUND_ID,
+                        JUDGE_ID,
+                        501L
+                ),
+                ReviewErrorResponseCode
+                        .REVIEW_ASSIGNMENT_STATUS_TRANSITION_INVALID
+        );
+
+        verify(reviewAssignmentRepository, never()).flush();
+        verifyNoInteractions(adminAuditLogger);
+    }
+
+    @Test
+    @DisplayName("CANCELED 배정을 새 마감 시각으로 재배정한다")
+    void reassignAssignment_reactivatesCanceledAssignment() {
+        ReviewRound round = reviewRound(ReviewRoundStatus.OPEN);
+        ReviewAssignment canceled = assignment(
+                501L,
+                entry(401L, round, ReviewRoundEntryStatus.IN_REVIEW),
+                ReviewAssignmentStatus.CANCELED,
+                NOW.minusHours(2),
+                NOW.minusHours(1)
+        );
+        LocalDateTime dueAt = NOW.plusHours(5);
+        stubManagementContext(round, canceled);
+
+        ReviewAssignmentRes response = service.reassignAssignment(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                JUDGE_ID,
+                501L,
+                new ReviewAssignmentDueAtReq(dueAt)
+        );
+
+        assertThat(response.status())
+                .isEqualTo(ReviewAssignmentStatus.ASSIGNED);
+        assertThat(response.assignedAt()).isEqualTo(NOW);
+        assertThat(response.dueAt()).isEqualTo(dueAt);
+        verify(reviewAssignmentRepository).flush();
+        verify(adminAuditLogger).log(
+                ADMIN_ID,
+                ORGANIZATION_ID,
+                AuditAction.REVIEW_ASSIGNMENT_REASSIGN,
+                "REVIEW_ASSIGNMENT",
+                501L,
+                "judgeId=300, reviewRoundId=200, dueAt=" + dueAt
+        );
+    }
+
+    @Test
+    @DisplayName("ASSIGNED 배정의 마감 시각을 변경한다")
+    void updateDueAt_updatesAssignedDeadline() {
+        ReviewRound round = reviewRound(ReviewRoundStatus.OPEN);
+        ReviewAssignment assigned = assignment(
+                501L,
+                entry(401L, round, ReviewRoundEntryStatus.IN_REVIEW),
+                ReviewAssignmentStatus.ASSIGNED,
+                NOW.minusHours(1),
+                NOW.plusHours(1)
+        );
+        LocalDateTime dueAt = NOW.plusHours(6);
+        stubManagementContext(round, assigned);
+
+        ReviewAssignmentRes response = service.updateDueAt(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                JUDGE_ID,
+                501L,
+                new ReviewAssignmentDueAtReq(dueAt)
+        );
+
+        assertThat(response.dueAt()).isEqualTo(dueAt);
+        assertThat(response.status())
+                .isEqualTo(ReviewAssignmentStatus.ASSIGNED);
+        verify(reviewAssignmentRepository).flush();
+        verify(adminAuditLogger).log(
+                ADMIN_ID,
+                ORGANIZATION_ID,
+                AuditAction.REVIEW_ASSIGNMENT_DUE_AT_UPDATE,
+                "REVIEW_ASSIGNMENT",
+                501L,
+                "judgeId=300, reviewRoundId=200, dueAt=" + dueAt
+        );
+    }
+
+    @Test
+    @DisplayName("라운드 종료 이후로 배정 마감을 변경할 수 없다")
+    void updateDueAt_rejectsDeadlineAfterRoundEnd() {
+        ReviewRound round = reviewRound(ReviewRoundStatus.OPEN);
+        ReviewAssignment assigned = assignment(
+                501L,
+                entry(401L, round, ReviewRoundEntryStatus.IN_REVIEW),
+                ReviewAssignmentStatus.ASSIGNED,
+                NOW.minusHours(1),
+                NOW.plusHours(1)
+        );
+        stubManagementContext(round, assigned);
+
+        assertCode(
+                () -> service.updateDueAt(
+                        ADMIN_ID,
+                        CONTEST_PUBLIC_ID,
+                        REVIEW_ROUND_ID,
+                        JUDGE_ID,
+                        501L,
+                        new ReviewAssignmentDueAtReq(
+                                ROUND_ENDS_AT.plusNanos(1))
+                ),
+                ReviewErrorResponseCode.REVIEW_ASSIGNMENT_DUE_AT_INVALID
+        );
+
+        assertThat(assigned.getDueAt()).isEqualTo(NOW.plusHours(1));
+        verify(reviewAssignmentRepository, never()).flush();
+        verifyNoInteractions(adminAuditLogger);
+    }
+
+    @Test
+    @DisplayName("FINALIZED 라운드의 배정은 변경할 수 없다")
+    void cancelAssignment_rejectsFinalizedRound() {
+        ReviewRound round = reviewRound(ReviewRoundStatus.FINALIZED);
+        ReviewAssignment assigned = assignment(
+                501L,
+                entry(401L, round, ReviewRoundEntryStatus.SELECTED),
+                ReviewAssignmentStatus.ASSIGNED,
+                NOW.minusHours(1),
+                ROUND_ENDS_AT
+        );
+        stubAdminContestAndRoundOrganization();
+        given(contestJudgeRepository
+                .findByIdAndContestIdForUpdate(JUDGE_ID, CONTEST_ID))
+                .willReturn(Optional.of(judge));
+        given(reviewRoundRepository.findByIdForShare(REVIEW_ROUND_ID))
+                .willReturn(Optional.of(round));
+
+        assertCode(
+                () -> service.cancelAssignment(
+                        ADMIN_ID,
+                        CONTEST_PUBLIC_ID,
+                        REVIEW_ROUND_ID,
+                        JUDGE_ID,
+                        501L
+                ),
+                ReviewErrorResponseCode
+                        .REVIEW_ASSIGNMENT_MANAGEMENT_NOT_ALLOWED
+        );
+
+        verify(reviewAssignmentRepository, never())
+                .findByIdAndJudgeIdAndReviewRoundIdForUpdate(
+                        501L,
+                        JUDGE_ID,
+                        REVIEW_ROUND_ID
+                );
+        assertThat(assigned.getStatus())
+                .isEqualTo(ReviewAssignmentStatus.ASSIGNED);
+    }
+
+    private void stubManagementContext(
+            ReviewRound round,
+            ReviewAssignment assignment
+    ) {
+        stubAdminContestAndRoundOrganization();
+        given(contestJudgeRepository
+                .findByIdAndContestIdForUpdate(JUDGE_ID, CONTEST_ID))
+                .willReturn(Optional.of(judge));
+        given(reviewRoundRepository.findByIdForShare(REVIEW_ROUND_ID))
+                .willReturn(Optional.of(round));
+        given(reviewAssignmentRepository
+                .findByIdAndJudgeIdAndReviewRoundIdForUpdate(
+                        assignment.getId(),
+                        JUDGE_ID,
+                        REVIEW_ROUND_ID
+                )).willReturn(Optional.of(assignment));
     }
 
     private void stubLockedContext(

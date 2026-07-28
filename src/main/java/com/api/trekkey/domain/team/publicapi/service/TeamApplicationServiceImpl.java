@@ -156,7 +156,10 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
     @Override
     @Transactional
     public void updateApplication(Long userId, String contestPublicId, TeamApplicationUpdateReq request) {
-        Team team = teamRepository.findByContestPublicIdAndLeaderUserId(contestPublicId, userId)
+        Team team = teamRepository
+                .findByContestPublicIdAndLeaderUserIdForUpdate(
+                        contestPublicId,
+                        userId)
                 .orElseThrow(() -> new CustomException(TeamErrorResponseCode.TEAM_NOT_FOUND));
 
         if (team.isFinalized()) {

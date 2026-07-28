@@ -14,6 +14,8 @@ import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
 import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
+import com.api.trekkey.domain.user.entity.UserRole;
+import com.api.trekkey.domain.user.entity.UserStatus;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
@@ -74,6 +76,11 @@ public class TeamAdminServiceImpl implements TeamAdminService {
         Team team = findTeamInAdminOrganization(teamPublicId, admin);
 
         TeamStatus previousStatus = team.getStatus();
+        if (team.isFinalized()
+                && previousStatus != request.status()) {
+            throw new CustomException(
+                    TeamErrorResponseCode.TEAM_ALREADY_FINALIZED);
+        }
         team.changeStatus(request.status());
 
         adminAuditLogger.log(admin.getId(), admin.getOrganization().getId(), AuditAction.TEAM_STATUS_CHANGE,
@@ -110,13 +117,20 @@ public class TeamAdminServiceImpl implements TeamAdminService {
     //======= 헬퍼 메서드 ==========
 
     private User findAdmin(Long adminUserId) {
-        return userRepository.findById(adminUserId)
+        User user = userRepository.findById(adminUserId)
                 .orElseThrow(() -> new CustomException(UserErrorResponseCode.USER_NOT_FOUND));
+        if ((user.getRole() != UserRole.ADMIN
+                && user.getRole() != UserRole.ROOT_ADMIN)
+                || user.getStatus() != UserStatus.ACTIVE) {
+            throw new CustomException(
+                    UserErrorResponseCode.USER_INVALID_TOKEN);
+        }
+        return user;
     }
 
     // 팀 조회 + 관리자 소속 조직 검증 — 타 학교 신청은 존재 여부를 노출하지 않고 404로 응답한다
     private Team findTeamInAdminOrganization(String teamPublicId, User admin) {
-        Team team = teamRepository.findByPublicId(teamPublicId)
+        Team team = teamRepository.findByPublicIdForUpdate(teamPublicId)
                 .orElseThrow(() -> new CustomException(TeamErrorResponseCode.TEAM_NOT_FOUND));
 
         if (!team.getContest().getOrganization().getId().equals(admin.getOrganization().getId())) {

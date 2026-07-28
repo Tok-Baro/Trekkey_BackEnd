@@ -93,8 +93,53 @@ public class ReviewAssignment extends BaseEntity {
         return true;
     }
 
+    public boolean updateDueAt(LocalDateTime dueAt) {
+        if (dueAt == null
+                || status != ReviewAssignmentStatus.ASSIGNED) {
+            return false;
+        }
+        this.dueAt = dueAt;
+        return true;
+    }
+
     public boolean isAvailableAt(LocalDateTime now) {
         return status == ReviewAssignmentStatus.ASSIGNED
                 && (dueAt == null || now.isBefore(dueAt));
+    }
+
+    public boolean isVisibleToJudgeAt(LocalDateTime now) {
+        if (now == null
+                || !hasConsistentContestScope()
+                || reviewRoundEntry == null
+                || reviewRoundEntry.getReviewRound() == null
+                || !reviewRoundEntry.getReviewRound().isOpenAt(now)) {
+            return false;
+        }
+        return status == ReviewAssignmentStatus.COMPLETED
+                || isAvailableAt(now);
+    }
+
+    private boolean hasConsistentContestScope() {
+        if (contestJudge == null
+                || contestJudge.getContest() == null
+                || contestJudge.getContest().getId() == null
+                || reviewRoundEntry == null
+                || reviewRoundEntry.getReviewRound() == null
+                || reviewRoundEntry.getReviewRound().getContest() == null
+                || reviewRoundEntry.getSubmission() == null
+                || reviewRoundEntry.getSubmission().getTeam() == null
+                || reviewRoundEntry.getSubmission()
+                .getTeam()
+                .getContest() == null) {
+            return false;
+        }
+        Long contestId = contestJudge.getContest().getId();
+        return contestId.equals(
+                reviewRoundEntry.getReviewRound().getContest().getId())
+                && contestId.equals(
+                reviewRoundEntry.getSubmission()
+                        .getTeam()
+                        .getContest()
+                        .getId());
     }
 }

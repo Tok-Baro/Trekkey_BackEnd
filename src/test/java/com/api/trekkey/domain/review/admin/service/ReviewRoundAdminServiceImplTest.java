@@ -11,9 +11,14 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
 import com.api.trekkey.domain.contest.entity.Contest;
+import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
+import com.api.trekkey.domain.contest.entity.StageStatus;
+import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
+import com.api.trekkey.domain.contest.repository.ContestStageRepository;
+import com.api.trekkey.domain.credential.integration.WorkCredentialIssuer;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.review.entity.ReviewAssignment;
 import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
@@ -29,6 +34,7 @@ import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundDeadlineExtendReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundCriterionReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundSaveReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewRoundRes;
@@ -55,8 +61,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
@@ -74,6 +78,8 @@ class ReviewRoundAdminServiceImplTest {
     private static final LocalDateTime NOW =
             LocalDateTime.of(2026, 7, 27, 12, 0);
     private static final ZoneId ZONE_ID = ZoneId.of("Asia/Seoul");
+    private static final LocalDateTime UTC_NOW =
+            LocalDateTime.of(2026, 7, 27, 3, 0);
     private static final LocalDateTime STARTS_AT =
             LocalDateTime.of(2026, 8, 1, 9, 0);
     private static final LocalDateTime ENDS_AT =
@@ -84,6 +90,9 @@ class ReviewRoundAdminServiceImplTest {
 
     @Mock
     private ContestRepository contestRepository;
+
+    @Mock
+    private ContestStageRepository contestStageRepository;
 
     @Mock
     private ReviewRoundRepository reviewRoundRepository;
@@ -104,6 +113,9 @@ class ReviewRoundAdminServiceImplTest {
     private SubmissionRepository submissionRepository;
 
     @Mock
+    private WorkCredentialIssuer workCredentialIssuer;
+
+    @Mock
     private AdminAuditLogger adminAuditLogger;
 
     @Mock
@@ -119,12 +131,14 @@ class ReviewRoundAdminServiceImplTest {
         service = new ReviewRoundAdminServiceImpl(
                 userRepository,
                 contestRepository,
+                contestStageRepository,
                 reviewRoundRepository,
                 reviewCriterionRepository,
                 reviewRoundEntryRepository,
                 reviewAssignmentRepository,
                 teamRepository,
                 submissionRepository,
+                workCredentialIssuer,
                 adminAuditLogger,
                 entityManager,
                 Clock.fixed(NOW.atZone(ZONE_ID).toInstant(), ZONE_ID)
@@ -217,16 +231,50 @@ class ReviewRoundAdminServiceImplTest {
         );
     }
 
-    @ParameterizedTest(name = "{0} 대상 선정 방식은 아직 생성할 수 없다")
-    @EnumSource(
-            value = ReviewRoundTargetType.class,
-            names = {"PREVIOUS_SELECTED", "MANUAL"}
-    )
-    @DisplayName("구현되지 않은 대상 선정 방식은 라운드 생성 단계에서 거부한다")
-    void createRound_rejectsUnsupportedTargetType(
-            ReviewRoundTargetType targetType
-    ) {
-        ReviewRoundSaveReq unsupported = new ReviewRoundSaveReq(
+    @Test
+    @DisplayName("첫 심사 라운드는 제출 마감보다 먼저 시작하도록 설정할 수 없다")
+    void createRound_rejectsStartBeforeSubmissionDeadline() {
+        ContestStage submissionStage = ContestStage.builder()
+                .contest(contest)
+                .name("작품 제출")
+                .stageType(StageType.SUBMISSION)
+                .sequenceNo(1)
+                .status(StageStatus.OPEN)
+                .endsAt(STARTS_AT.plusHours(1))
+                .build();
+        given(reviewRoundRepository
+                .findAllForUpdateByContestIdOrderByRoundNoAsc(CONTEST_ID))
+                .willReturn(List.of());
+        given(contestStageRepository
+                .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
+                        CONTEST_ID,
+                        StageType.SUBMISSION))
+                .willReturn(List.of(submissionStage));
+
+        assertThatThrownBy(() -> service.createRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                request()
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(
+                        ReviewErrorResponseCode
+                                .REVIEW_ROUND_SUBMISSION_WINDOW_INVALID);
+
+        verify(reviewRoundRepository,
+                org.mockito.Mockito.never())
+                .saveAndFlush(any(ReviewRound.class));
+    }
+
+    @Test
+    @DisplayName("수동 선정 방식으로 첫 라운드를 생성할 수 있다")
+    void createRound_supportsManualTargetType() {
+        ReviewRoundTargetType targetType =
+                ReviewRoundTargetType.MANUAL;
+        ReviewRoundSaveReq req = new ReviewRoundSaveReq(
                 1,
                 "예선 심사",
                 STARTS_AT,
@@ -243,19 +291,236 @@ class ReviewRoundAdminServiceImplTest {
                         1
                 ))
         );
+        given(reviewRoundRepository
+                .findAllForUpdateByContestIdOrderByRoundNoAsc(CONTEST_ID))
+                .willReturn(List.of());
+        given(reviewRoundRepository.saveAndFlush(any(ReviewRound.class)))
+                .willAnswer(invocation -> {
+                    ReviewRound round = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(round, "id", ROUND_ID);
+                    return round;
+                });
+
+        ReviewRoundRes response = service.createRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                req
+        );
+
+        assertThat(response.targetType()).isEqualTo(targetType);
+    }
+
+    @Test
+    @DisplayName("심사 없는 수동 라운드는 평가 기준 없이 생성할 수 있다")
+    void createRound_supportsManualDecisionWithoutCriteria() {
+        ReviewRoundSaveReq req = new ReviewRoundSaveReq(
+                1,
+                "수동 선정",
+                STARTS_AT,
+                ENDS_AT,
+                ReviewRoundTargetType.MANUAL,
+                ReviewRoundDecisionRule.MANUAL,
+                null,
+                null,
+                List.of()
+        );
+        given(reviewRoundRepository
+                .findAllForUpdateByContestIdOrderByRoundNoAsc(CONTEST_ID))
+                .willReturn(List.of());
+        given(reviewRoundRepository.saveAndFlush(any(ReviewRound.class)))
+                .willAnswer(invocation -> {
+                    ReviewRound round = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(round, "id", ROUND_ID);
+                    return round;
+                });
+
+        ReviewRoundRes response = service.createRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                req
+        );
+
+        assertThat(response.targetType())
+                .isEqualTo(ReviewRoundTargetType.MANUAL);
+        assertThat(response.decisionRule())
+                .isEqualTo(ReviewRoundDecisionRule.MANUAL);
+        assertThat(response.criteria()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("첫 라운드는 이전 라운드 선정작을 대상으로 설정할 수 없다")
+    void createRound_rejectsPreviousSelectedForFirstRound() {
+        assertThatThrownBy(() -> service.createRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                request(ReviewRoundTargetType.PREVIOUS_SELECTED)
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(
+                        ReviewErrorResponseCode
+                                .REVIEW_ROUND_CONFIGURATION_INVALID);
+
+        verifyNoInteractions(reviewRoundRepository);
+    }
+
+    @Test
+    @DisplayName("첫 라운드는 반드시 1번으로 생성해야 한다")
+    void createRound_rejectsSequenceGap() {
+        ReviewRoundSaveReq req = new ReviewRoundSaveReq(
+                2,
+                "예선 심사",
+                STARTS_AT,
+                ENDS_AT,
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundDecisionRule.TOP_N,
+                10,
+                null,
+                List.of(new ReviewRoundCriterionReq(
+                        null,
+                        "creativity",
+                        "창의성",
+                        50,
+                        1
+                ))
+        );
+        given(reviewRoundRepository
+                .findAllForUpdateByContestIdOrderByRoundNoAsc(CONTEST_ID))
+                .willReturn(List.of());
 
         assertThatThrownBy(() -> service.createRound(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                unsupported
+                req
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(
+                        ReviewErrorResponseCode
+                                .REVIEW_ROUND_SEQUENCE_INVALID);
+    }
+
+    @Test
+    @DisplayName("수상이 확정된 대회에는 새 심사 라운드를 생성할 수 없다")
+    void createRound_rejectsAwardedContest() {
+        ReflectionTestUtils.setField(contest, "status", ContestStatus.AWARDED);
+
+        assertThatThrownBy(() -> service.createRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                request()
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting(exception ->
                         ((CustomException) exception)
                                 .getBaseResponseCode())
                 .isEqualTo(ReviewErrorResponseCode
-                        .REVIEW_ENTRY_TARGET_TYPE_UNSUPPORTED);
+                        .REVIEW_ROUND_CONFIGURATION_LOCKED);
 
+        verify(entityManager).refresh(
+                contest,
+                LockModeType.PESSIMISTIC_WRITE);
+        verifyNoInteractions(reviewRoundRepository);
+    }
+
+    @Test
+    @DisplayName("준비 중인 첫 라운드는 수동 대상 선정 방식으로 변경할 수 있다")
+    void updateRound_supportsManualTargetType() {
+        ReviewRoundTargetType targetType =
+                ReviewRoundTargetType.MANUAL;
+        ReviewRound round = round(ReviewRoundStatus.PREPARING);
+        ReviewCriterion criterion = criterion(round);
+        stubRoundOrganization();
+        given(reviewRoundRepository
+                .findAllForUpdateByContestIdOrderByRoundNoAsc(CONTEST_ID))
+                .willReturn(List.of(round));
+        given(reviewCriterionRepository
+                .findAllForUpdateByReviewRoundIdInOrderBySortOrderAsc(
+                        List.of(ROUND_ID)))
+                .willReturn(List.of(criterion));
+        given(reviewRoundEntryRepository
+                .findAllForShareByReviewRoundIdOrderByIdAsc(ROUND_ID))
+                .willReturn(List.of());
+
+        ReviewRoundRes response = service.updateRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID,
+                request(targetType)
+        );
+
+        assertThat(response.targetType()).isEqualTo(targetType);
+        assertThat(round.getTargetType()).isEqualTo(targetType);
+    }
+
+    @Test
+    @DisplayName("개별 라운드 수정으로 라운드 순서를 바꿀 수 없다")
+    void updateRound_rejectsRoundNumberChange() {
+        ReviewRound round = round(ReviewRoundStatus.PREPARING);
+        stubRoundOrganization();
+        given(reviewRoundRepository
+                .findAllForUpdateByContestIdOrderByRoundNoAsc(CONTEST_ID))
+                .willReturn(List.of(round));
+        ReviewRoundSaveReq req = new ReviewRoundSaveReq(
+                2,
+                "예선 심사",
+                STARTS_AT,
+                ENDS_AT,
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundDecisionRule.TOP_N,
+                10,
+                null,
+                List.of(new ReviewRoundCriterionReq(
+                        null,
+                        "creativity",
+                        "창의성",
+                        50,
+                        1
+                ))
+        );
+
+        assertThatThrownBy(() -> service.updateRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID,
+                req
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(
+                        ReviewErrorResponseCode
+                                .REVIEW_ROUND_SEQUENCE_INVALID);
+
+        verifyNoInteractions(reviewCriterionRepository);
+    }
+
+    @Test
+    @DisplayName("수상이 확정된 대회의 심사 라운드는 수정할 수 없다")
+    void updateRound_rejectsAwardedContest() {
+        ReflectionTestUtils.setField(contest, "status", ContestStatus.AWARDED);
+
+        assertThatThrownBy(() -> service.updateRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID,
+                request()
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(ReviewErrorResponseCode
+                        .REVIEW_ROUND_CONFIGURATION_LOCKED);
+
+        verify(entityManager).refresh(
+                contest,
+                LockModeType.PESSIMISTIC_WRITE);
         verifyNoInteractions(reviewRoundRepository);
     }
 
@@ -316,8 +581,100 @@ class ReviewRoundAdminServiceImplTest {
     }
 
     @Test
+    @DisplayName("종료 시각이 지난 OPEN 라운드도 미래 시각으로 연장해 다시 진행할 수 있다")
+    void extendDeadline_extendsExpiredOpenRound() {
+        ReviewRound round = round(ReviewRoundStatus.OPEN);
+        LocalDateTime expiredEndsAt = NOW.minusMinutes(1);
+        LocalDateTime extendedEndsAt = NOW.plusDays(1);
+        ReflectionTestUtils.setField(round, "startsAt", NOW.minusDays(1));
+        ReflectionTestUtils.setField(round, "endsAt", expiredEndsAt);
+        ReviewCriterion criterion = criterion(round);
+        stubRoundOrganization();
+        given(reviewRoundRepository.findByIdForUpdate(ROUND_ID))
+                .willReturn(Optional.of(round));
+        given(reviewCriterionRepository
+                .findAllByReviewRoundIdInOrderBySortOrderAsc(
+                        List.of(ROUND_ID)))
+                .willReturn(List.of(criterion));
+
+        ReviewRoundRes response = service.extendDeadline(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID,
+                new ReviewRoundDeadlineExtendReq(extendedEndsAt)
+        );
+
+        assertThat(response.endsAt()).isEqualTo(extendedEndsAt);
+        assertThat(round.isOpenAt(NOW)).isTrue();
+        verify(reviewRoundRepository).flush();
+        verify(adminAuditLogger).log(
+                ADMIN_ID,
+                ORGANIZATION_ID,
+                AuditAction.REVIEW_ROUND_DEADLINE_EXTEND,
+                "REVIEW_ROUND",
+                ROUND_ID,
+                "endsAt=" + expiredEndsAt + "->" + extendedEndsAt
+        );
+    }
+
+    @Test
+    @DisplayName("OPEN 라운드의 종료 시각은 현재와 기존 종료 시각보다 뒤로만 연장할 수 있다")
+    void extendDeadline_rejectsNonExtension() {
+        ReviewRound round = round(ReviewRoundStatus.OPEN);
+        stubRoundOrganization();
+        given(reviewRoundRepository.findByIdForUpdate(ROUND_ID))
+                .willReturn(Optional.of(round));
+
+        assertThatThrownBy(() -> service.extendDeadline(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID,
+                new ReviewRoundDeadlineExtendReq(
+                        ENDS_AT.minusMinutes(1))
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(
+                        ReviewErrorResponseCode
+                                .REVIEW_ROUND_DEADLINE_INVALID);
+
+        assertThat(round.getEndsAt()).isEqualTo(ENDS_AT);
+        verify(reviewRoundRepository,
+                org.mockito.Mockito.never()).flush();
+    }
+
+    @Test
+    @DisplayName("준비 중이거나 확정된 라운드는 종료 시각 연장 API로 수정할 수 없다")
+    void extendDeadline_rejectsNonOpenRound() {
+        ReviewRound round = round(ReviewRoundStatus.PREPARING);
+        stubRoundOrganization();
+        given(reviewRoundRepository.findByIdForUpdate(ROUND_ID))
+                .willReturn(Optional.of(round));
+
+        assertThatThrownBy(() -> service.extendDeadline(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID,
+                new ReviewRoundDeadlineExtendReq(
+                        ENDS_AT.plusDays(1))
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(ReviewErrorResponseCode
+                        .REVIEW_ROUND_STATUS_TRANSITION_INVALID);
+    }
+
+    @Test
     @DisplayName("라운드를 열면 모든 ELIGIBLE 심사 대상을 IN_REVIEW로 전환한다")
     void openRound_opensRoundAndStartsEntries() {
+        ReflectionTestUtils.setField(
+                contest,
+                "status",
+                ContestStatus.APPLICATION_OPEN);
         ReviewRound round = round(ReviewRoundStatus.PREPARING);
         ReviewCriterion criterion = criterion(round);
         Team team = approvedTeam();
@@ -363,12 +720,17 @@ class ReviewRoundAdminServiceImplTest {
         );
 
         assertThat(response.status()).isEqualTo(ReviewRoundStatus.OPEN);
+        assertThat(contest.getStatus()).isEqualTo(ContestStatus.REVIEWING);
         assertThat(first.getStatus())
                 .isEqualTo(ReviewRoundEntryStatus.IN_REVIEW);
         assertThat(second.getStatus())
                 .isEqualTo(ReviewRoundEntryStatus.IN_REVIEW);
-        assertThat(firstSubmission.getFinalizedAt()).isEqualTo(NOW);
-        assertThat(secondSubmission.getFinalizedAt()).isEqualTo(NOW);
+        assertThat(firstSubmission.getFinalizedAt()).isEqualTo(UTC_NOW);
+        assertThat(secondSubmission.getFinalizedAt()).isEqualTo(UTC_NOW);
+        verify(workCredentialIssuer)
+                .issueForFinalizedSubmission(firstSubmission);
+        verify(workCredentialIssuer)
+                .issueForFinalizedSubmission(secondSubmission);
 
         InOrder lockOrder = inOrder(
                 reviewRoundRepository,
@@ -404,6 +766,289 @@ class ReviewRoundAdminServiceImplTest {
                 ROUND_ID,
                 "contestId=30, entryCount=2"
         );
+    }
+
+    @Test
+    @DisplayName("수동 대상·수동 판정 라운드는 평가 기준과 심사 배정 없이 시작한다")
+    void openRound_supportsManualRoundWithoutReviews() {
+        ReviewRound round = round(ReviewRoundStatus.PREPARING);
+        ReflectionTestUtils.setField(
+                round,
+                "targetType",
+                ReviewRoundTargetType.MANUAL);
+        ReflectionTestUtils.setField(
+                round,
+                "decisionRule",
+                ReviewRoundDecisionRule.MANUAL);
+        ReflectionTestUtils.setField(round, "selectCount", null);
+        Team team = approvedTeam();
+        Submission submission =
+                submittedSubmission(team, 201L, "submission-1");
+        ReviewRoundEntry entry = entry(round, submission, 101L);
+        stubRoundOrganization();
+        given(reviewRoundRepository.findByIdForUpdate(ROUND_ID))
+                .willReturn(Optional.of(round));
+        given(reviewCriterionRepository
+                .findAllForShareByReviewRoundIdOrderBySortOrderAsc(ROUND_ID))
+                .willReturn(List.of());
+        given(reviewRoundEntryRepository
+                .findAllForUpdateByReviewRoundIdOrderByIdAsc(ROUND_ID))
+                .willReturn(List.of(entry));
+        given(teamRepository
+                .findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
+                .willReturn(List.of(team));
+        given(submissionRepository
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        CONTEST_ID,
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED))
+                .willReturn(List.of(submission));
+
+        ReviewRoundRes response = service.openRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID
+        );
+
+        assertThat(response.status()).isEqualTo(ReviewRoundStatus.OPEN);
+        assertThat(response.criteria()).isEmpty();
+        assertThat(entry.getStatus())
+                .isEqualTo(ReviewRoundEntryStatus.IN_REVIEW);
+        assertThat(submission.getFinalizedAt()).isEqualTo(UTC_NOW);
+        verify(workCredentialIssuer)
+                .issueForFinalizedSubmission(submission);
+        verifyNoInteractions(reviewAssignmentRepository);
+    }
+
+    @Test
+    @DisplayName("앞선 라운드가 확정되지 않으면 다음 라운드를 시작할 수 없다")
+    void openRound_rejectsWhenPreviousRoundIsNotFinalized() {
+        ReviewRound previous = round(ReviewRoundStatus.OPEN);
+        ReflectionTestUtils.setField(previous, "id", 39L);
+        ReviewRound current = round(ReviewRoundStatus.PREPARING);
+        ReflectionTestUtils.setField(current, "roundNo", 2);
+        stubRoundOrganization();
+        given(reviewRoundRepository.findByIdForUpdate(ROUND_ID))
+                .willReturn(Optional.of(current));
+        given(reviewRoundRepository
+                .findAllForUpdateByContestIdOrderByRoundNoAsc(CONTEST_ID))
+                .willReturn(List.of(previous, current));
+
+        assertThatThrownBy(() -> service.openRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(ReviewErrorResponseCode
+                        .REVIEW_ROUND_PREVIOUS_NOT_FINALIZED);
+
+        verifyNoInteractions(reviewCriterionRepository);
+    }
+
+    @Test
+    @DisplayName("다른 라운드가 진행 중이면 새 라운드를 동시에 시작할 수 없다")
+    void openRound_rejectsWhenAnotherRoundIsOpen() {
+        ReviewRound current = round(ReviewRoundStatus.PREPARING);
+        ReviewRound later = round(ReviewRoundStatus.OPEN);
+        ReflectionTestUtils.setField(later, "id", 41L);
+        ReflectionTestUtils.setField(later, "roundNo", 2);
+        stubRoundOrganization();
+        given(reviewRoundRepository.findByIdForUpdate(ROUND_ID))
+                .willReturn(Optional.of(current));
+        given(reviewRoundRepository
+                .findAllForUpdateByContestIdOrderByRoundNoAsc(CONTEST_ID))
+                .willReturn(List.of(current, later));
+
+        assertThatThrownBy(() -> service.openRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(
+                        ReviewErrorResponseCode.REVIEW_ROUND_ALREADY_OPEN);
+    }
+
+    @Test
+    @DisplayName("참가 명단을 확정하지 않은 팀의 제출물로는 라운드를 시작할 수 없다")
+    void openRound_rejectsTeamWithUnfinalizedParticipation() {
+        ReviewRound round = round(ReviewRoundStatus.PREPARING);
+        ReviewCriterion criterion = criterion(round);
+        Team team = approvedTeam();
+        ReflectionTestUtils.setField(
+                team,
+                "participationFinalizedAt",
+                null);
+        Submission submission =
+                submittedSubmission(team, 201L, "submission-1");
+        ReviewRoundEntry entry = entry(round, submission, 101L);
+        stubRoundOrganization();
+        given(reviewRoundRepository.findByIdForUpdate(ROUND_ID))
+                .willReturn(Optional.of(round));
+        given(reviewRoundRepository
+                .findAllForUpdateByContestIdOrderByRoundNoAsc(CONTEST_ID))
+                .willReturn(List.of(round));
+        given(reviewCriterionRepository
+                .findAllForShareByReviewRoundIdOrderBySortOrderAsc(ROUND_ID))
+                .willReturn(List.of(criterion));
+        given(reviewRoundEntryRepository
+                .findAllForUpdateByReviewRoundIdOrderByIdAsc(ROUND_ID))
+                .willReturn(List.of(entry));
+        given(reviewAssignmentRepository
+                .findAllForShareByReviewRoundEntryIdInOrderByEntryIdAscIdAsc(
+                        List.of(101L)))
+                .willReturn(List.of(assignment(
+                        entry,
+                        301L,
+                        ReviewAssignmentStatus.ASSIGNED)));
+        given(teamRepository
+                .findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
+                .willReturn(List.of(team));
+
+        assertThatThrownBy(() -> service.openRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(ReviewErrorResponseCode
+                        .REVIEW_ENTRY_TEAM_NOT_FINALIZED);
+
+        verifyNoInteractions(submissionRepository);
+        verifyNoInteractions(workCredentialIssuer);
+    }
+
+    @Test
+    @DisplayName("전체 제출 대상이 준비 후 변경되면 동기화 전에는 라운드를 열 수 없다")
+    void openRound_rejectsChangedAllSubmissionSnapshot() {
+        ReviewRound round = round(ReviewRoundStatus.PREPARING);
+        ReviewCriterion criterion = criterion(round);
+        Team team = approvedTeam();
+        Submission preparedSubmission =
+                submittedSubmission(team, 201L, "submission-1");
+        Submission lateSubmission =
+                submittedSubmission(team, 202L, "submission-2");
+        ReviewRoundEntry entry =
+                entry(round, preparedSubmission, 101L);
+        stubRoundOrganization();
+        given(reviewRoundRepository.findByIdForUpdate(ROUND_ID))
+                .willReturn(Optional.of(round));
+        given(reviewCriterionRepository
+                .findAllForShareByReviewRoundIdOrderBySortOrderAsc(ROUND_ID))
+                .willReturn(List.of(criterion));
+        given(reviewRoundEntryRepository
+                .findAllForUpdateByReviewRoundIdOrderByIdAsc(ROUND_ID))
+                .willReturn(List.of(entry));
+        given(reviewAssignmentRepository
+                .findAllForShareByReviewRoundEntryIdInOrderByEntryIdAscIdAsc(
+                        List.of(101L)))
+                .willReturn(List.of(assignment(
+                        entry,
+                        301L,
+                        ReviewAssignmentStatus.ASSIGNED)));
+        given(teamRepository
+                .findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
+                .willReturn(List.of(team));
+        given(submissionRepository
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        CONTEST_ID,
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED))
+                .willReturn(List.of(
+                        preparedSubmission,
+                        lateSubmission));
+
+        assertThatThrownBy(() -> service.openRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(
+                        ReviewErrorResponseCode
+                                .REVIEW_ENTRY_SYNC_REQUIRED);
+
+        assertThat(round.getStatus())
+                .isEqualTo(ReviewRoundStatus.PREPARING);
+        assertThat(entry.getStatus())
+                .isEqualTo(ReviewRoundEntryStatus.ELIGIBLE);
+        assertThat(preparedSubmission.getFinalizedAt()).isNull();
+        assertThat(lateSubmission.getFinalizedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("제출 마감 시각이 지나기 전에는 첫 심사 라운드를 열 수 없다")
+    void openRound_rejectsBeforeSubmissionDeadline() {
+        ReviewRound round = round(ReviewRoundStatus.PREPARING);
+        ContestStage submissionStage = ContestStage.builder()
+                .contest(contest)
+                .name("작품 제출")
+                .stageType(StageType.SUBMISSION)
+                .sequenceNo(1)
+                .status(StageStatus.OPEN)
+                .endsAt(NOW.plusMinutes(1))
+                .build();
+        stubRoundOrganization();
+        given(reviewRoundRepository.findByIdForUpdate(ROUND_ID))
+                .willReturn(Optional.of(round));
+        given(contestStageRepository
+                .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
+                        CONTEST_ID,
+                        StageType.SUBMISSION))
+                .willReturn(List.of(submissionStage));
+
+        assertThatThrownBy(() -> service.openRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(
+                        ReviewErrorResponseCode
+                                .REVIEW_ROUND_SUBMISSION_WINDOW_INVALID);
+
+        verifyNoInteractions(
+                reviewCriterionRepository,
+                reviewRoundEntryRepository);
+    }
+
+    @Test
+    @DisplayName("수상이 확정된 대회는 심사 라운드를 다시 열 수 없다")
+    void openRound_rejectsAwardedContest() {
+        ReflectionTestUtils.setField(contest, "status", ContestStatus.AWARDED);
+
+        assertThatThrownBy(() -> service.openRound(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                ROUND_ID
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(exception ->
+                        ((CustomException) exception)
+                                .getBaseResponseCode())
+                .isEqualTo(ReviewErrorResponseCode
+                        .REVIEW_ROUND_STATUS_TRANSITION_INVALID);
+
+        verify(entityManager).refresh(
+                contest,
+                LockModeType.PESSIMISTIC_WRITE);
+        verifyNoInteractions(reviewRoundRepository);
     }
 
     @Test
@@ -551,12 +1196,18 @@ class ReviewRoundAdminServiceImplTest {
     }
 
     private ReviewRoundSaveReq request() {
+        return request(ReviewRoundTargetType.ALL_SUBMISSIONS);
+    }
+
+    private ReviewRoundSaveReq request(
+            ReviewRoundTargetType targetType
+    ) {
         return new ReviewRoundSaveReq(
                 1,
                 "예선 심사",
                 STARTS_AT,
                 ENDS_AT,
-                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                targetType,
                 ReviewRoundDecisionRule.TOP_N,
                 10,
                 null,
@@ -631,6 +1282,7 @@ class ReviewRoundAdminServiceImplTest {
                 .motivation("학교 문제를 해결합니다.")
                 .build();
         ReflectionTestUtils.setField(team, "id", 200L);
+        team.finalizeParticipation(UTC_NOW.minusDays(1));
         return team;
     }
 

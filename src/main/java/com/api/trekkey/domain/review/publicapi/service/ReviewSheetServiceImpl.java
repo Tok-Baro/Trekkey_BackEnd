@@ -2,7 +2,6 @@ package com.api.trekkey.domain.review.publicapi.service;
 
 import com.api.trekkey.domain.review.entity.ContestJudge;
 import com.api.trekkey.domain.review.entity.ReviewAssignment;
-import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
 import com.api.trekkey.domain.review.entity.ReviewCriterion;
 import com.api.trekkey.domain.review.entity.ReviewRound;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
@@ -11,8 +10,11 @@ import com.api.trekkey.domain.review.support.ReviewLinkAuthenticator;
 import com.api.trekkey.domain.review.publicapi.web.dto.request.ReviewAccessReq;
 import com.api.trekkey.domain.review.publicapi.web.dto.response.ReviewSheetAssignmentRes;
 import com.api.trekkey.domain.review.publicapi.web.dto.response.ReviewSheetCriterionRes;
+import com.api.trekkey.domain.review.publicapi.web.dto.response.ReviewSheetFileRes;
 import com.api.trekkey.domain.review.publicapi.web.dto.response.ReviewSheetRes;
 import com.api.trekkey.domain.review.publicapi.web.dto.response.ReviewSheetRoundRes;
+import com.api.trekkey.domain.submission.entity.SubmissionFile;
+import com.api.trekkey.domain.submission.repository.SubmissionFileRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -32,6 +34,7 @@ public class ReviewSheetServiceImpl implements ReviewSheetService {
     private final ReviewLinkAuthenticator reviewLinkAuthenticator;
     private final ReviewAssignmentRepository reviewAssignmentRepository;
     private final ReviewCriterionRepository reviewCriterionRepository;
+    private final SubmissionFileRepository submissionFileRepository;
     private final Clock clock;
 
     @Override
@@ -62,6 +65,8 @@ public class ReviewSheetServiceImpl implements ReviewSheetService {
                 groupActiveCriteria(reviewCriterionRepository
                         .findAllByReviewRoundIdInOrderBySortOrderAsc(
                                 roundIds));
+        Map<Long, List<ReviewSheetFileRes>> filesBySubmissionId =
+                groupSubmissionFiles(visibleAssignments);
 
         Map<Long, List<ReviewAssignment>> assignmentsByRoundId =
                 new LinkedHashMap<>();
@@ -89,7 +94,15 @@ public class ReviewSheetServiceImpl implements ReviewSheetService {
                             .toList();
             List<ReviewSheetAssignmentRes> assignments =
                     roundAssignments.stream()
-                            .map(ReviewSheetAssignmentRes::from)
+                            .map(assignment ->
+                                    ReviewSheetAssignmentRes.from(
+                                            assignment,
+                                            filesBySubmissionId.getOrDefault(
+                                                    assignment
+                                                            .getReviewRoundEntry()
+                                                            .getSubmission()
+                                                            .getId(),
+                                                    List.of())))
                             .toList();
             rounds.add(new ReviewSheetRoundRes(
                     round.getId(),
@@ -105,21 +118,44 @@ public class ReviewSheetServiceImpl implements ReviewSheetService {
         return ReviewSheetRes.of(judge, rounds);
     }
 
+    private Map<Long, List<ReviewSheetFileRes>> groupSubmissionFiles(
+            List<ReviewAssignment> assignments
+    ) {
+        List<Long> submissionIds = assignments.stream()
+                .map(assignment -> assignment
+                        .getReviewRoundEntry()
+                        .getSubmission()
+                        .getId())
+                .distinct()
+                .toList();
+        Map<Long, List<ReviewSheetFileRes>> grouped =
+                new LinkedHashMap<>();
+        if (submissionIds.isEmpty()) {
+            return grouped;
+        }
+        List<SubmissionFile> files = submissionFileRepository
+                .findAllBySubmissionIdIn(submissionIds);
+        files.stream()
+                .sorted(Comparator
+                        .comparing(
+                                (SubmissionFile file) ->
+                                        file.getSubmission().getId())
+                        .thenComparing(
+                                SubmissionFile::getId,
+                                Comparator.nullsLast(Long::compareTo)))
+                .forEach(file -> grouped
+                        .computeIfAbsent(
+                                file.getSubmission().getId(),
+                                key -> new ArrayList<>())
+                        .add(ReviewSheetFileRes.from(file)));
+        return grouped;
+    }
+
     private boolean isVisible(
             ReviewAssignment assignment,
             LocalDateTime now
     ) {
-        ReviewRound round = assignment
-                .getReviewRoundEntry()
-                .getReviewRound();
-        if (!round.isOpenAt(now)
-                || assignment.getStatus()
-                == ReviewAssignmentStatus.CANCELED) {
-            return false;
-        }
-        return assignment.getStatus()
-                == ReviewAssignmentStatus.COMPLETED
-                || assignment.isAvailableAt(now);
+        return assignment.isVisibleToJudgeAt(now);
     }
 
     private Map<Long, List<ReviewCriterion>> groupActiveCriteria(

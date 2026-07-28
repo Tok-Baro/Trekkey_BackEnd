@@ -37,6 +37,17 @@ public interface TeamRepository extends JpaRepository<Team, Long> {
 
     Optional<Team> findByContestPublicIdAndLeaderUserId(String contestPublicId, Long leaderUserId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select team
+            from Team team
+            where team.contest.publicId = :contestPublicId
+              and team.leaderUser.id = :leaderUserId
+            """)
+    Optional<Team> findByContestPublicIdAndLeaderUserIdForUpdate(
+            @Param("contestPublicId") String contestPublicId,
+            @Param("leaderUserId") Long leaderUserId);
+
     List<Team> findAllByContestIdOrderByCreatedAtDesc(Long contestId);
 
     List<Team> findAllByContestIdAndStatusOrderByCreatedAtDesc(Long contestId, TeamStatus status);

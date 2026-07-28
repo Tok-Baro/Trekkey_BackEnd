@@ -163,6 +163,54 @@ class ReviewLinkAuthenticatorTest {
                 .isEqualTo(ReviewErrorResponseCode.REVIEW_LINK_INVALID);
     }
 
+    @Test
+    @DisplayName("연결된 내부 사용자의 소속이 바뀌면 기존 심사 링크를 거부한다")
+    void authenticate_rejectsLinkedUserMovedToAnotherOrganization() {
+        Organization contestOrganization =
+                org.mockito.Mockito.mock(Organization.class);
+        Organization movedOrganization =
+                org.mockito.Mockito.mock(Organization.class);
+        given(contestOrganization.getId()).willReturn(1L);
+        given(movedOrganization.getId()).willReturn(2L);
+        User linkedUser = User.builder()
+                .organization(movedOrganization)
+                .name("이교수")
+                .email("judge@test.com")
+                .password("encoded")
+                .role(UserRole.PARTICIPANT)
+                .memberType(MemberType.FACULTY)
+                .status(UserStatus.ACTIVE)
+                .build();
+        Contest contest = Contest.builder()
+                .organization(contestOrganization)
+                .publicId("contest-public-id")
+                .title("AI 공모전")
+                .build();
+        ContestJudge judge = ContestJudge.builder()
+                .contest(contest)
+                .user(linkedUser)
+                .name("이교수")
+                .roleLabel("교내 심사위원")
+                .build();
+        judge.issueReviewLink(
+                TOKEN_HASH,
+                now.minusDays(1),
+                now.plusDays(1)
+        );
+        given(reviewLinkTokenManager.hash(RAW_TOKEN))
+                .willReturn(TOKEN_HASH);
+        given(contestJudgeRepository
+                .findByReviewTokenHashForShare(TOKEN_HASH))
+                .willReturn(Optional.of(judge));
+
+        assertThatThrownBy(() ->
+                authenticator.authenticate(RAW_TOKEN, now))
+                .isInstanceOf(CustomException.class)
+                .extracting(e -> ((CustomException) e)
+                        .getBaseResponseCode())
+                .isEqualTo(ReviewErrorResponseCode.REVIEW_LINK_INVALID);
+    }
+
     private ContestJudge activeJudge() {
         ContestJudge judge = judge();
         judge.issueReviewLink(
