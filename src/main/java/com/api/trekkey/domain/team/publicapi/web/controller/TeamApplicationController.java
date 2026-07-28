@@ -3,6 +3,7 @@ package com.api.trekkey.domain.team.publicapi.web.controller;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
 import com.api.trekkey.domain.team.publicapi.service.TeamApplicationService;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantSearchRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationRes;
@@ -63,6 +64,17 @@ public class TeamApplicationController {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(SuccessResponse.ok(teamApplicationService.getMyApplications(authPrincipal.getId())));
+    }
+
+    @ApiErrorCodeExamples(value = TeamErrorResponseCode.class, codes = {"TEAM_NOT_FOUND"})
+    @GetMapping("/me/applications/{contestPublicId}/progress")
+    public ResponseEntity<SuccessResponse<ApplicationProgressRes>> getApplicationProgress(
+            @AuthenticationPrincipal AuthPrincipal authPrincipal,
+            @PathVariable String contestPublicId) {
+        return ResponseEntity.ok(SuccessResponse.ok(
+                teamApplicationService.getApplicationProgress(
+                        authPrincipal.getId(),
+                        contestPublicId)));
     }
 
     @ApiErrorCodeExamples(value = TeamErrorResponseCode.class, codes = {
