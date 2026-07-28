@@ -3,6 +3,7 @@ package com.api.trekkey.domain.contest.publicapi.web.controller;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.publicapi.service.ContestService;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestDetailRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestLikeRes;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchRes;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
 import com.api.trekkey.global.response.SuccessResponse;
@@ -18,7 +19,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -50,9 +50,9 @@ public class ContestController {
                 .body(SuccessResponse.ok(contestService.getContestDetail(authPrincipal.getId(), publicId)));
     }
 
-    // 좋아요 토글 — 응답은 현재 좋아요 수
+    @ApiErrorCodeExamples(value = ContestErrorResponseCode.class, codes = {"CONTEST_NOT_FOUND"})
     @PostMapping("/{publicId}/like")
-    public ResponseEntity<SuccessResponse<Long>> toggleLike(
+    public ResponseEntity<SuccessResponse<ContestLikeRes>> toggleLike(
             @AuthenticationPrincipal AuthPrincipal authPrincipal,
             @PathVariable String publicId) {
         return ResponseEntity.ok(SuccessResponse.ok(
