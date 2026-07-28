@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
 @RequestMapping(
-        "/api/admin/contests/{publicId}/review-stages/{stageId}/entries")
+        "/api/admin/contests/{publicId}/review-rounds/{roundId}/entries")
 public class ReviewRoundEntryAdminController {
 
     private final ReviewRoundEntryAdminService reviewRoundEntryAdminService;
@@ -34,17 +34,14 @@ public class ReviewRoundEntryAdminController {
     })
     @ApiErrorCodeExamples(value = ContestErrorResponseCode.class, codes = {
             "CONTEST_NOT_FOUND",
-            "CONTEST_FORBIDDEN",
-            "STAGE_NOT_FOUND",
-            "STAGE_CONFIGURATION_INVALID",
-            "REVIEW_CRITERION_REQUIRED"
+            "CONTEST_FORBIDDEN"
     })
     @ApiErrorCodeExamples(value = ReviewErrorResponseCode.class, codes = {
-            "REVIEW_STAGE_INVALID",
+            "REVIEW_ROUND_NOT_FOUND",
+            "REVIEW_ROUND_CONFIGURATION_INVALID",
+            "REVIEW_ROUND_CRITERION_REQUIRED",
             "REVIEW_ENTRY_PREPARATION_NOT_ALLOWED",
-            "REVIEW_ENTRY_CONTEST_NOT_REVIEWING",
             "REVIEW_ENTRY_TARGET_TYPE_UNSUPPORTED",
-            "REVIEW_ENTRY_SUBMISSION_STAGE_NOT_COMPLETED",
             "REVIEW_ENTRY_SUBMISSION_REQUIRED",
             "REVIEW_ENTRY_SUBMISSION_INVALID",
             "REVIEW_ENTRY_DUPLICATED"
@@ -54,12 +51,12 @@ public class ReviewRoundEntryAdminController {
             prepareEntries(
                     @AuthenticationPrincipal AuthPrincipal principal,
                     @PathVariable String publicId,
-                    @PathVariable Long stageId) {
+                    @PathVariable Long roundId) {
         List<ReviewRoundEntryRes> response =
                 reviewRoundEntryAdminService.prepareEntries(
                         principal.getId(),
                         publicId,
-                        stageId
+                        roundId
                 );
 
         return ResponseEntity.ok(SuccessResponse.okCustom(
@@ -74,23 +71,22 @@ public class ReviewRoundEntryAdminController {
     })
     @ApiErrorCodeExamples(value = ContestErrorResponseCode.class, codes = {
             "CONTEST_NOT_FOUND",
-            "CONTEST_FORBIDDEN",
-            "STAGE_NOT_FOUND"
+            "CONTEST_FORBIDDEN"
     })
     @ApiErrorCodeExamples(
             value = ReviewErrorResponseCode.class,
-            codes = "REVIEW_STAGE_INVALID")
+            codes = "REVIEW_ROUND_NOT_FOUND")
     @GetMapping
     public ResponseEntity<SuccessResponse<List<ReviewRoundEntryRes>>>
             getEntries(
                     @AuthenticationPrincipal AuthPrincipal principal,
                     @PathVariable String publicId,
-                    @PathVariable Long stageId) {
+                    @PathVariable Long roundId) {
         List<ReviewRoundEntryRes> response =
                 reviewRoundEntryAdminService.getEntries(
                         principal.getId(),
                         publicId,
-                        stageId
+                        roundId
                 );
 
         return ResponseEntity.ok(SuccessResponse.ok(response));

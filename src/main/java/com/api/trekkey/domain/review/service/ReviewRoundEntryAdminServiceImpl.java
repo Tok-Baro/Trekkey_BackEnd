@@ -3,20 +3,18 @@ package com.api.trekkey.domain.review.service;
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
 import com.api.trekkey.domain.contest.entity.Contest;
-import com.api.trekkey.domain.contest.entity.ContestStage;
-import com.api.trekkey.domain.contest.entity.ContestStatus;
-import com.api.trekkey.domain.contest.entity.ReviewCriterion;
-import com.api.trekkey.domain.contest.entity.StageStatus;
-import com.api.trekkey.domain.contest.entity.StageTargetType;
-import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
-import com.api.trekkey.domain.contest.repository.ContestStageRepository;
-import com.api.trekkey.domain.contest.repository.ReviewCriterionRepository;
+import com.api.trekkey.domain.review.entity.ReviewCriterion;
+import com.api.trekkey.domain.review.entity.ReviewRound;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
+import com.api.trekkey.domain.review.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.web.dto.response.ReviewRoundEntryRes;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
@@ -29,8 +27,6 @@ import com.api.trekkey.domain.user.entity.UserStatus;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -45,65 +41,58 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReviewRoundEntryAdminServiceImpl
         implements ReviewRoundEntryAdminService {
 
-    private static final String TARGET_TYPE_REVIEW_STAGE = "REVIEW_STAGE";
+    private static final String TARGET_TYPE_REVIEW_ROUND = "REVIEW_ROUND";
 
     private final UserRepository userRepository;
     private final ContestRepository contestRepository;
-    private final ContestStageRepository contestStageRepository;
+    private final ReviewRoundRepository reviewRoundRepository;
     private final ReviewCriterionRepository reviewCriterionRepository;
     private final TeamRepository teamRepository;
     private final SubmissionRepository submissionRepository;
     private final ReviewRoundEntryRepository reviewRoundEntryRepository;
     private final AdminAuditLogger adminAuditLogger;
     private final Clock clock;
-    private final EntityManager entityManager;
 
     @Override
     @Transactional
     public List<ReviewRoundEntryRes> prepareEntries(
             Long adminUserId,
             String contestPublicId,
-            Long reviewStageId
+            Long reviewRoundId
     ) {
         User admin = findActiveAdmin(adminUserId);
         Contest contest = findContest(contestPublicId, admin);
-        validateStageOrganization(reviewStageId, admin);
-        List<ContestStage> lockedStages =
-                contestStageRepository
-                        .findAllForUpdateByContestIdOrderBySequenceNoAsc(
-                                contest.getId());
-        ContestStage reviewStage =
-                findReviewStage(reviewStageId, lockedStages);
-        validateReviewStage(reviewStage);
-        List<ReviewCriterion> criteria =
-                reviewCriterionRepository
-                        .findAllForUpdateByContestStageIdInOrderBySortOrderAsc(
-                                List.of(reviewStageId));
+        validateRoundOrganization(reviewRoundId, admin);
+        ReviewRound reviewRound = reviewRoundRepository
+                .findByIdForUpdate(reviewRoundId)
+                .orElseThrow(this::reviewRoundNotFound);
+        validateRoundContest(reviewRound, contest);
+        validateSupportedTargetType(reviewRound);
 
+        List<ReviewCriterion> criteria = reviewCriterionRepository
+                .findAllForUpdateByReviewRoundIdInOrderBySortOrderAsc(
+                        List.of(reviewRoundId));
         List<ReviewRoundEntry> existingEntries =
                 reviewRoundEntryRepository
-                        .findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                                reviewStageId);
+                        .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                                reviewRoundId);
         if (!existingEntries.isEmpty()) {
             return toResponses(existingEntries);
         }
-        if (reviewStage.getStatus() != StageStatus.PREPARING) {
+        if (reviewRound.getStatus() != ReviewRoundStatus.PREPARING) {
             throw new CustomException(
-                    ReviewErrorResponseCode.REVIEW_ENTRY_PREPARATION_NOT_ALLOWED);
+                    ReviewErrorResponseCode
+                            .REVIEW_ENTRY_PREPARATION_NOT_ALLOWED);
         }
-        validateReviewStageConfiguration(reviewStage, criteria);
-        entityManager.refresh(contest, LockModeType.PESSIMISTIC_READ);
-        validateContestReviewing(contest);
+        validateReviewRoundConfiguration(reviewRound, criteria);
 
-        validateSubmissionStageCompleted(lockedStages);
         teamRepository.findAllForUpdateByContestIdOrderByIdAsc(contest.getId());
-        List<Submission> submissions =
-                submissionRepository
-                        .findAllForUpdateByContestIdAndStatusAndTeamStatus(
-                                contest.getId(),
-                                SubmissionStatus.SUBMITTED,
-                                TeamStatus.APPROVED
-                        );
+        List<Submission> submissions = submissionRepository
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        contest.getId(),
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED
+                );
         if (submissions.isEmpty()) {
             throw new CustomException(
                     ReviewErrorResponseCode.REVIEW_ENTRY_SUBMISSION_REQUIRED);
@@ -113,13 +102,14 @@ public class ReviewRoundEntryAdminServiceImpl
         for (Submission submission : submissions) {
             if (!submission.isFinalized() && !submission.finalizeAt(now)) {
                 throw new CustomException(
-                        ReviewErrorResponseCode.REVIEW_ENTRY_SUBMISSION_INVALID);
+                        ReviewErrorResponseCode
+                                .REVIEW_ENTRY_SUBMISSION_INVALID);
             }
         }
 
         List<ReviewRoundEntry> entries = submissions.stream()
                 .map(submission -> ReviewRoundEntry.builder()
-                        .reviewStage(reviewStage)
+                        .reviewRound(reviewRound)
                         .submission(submission)
                         .status(ReviewRoundEntryStatus.ELIGIBLE)
                         .build())
@@ -136,9 +126,10 @@ public class ReviewRoundEntryAdminServiceImpl
                 admin.getId(),
                 admin.getOrganization().getId(),
                 AuditAction.REVIEW_ENTRIES_PREPARE,
-                TARGET_TYPE_REVIEW_STAGE,
-                reviewStage.getId(),
-                "contestId=" + contest.getId() + ", entryCount=" + entries.size()
+                TARGET_TYPE_REVIEW_ROUND,
+                reviewRound.getId(),
+                "contestId=" + contest.getId()
+                        + ", entryCount=" + entries.size()
         );
 
         return toResponses(entries);
@@ -148,16 +139,19 @@ public class ReviewRoundEntryAdminServiceImpl
     public List<ReviewRoundEntryRes> getEntries(
             Long adminUserId,
             String contestPublicId,
-            Long reviewStageId
+            Long reviewRoundId
     ) {
         User admin = findActiveAdmin(adminUserId);
         Contest contest = findContest(contestPublicId, admin);
-        ContestStage reviewStage =
-                findReviewStage(reviewStageId, contest, admin);
-        validateReviewStageType(reviewStage);
+        ReviewRound reviewRound = findReviewRound(
+                reviewRoundId,
+                contest,
+                admin
+        );
 
         return toResponses(reviewRoundEntryRepository
-                .findAllByReviewStageIdOrderByCreatedAtAscIdAsc(reviewStageId));
+                .findAllByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        reviewRound.getId()));
     }
 
     private User findActiveAdmin(Long userId) {
@@ -167,7 +161,8 @@ public class ReviewRoundEntryAdminServiceImpl
         if ((user.getRole() != UserRole.ADMIN
                 && user.getRole() != UserRole.ROOT_ADMIN)
                 || user.getStatus() != UserStatus.ACTIVE) {
-            throw new CustomException(UserErrorResponseCode.USER_INVALID_TOKEN);
+            throw new CustomException(
+                    UserErrorResponseCode.USER_INVALID_TOKEN);
         }
         return user;
     }
@@ -184,104 +179,75 @@ public class ReviewRoundEntryAdminServiceImpl
         return contest;
     }
 
-    private ContestStage findReviewStage(
-            Long reviewStageId,
-            List<ContestStage> lockedStages
-    ) {
-        return lockedStages.stream()
-                .filter(stage -> stage.getId().equals(reviewStageId))
-                .findFirst()
-                .orElseThrow(() -> new CustomException(
-                        ContestErrorResponseCode.STAGE_NOT_FOUND));
-    }
-
-    private ContestStage findReviewStage(
-            Long reviewStageId,
+    private ReviewRound findReviewRound(
+            Long reviewRoundId,
             Contest contest,
             User admin
     ) {
-        validateStageOrganization(reviewStageId, admin);
-        ContestStage stage = contestStageRepository.findById(reviewStageId)
-                .orElseThrow(() -> new CustomException(
-                        ContestErrorResponseCode.STAGE_NOT_FOUND));
-        validateStageContest(stage, contest);
-        return stage;
+        validateRoundOrganization(reviewRoundId, admin);
+        ReviewRound reviewRound = reviewRoundRepository
+                .findById(reviewRoundId)
+                .orElseThrow(this::reviewRoundNotFound);
+        validateRoundContest(reviewRound, contest);
+        return reviewRound;
     }
 
-    private void validateStageOrganization(Long stageId, User admin) {
-        Long organizationId = contestStageRepository.findOrganizationIdById(stageId)
-                .orElseThrow(() -> new CustomException(
-                        ContestErrorResponseCode.STAGE_NOT_FOUND));
+    private void validateRoundOrganization(Long roundId, User admin) {
+        Long organizationId = reviewRoundRepository
+                .findOrganizationIdById(roundId)
+                .orElseThrow(this::reviewRoundNotFound);
         if (!organizationId.equals(admin.getOrganization().getId())) {
             throw new CustomException(
                     ContestErrorResponseCode.CONTEST_FORBIDDEN);
         }
     }
 
-    private void validateStageContest(ContestStage stage, Contest contest) {
-        if (!stage.getContest().getId().equals(contest.getId())) {
-            throw new CustomException(ContestErrorResponseCode.STAGE_NOT_FOUND);
+    private void validateRoundContest(
+            ReviewRound reviewRound,
+            Contest contest
+    ) {
+        if (!reviewRound.getContest().getId().equals(contest.getId())) {
+            throw reviewRoundNotFound();
         }
     }
 
-    private void validateReviewStage(ContestStage stage) {
-        validateReviewStageType(stage);
-        if (stage.getTargetType() != StageTargetType.ALL_SUBMISSIONS) {
-            throw new CustomException(
-                    ReviewErrorResponseCode.REVIEW_ENTRY_TARGET_TYPE_UNSUPPORTED);
-        }
-    }
-
-    private void validateReviewStageType(ContestStage stage) {
-        if (!stage.getStageType().supportsReviewCriteria()) {
-            throw new CustomException(
-                    ReviewErrorResponseCode.REVIEW_STAGE_INVALID);
-        }
-    }
-
-    private void validateContestReviewing(Contest contest) {
-        if (contest.getStatus() != ContestStatus.REVIEWING) {
+    private void validateSupportedTargetType(ReviewRound reviewRound) {
+        if (reviewRound.getTargetType()
+                != ReviewRoundTargetType.ALL_SUBMISSIONS) {
             throw new CustomException(
                     ReviewErrorResponseCode
-                            .REVIEW_ENTRY_CONTEST_NOT_REVIEWING);
+                            .REVIEW_ENTRY_TARGET_TYPE_UNSUPPORTED);
         }
     }
 
-    private void validateReviewStageConfiguration(
-            ContestStage reviewStage,
+    private void validateReviewRoundConfiguration(
+            ReviewRound reviewRound,
             List<ReviewCriterion> criteria
     ) {
-        if (!reviewStage.hasValidConfigurationForOpening()) {
+        if (!reviewRound.hasValidConfigurationForOpening()) {
             throw new CustomException(
-                    ContestErrorResponseCode.STAGE_CONFIGURATION_INVALID);
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_CONFIGURATION_INVALID);
         }
         List<ReviewCriterion> activeCriteria = criteria.stream()
                 .filter(ReviewCriterion::isActive)
                 .toList();
         if (activeCriteria.isEmpty()) {
             throw new CustomException(
-                    ContestErrorResponseCode.REVIEW_CRITERION_REQUIRED);
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_CRITERION_REQUIRED);
         }
         if (activeCriteria.stream()
                 .anyMatch(criterion -> criterion.getMaxScore() < 1)) {
             throw new CustomException(
-                    ContestErrorResponseCode.STAGE_CONFIGURATION_INVALID);
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_CONFIGURATION_INVALID);
         }
     }
 
-    private void validateSubmissionStageCompleted(
-            List<ContestStage> lockedStages
-    ) {
-        List<ContestStage> submissionStages = lockedStages.stream()
-                .filter(stage -> stage.getStageType() == StageType.SUBMISSION)
-                .toList();
-        if (submissionStages.size() != 1
-                || submissionStages.getFirst().getStatus()
-                != StageStatus.COMPLETED) {
-            throw new CustomException(
-                    ReviewErrorResponseCode
-                            .REVIEW_ENTRY_SUBMISSION_STAGE_NOT_COMPLETED);
-        }
+    private CustomException reviewRoundNotFound() {
+        return new CustomException(
+                ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND);
     }
 
     private List<ReviewRoundEntryRes> toResponses(

@@ -1,31 +1,27 @@
 package com.api.trekkey.domain.review.service;
 
-import com.api.trekkey.domain.contest.entity.Contest;
-import com.api.trekkey.domain.contest.entity.ContestStage;
-import com.api.trekkey.domain.contest.entity.ContestStatus;
-import com.api.trekkey.domain.contest.entity.ReviewCriterion;
-import com.api.trekkey.domain.contest.repository.ContestStageRepository;
-import com.api.trekkey.domain.contest.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.entity.ContestJudge;
 import com.api.trekkey.domain.review.entity.Review;
 import com.api.trekkey.domain.review.entity.ReviewAssignment;
 import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
+import com.api.trekkey.domain.review.entity.ReviewCriterion;
+import com.api.trekkey.domain.review.entity.ReviewRound;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
 import com.api.trekkey.domain.review.entity.ReviewScoreItem;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository.ReviewSubmissionScope;
+import com.api.trekkey.domain.review.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.repository.ReviewRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.repository.ReviewScoreItemRepository;
 import com.api.trekkey.domain.review.support.ReviewLinkAuthenticator;
 import com.api.trekkey.domain.review.web.dto.request.ReviewScoreReq;
 import com.api.trekkey.domain.review.web.dto.request.ReviewSubmitReq;
 import com.api.trekkey.domain.review.web.dto.response.ReviewSubmitRes;
 import com.api.trekkey.global.exception.CustomException;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -50,14 +46,13 @@ public class ReviewSubmissionServiceImpl
             new BigDecimal("9999999999.99");
 
     private final ReviewLinkAuthenticator reviewLinkAuthenticator;
-    private final ContestStageRepository contestStageRepository;
+    private final ReviewRoundRepository reviewRoundRepository;
     private final ReviewCriterionRepository reviewCriterionRepository;
     private final ReviewRoundEntryRepository reviewRoundEntryRepository;
     private final ReviewAssignmentRepository reviewAssignmentRepository;
     private final ReviewRepository reviewRepository;
     private final ReviewScoreItemRepository reviewScoreItemRepository;
     private final Clock clock;
-    private final EntityManager entityManager;
 
     @Override
     public ReviewSubmitRes submitReview(
@@ -75,18 +70,18 @@ public class ReviewSubmissionServiceImpl
                         judge.getId()
                 )
                 .orElseThrow(this::assignmentNotFound);
-        ContestStage reviewStage = contestStageRepository
-                .findByIdForShare(scope.getReviewStageId())
+        ReviewRound reviewRound = reviewRoundRepository
+                .findByIdForShare(scope.getReviewRoundId())
                 .orElseThrow(this::assignmentNotFound);
-        validateStageContest(reviewStage, judge);
+        validateRoundContest(reviewRound, judge);
 
         List<ReviewCriterion> criteria = reviewCriterionRepository
-                .findAllForShareByContestStageIdOrderBySortOrderAsc(
-                        reviewStage.getId());
+                .findAllForShareByReviewRoundIdOrderBySortOrderAsc(
+                        reviewRound.getId());
         ReviewRoundEntry entry = reviewRoundEntryRepository
-                .findByIdAndReviewStageIdForShare(
+                .findByIdAndReviewRoundIdForShare(
                         scope.getReviewRoundEntryId(),
-                        reviewStage.getId()
+                        reviewRound.getId()
                 )
                 .orElseThrow(this::assignmentNotFound);
         ReviewAssignment assignment = reviewAssignmentRepository
@@ -96,9 +91,6 @@ public class ReviewSubmissionServiceImpl
                         entry.getId()
                 )
                 .orElseThrow(this::assignmentNotFound);
-
-        Contest contest = reviewStage.getContest();
-        entityManager.refresh(contest, LockModeType.PESSIMISTIC_READ);
 
         Map<Long, BigDecimal> requestedScores =
                 toRequestedScores(req);
@@ -122,9 +114,7 @@ public class ReviewSubmissionServiceImpl
         }
 
         validateNewSubmission(
-                judge,
-                contest,
-                reviewStage,
+                reviewRound,
                 entry,
                 assignment,
                 req,
@@ -173,30 +163,24 @@ public class ReviewSubmissionServiceImpl
         return ReviewSubmitRes.of(review, scoreItems);
     }
 
-    private void validateStageContest(
-            ContestStage reviewStage,
+    private void validateRoundContest(
+            ReviewRound reviewRound,
             ContestJudge judge
     ) {
-        if (!reviewStage.getContest().getId()
-                .equals(judge.getContest().getId())
-                || !reviewStage.getStageType()
-                .supportsReviewCriteria()) {
+        if (!reviewRound.getContest().getId()
+                .equals(judge.getContest().getId())) {
             throw assignmentNotFound();
         }
     }
 
     private void validateNewSubmission(
-            ContestJudge judge,
-            Contest contest,
-            ContestStage reviewStage,
+            ReviewRound reviewRound,
             ReviewRoundEntry entry,
             ReviewAssignment assignment,
             ReviewSubmitReq req,
             LocalDateTime now
     ) {
-        if (!contest.getId().equals(judge.getContest().getId())
-                || contest.getStatus() != ContestStatus.REVIEWING
-                || entry.getStatus()
+        if (entry.getStatus()
                 != ReviewRoundEntryStatus.IN_REVIEW
                 || assignment.getStatus()
                 != ReviewAssignmentStatus.ASSIGNED) {
@@ -204,7 +188,7 @@ public class ReviewSubmissionServiceImpl
                     ReviewErrorResponseCode
                             .REVIEW_SUBMISSION_NOT_ALLOWED);
         }
-        if (!reviewStage.isOpenAt(now)) {
+        if (!reviewRound.isOpenAt(now)) {
             throw new CustomException(
                     ReviewErrorResponseCode
                             .REVIEW_SUBMISSION_NOT_OPEN);

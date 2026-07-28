@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 
 public record ReviewRoundEntryRes(
         Long id,
-        Long reviewStageId,
+        Long reviewRoundId,
         String submissionPublicId,
         String submissionTitle,
         String teamName,
@@ -25,7 +25,7 @@ public record ReviewRoundEntryRes(
     public static ReviewRoundEntryRes from(ReviewRoundEntry entry) {
         return new ReviewRoundEntryRes(
                 entry.getId(),
-                entry.getReviewStage().getId(),
+                entry.getReviewRound().getId(),
                 entry.getSubmission().getPublicId(),
                 entry.getSubmission().getTitle(),
                 entry.getSubmission().getTeam().getName(),

@@ -99,8 +99,7 @@ public class ContestAdminController {
                     "STAGE_NOT_FOUND",
                     "CONTEST_FORBIDDEN",
                     "INVALID_STAGE_STATUS_TRANSITION",
-                    "STAGE_CONFIGURATION_INVALID",
-                    "REVIEW_CRITERION_REQUIRED"
+                    "STAGE_CONFIGURATION_INVALID"
             })
     @ApiErrorCodeExamples(value = UserErrorResponseCode.class, codes = {
             "USER_NOT_FOUND",
@@ -108,10 +107,7 @@ public class ContestAdminController {
     })
     @ApiErrorCodeExamples(
             value = ReviewErrorResponseCode.class,
-            codes = {
-                    "REVIEW_ENTRY_REQUIRED",
-                    "REVIEW_ENTRY_CONTEST_NOT_REVIEWING"
-            })
+            codes = "REVIEW_ROUND_REQUIRED")
     @PatchMapping("/api/stages/{stageId}/status")
     public ResponseEntity<SuccessResponse<StageRes>> updateStageStatus(
             @AuthenticationPrincipal AuthPrincipal principal,

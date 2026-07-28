@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
 @RequestMapping(
-        "/api/admin/contests/{publicId}/review-stages/{stageId}"
+        "/api/admin/contests/{publicId}/review-rounds/{roundId}"
                 + "/judges/{judgeId}/assignments")
 public class ReviewAssignmentAdminController {
 
@@ -38,13 +38,11 @@ public class ReviewAssignmentAdminController {
     })
     @ApiErrorCodeExamples(value = ContestErrorResponseCode.class, codes = {
             "CONTEST_NOT_FOUND",
-            "CONTEST_FORBIDDEN",
-            "STAGE_NOT_FOUND"
+            "CONTEST_FORBIDDEN"
     })
     @ApiErrorCodeExamples(value = ReviewErrorResponseCode.class, codes = {
             "CONTEST_JUDGE_NOT_FOUND",
-            "REVIEW_STAGE_INVALID",
-            "REVIEW_ENTRY_CONTEST_NOT_REVIEWING",
+            "REVIEW_ROUND_NOT_FOUND",
             "REVIEW_ASSIGNMENT_PREPARATION_NOT_ALLOWED",
             "REVIEW_ASSIGNMENT_ENTRY_REQUIRED",
             "REVIEW_ASSIGNMENT_ENTRY_INVALID",
@@ -56,7 +54,7 @@ public class ReviewAssignmentAdminController {
             prepareAssignments(
                     @AuthenticationPrincipal AuthPrincipal principal,
                     @PathVariable String publicId,
-                    @PathVariable Long stageId,
+                    @PathVariable Long roundId,
                     @PathVariable Long judgeId,
                     @RequestBody(required = false)
                     @Valid ReviewAssignmentPrepareReq req) {
@@ -64,7 +62,7 @@ public class ReviewAssignmentAdminController {
                 reviewAssignmentAdminService.prepareAssignments(
                         principal.getId(),
                         publicId,
-                        stageId,
+                        roundId,
                         judgeId,
                         req
                 );
@@ -81,25 +79,24 @@ public class ReviewAssignmentAdminController {
     })
     @ApiErrorCodeExamples(value = ContestErrorResponseCode.class, codes = {
             "CONTEST_NOT_FOUND",
-            "CONTEST_FORBIDDEN",
-            "STAGE_NOT_FOUND"
+            "CONTEST_FORBIDDEN"
     })
     @ApiErrorCodeExamples(value = ReviewErrorResponseCode.class, codes = {
             "CONTEST_JUDGE_NOT_FOUND",
-            "REVIEW_STAGE_INVALID"
+            "REVIEW_ROUND_NOT_FOUND"
     })
     @GetMapping
     public ResponseEntity<SuccessResponse<List<ReviewAssignmentRes>>>
             getAssignments(
                     @AuthenticationPrincipal AuthPrincipal principal,
                     @PathVariable String publicId,
-                    @PathVariable Long stageId,
+                    @PathVariable Long roundId,
                     @PathVariable Long judgeId) {
         List<ReviewAssignmentRes> response =
                 reviewAssignmentAdminService.getAssignments(
                         principal.getId(),
                         publicId,
-                        stageId,
+                        roundId,
                         judgeId
                 );
 

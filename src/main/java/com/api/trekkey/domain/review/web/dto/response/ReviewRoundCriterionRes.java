@@ -2,22 +2,22 @@ package com.api.trekkey.domain.review.web.dto.response;
 
 import com.api.trekkey.domain.review.entity.ReviewCriterion;
 
-public record ReviewSheetCriterionRes(
+public record ReviewRoundCriterionRes(
         Long id,
         String code,
         String label,
         int maxScore,
-        int sortOrder
+        int sortOrder,
+        boolean active
 ) {
-    public static ReviewSheetCriterionRes from(
-            ReviewCriterion criterion
-    ) {
-        return new ReviewSheetCriterionRes(
+    public static ReviewRoundCriterionRes from(ReviewCriterion criterion) {
+        return new ReviewRoundCriterionRes(
                 criterion.getId(),
                 criterion.getCode(),
                 criterion.getLabel(),
                 criterion.getMaxScore(),
-                criterion.getSortOrder()
+                criterion.getSortOrder(),
+                criterion.isActive()
         );
     }
 }

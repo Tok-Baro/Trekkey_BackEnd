@@ -1,6 +1,6 @@
 package com.api.trekkey.domain.review.web.dto.response;
 
-import com.api.trekkey.domain.contest.entity.ReviewCriterion;
+import com.api.trekkey.domain.review.entity.ReviewCriterion;
 import com.api.trekkey.domain.review.entity.ReviewScoreItem;
 import java.math.BigDecimal;
 

@@ -3,21 +3,20 @@ package com.api.trekkey.domain.review.service;
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
 import com.api.trekkey.domain.contest.entity.Contest;
-import com.api.trekkey.domain.contest.entity.ContestStage;
-import com.api.trekkey.domain.contest.entity.ContestStatus;
-import com.api.trekkey.domain.contest.entity.StageStatus;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
-import com.api.trekkey.domain.contest.repository.ContestStageRepository;
 import com.api.trekkey.domain.review.entity.ContestJudge;
 import com.api.trekkey.domain.review.entity.ReviewAssignment;
 import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
+import com.api.trekkey.domain.review.entity.ReviewRound;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.repository.ContestJudgeRepository;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.web.dto.request.ReviewAssignmentPrepareReq;
 import com.api.trekkey.domain.review.web.dto.response.ReviewAssignmentRes;
 import com.api.trekkey.domain.user.entity.User;
@@ -26,8 +25,6 @@ import com.api.trekkey.domain.user.entity.UserStatus;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -45,43 +42,41 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReviewAssignmentAdminServiceImpl
         implements ReviewAssignmentAdminService {
 
-    private static final String TARGET_TYPE_REVIEW_STAGE = "REVIEW_STAGE";
+    private static final String TARGET_TYPE_REVIEW_ROUND = "REVIEW_ROUND";
 
     private final UserRepository userRepository;
     private final ContestRepository contestRepository;
-    private final ContestStageRepository contestStageRepository;
+    private final ReviewRoundRepository reviewRoundRepository;
     private final ContestJudgeRepository contestJudgeRepository;
     private final ReviewRoundEntryRepository reviewRoundEntryRepository;
     private final ReviewAssignmentRepository reviewAssignmentRepository;
     private final AdminAuditLogger adminAuditLogger;
     private final Clock clock;
-    private final EntityManager entityManager;
 
     @Override
     @Transactional
     public List<ReviewAssignmentRes> prepareAssignments(
             Long adminUserId,
             String contestPublicId,
-            Long reviewStageId,
+            Long reviewRoundId,
             Long judgeId,
             ReviewAssignmentPrepareReq req
     ) {
         User admin = findActiveAdmin(adminUserId);
         Contest contest = findContest(contestPublicId, admin);
-        validateStageOrganization(reviewStageId, admin);
+        validateRoundOrganization(reviewRoundId, admin);
 
         ContestJudge judge = contestJudgeRepository
                 .findByIdAndContestIdForUpdate(judgeId, contest.getId())
                 .orElseThrow(() -> new CustomException(
                         ReviewErrorResponseCode.CONTEST_JUDGE_NOT_FOUND));
-        ContestStage reviewStage = contestStageRepository
-                .findByIdForShare(reviewStageId)
-                .orElseThrow(() -> new CustomException(
-                        ContestErrorResponseCode.STAGE_NOT_FOUND));
-        validateReviewStage(reviewStage, contest);
+        ReviewRound reviewRound = reviewRoundRepository
+                .findByIdForShare(reviewRoundId)
+                .orElseThrow(this::reviewRoundNotFound);
+        validateRoundContest(reviewRound, contest);
 
         List<ReviewRoundEntry> entries = reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByIdAsc(reviewStageId);
+                .findAllForShareByReviewRoundIdOrderByIdAsc(reviewRoundId);
         if (entries.isEmpty()) {
             throw new CustomException(
                     ReviewErrorResponseCode
@@ -98,16 +93,14 @@ public class ReviewAssignmentAdminServiceImpl
                                 entryIds
                         );
         if (hasAllActiveAssignments(entries, existingAssignments)) {
-            return getAssignmentResponses(judgeId, reviewStageId);
+            return getAssignmentResponses(judgeId, reviewRoundId);
         }
 
-        validateReviewStageAssignable(reviewStage);
-        entityManager.refresh(contest, LockModeType.PESSIMISTIC_READ);
-        validateContestReviewing(contest);
+        validateRoundAssignable(reviewRound);
         validateEntriesAssignable(entries);
 
         LocalDateTime now = LocalDateTime.now(clock);
-        LocalDateTime dueAt = resolveDueAt(req, reviewStage, now);
+        LocalDateTime dueAt = resolveDueAt(req, reviewRound, now);
         Map<Long, ReviewAssignment> existingByEntryId = new HashMap<>();
         existingAssignments.forEach(assignment ->
                 existingByEntryId.put(
@@ -150,32 +143,32 @@ public class ReviewAssignmentAdminServiceImpl
                 admin.getId(),
                 admin.getOrganization().getId(),
                 AuditAction.REVIEW_ASSIGNMENTS_PREPARE,
-                TARGET_TYPE_REVIEW_STAGE,
-                reviewStageId,
+                TARGET_TYPE_REVIEW_ROUND,
+                reviewRoundId,
                 "judgeId=" + judgeId
                         + ", assignmentCount=" + changedAssignments.size()
         );
 
-        return getAssignmentResponses(judgeId, reviewStageId);
+        return getAssignmentResponses(judgeId, reviewRoundId);
     }
 
     @Override
     public List<ReviewAssignmentRes> getAssignments(
             Long adminUserId,
             String contestPublicId,
-            Long reviewStageId,
+            Long reviewRoundId,
             Long judgeId
     ) {
         User admin = findActiveAdmin(adminUserId);
         Contest contest = findContest(contestPublicId, admin);
-        ContestStage reviewStage = findReviewStage(
-                reviewStageId,
+        ReviewRound reviewRound = findReviewRound(
+                reviewRoundId,
                 contest,
                 admin
         );
         findJudge(judgeId, contest.getId());
 
-        return getAssignmentResponses(judgeId, reviewStage.getId());
+        return getAssignmentResponses(judgeId, reviewRound.getId());
     }
 
     private User findActiveAdmin(Long userId) {
@@ -203,18 +196,17 @@ public class ReviewAssignmentAdminServiceImpl
         return contest;
     }
 
-    private ContestStage findReviewStage(
-            Long reviewStageId,
+    private ReviewRound findReviewRound(
+            Long reviewRoundId,
             Contest contest,
             User admin
     ) {
-        validateStageOrganization(reviewStageId, admin);
-        ContestStage reviewStage = contestStageRepository
-                .findById(reviewStageId)
-                .orElseThrow(() -> new CustomException(
-                        ContestErrorResponseCode.STAGE_NOT_FOUND));
-        validateReviewStage(reviewStage, contest);
-        return reviewStage;
+        validateRoundOrganization(reviewRoundId, admin);
+        ReviewRound reviewRound = reviewRoundRepository
+                .findById(reviewRoundId)
+                .orElseThrow(this::reviewRoundNotFound);
+        validateRoundContest(reviewRound, contest);
+        return reviewRound;
     }
 
     private ContestJudge findJudge(Long judgeId, Long contestId) {
@@ -224,47 +216,31 @@ public class ReviewAssignmentAdminServiceImpl
                         ReviewErrorResponseCode.CONTEST_JUDGE_NOT_FOUND));
     }
 
-    private void validateStageOrganization(Long stageId, User admin) {
-        Long organizationId = contestStageRepository
-                .findOrganizationIdById(stageId)
-                .orElseThrow(() -> new CustomException(
-                        ContestErrorResponseCode.STAGE_NOT_FOUND));
+    private void validateRoundOrganization(Long roundId, User admin) {
+        Long organizationId = reviewRoundRepository
+                .findOrganizationIdById(roundId)
+                .orElseThrow(this::reviewRoundNotFound);
         if (!organizationId.equals(admin.getOrganization().getId())) {
             throw new CustomException(
                     ContestErrorResponseCode.CONTEST_FORBIDDEN);
         }
     }
 
-    private void validateReviewStage(
-            ContestStage reviewStage,
+    private void validateRoundContest(
+            ReviewRound reviewRound,
             Contest contest
     ) {
-        if (!reviewStage.getContest().getId().equals(contest.getId())) {
-            throw new CustomException(
-                    ContestErrorResponseCode.STAGE_NOT_FOUND);
-        }
-        if (!reviewStage.getStageType().supportsReviewCriteria()) {
-            throw new CustomException(
-                    ReviewErrorResponseCode.REVIEW_STAGE_INVALID);
+        if (!reviewRound.getContest().getId().equals(contest.getId())) {
+            throw reviewRoundNotFound();
         }
     }
 
-    private void validateReviewStageAssignable(
-            ContestStage reviewStage
-    ) {
-        if (reviewStage.getStatus() != StageStatus.PREPARING
-                && reviewStage.getStatus() != StageStatus.OPEN) {
+    private void validateRoundAssignable(ReviewRound reviewRound) {
+        if (reviewRound.getStatus() != ReviewRoundStatus.PREPARING
+                && reviewRound.getStatus() != ReviewRoundStatus.OPEN) {
             throw new CustomException(
                     ReviewErrorResponseCode
                             .REVIEW_ASSIGNMENT_PREPARATION_NOT_ALLOWED);
-        }
-    }
-
-    private void validateContestReviewing(Contest contest) {
-        if (contest.getStatus() != ContestStatus.REVIEWING) {
-            throw new CustomException(
-                    ReviewErrorResponseCode
-                            .REVIEW_ENTRY_CONTEST_NOT_REVIEWING);
         }
     }
 
@@ -285,17 +261,17 @@ public class ReviewAssignmentAdminServiceImpl
 
     private LocalDateTime resolveDueAt(
             ReviewAssignmentPrepareReq req,
-            ContestStage reviewStage,
+            ReviewRound reviewRound,
             LocalDateTime now
     ) {
         LocalDateTime dueAt =
                 req == null || req.dueAt() == null
-                        ? reviewStage.getEndsAt()
+                        ? reviewRound.getEndsAt()
                         : req.dueAt();
         if (dueAt != null
                 && (!dueAt.isAfter(now)
-                || (reviewStage.getEndsAt() != null
-                && dueAt.isAfter(reviewStage.getEndsAt())))) {
+                || (reviewRound.getEndsAt() != null
+                && dueAt.isAfter(reviewRound.getEndsAt())))) {
             throw new CustomException(
                     ReviewErrorResponseCode
                             .REVIEW_ASSIGNMENT_DUE_AT_INVALID);
@@ -318,15 +294,20 @@ public class ReviewAssignmentAdminServiceImpl
 
     private List<ReviewAssignmentRes> getAssignmentResponses(
             Long judgeId,
-            Long reviewStageId
+            Long reviewRoundId
     ) {
         return reviewAssignmentRepository
-                .findAllWithDetailsByJudgeIdAndReviewStageId(
+                .findAllWithDetailsByJudgeIdAndReviewRoundId(
                         judgeId,
-                        reviewStageId
+                        reviewRoundId
                 )
                 .stream()
                 .map(ReviewAssignmentRes::from)
                 .toList();
+    }
+
+    private CustomException reviewRoundNotFound() {
+        return new CustomException(
+                ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND);
     }
 }

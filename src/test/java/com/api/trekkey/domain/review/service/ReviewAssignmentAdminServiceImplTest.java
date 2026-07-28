@@ -12,26 +12,24 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
 import com.api.trekkey.domain.contest.entity.Contest;
-import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
-import com.api.trekkey.domain.contest.entity.StagePassRule;
-import com.api.trekkey.domain.contest.entity.StageStatus;
-import com.api.trekkey.domain.contest.entity.StageTargetType;
-import com.api.trekkey.domain.contest.entity.StageType;
-import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
-import com.api.trekkey.domain.contest.repository.ContestStageRepository;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.review.entity.ContestJudge;
 import com.api.trekkey.domain.review.entity.ReviewAssignment;
 import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
+import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundDecisionRule;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.repository.ContestJudgeRepository;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.web.dto.request.ReviewAssignmentPrepareReq;
 import com.api.trekkey.domain.review.web.dto.response.ReviewAssignmentRes;
 import com.api.trekkey.domain.submission.entity.Submission;
@@ -45,8 +43,6 @@ import com.api.trekkey.domain.user.entity.UserStatus;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -71,12 +67,12 @@ class ReviewAssignmentAdminServiceImplTest {
     private static final Long ADMIN_ID = 10L;
     private static final Long ORGANIZATION_ID = 1L;
     private static final Long CONTEST_ID = 100L;
-    private static final Long REVIEW_STAGE_ID = 200L;
+    private static final Long REVIEW_ROUND_ID = 200L;
     private static final Long JUDGE_ID = 300L;
     private static final String CONTEST_PUBLIC_ID = "contest-public-id";
     private static final LocalDateTime NOW =
             LocalDateTime.of(2026, 7, 24, 12, 0);
-    private static final LocalDateTime STAGE_ENDS_AT =
+    private static final LocalDateTime ROUND_ENDS_AT =
             LocalDateTime.of(2026, 7, 25, 12, 0);
 
     @Mock
@@ -86,7 +82,7 @@ class ReviewAssignmentAdminServiceImplTest {
     private ContestRepository contestRepository;
 
     @Mock
-    private ContestStageRepository contestStageRepository;
+    private ReviewRoundRepository reviewRoundRepository;
 
     @Mock
     private ContestJudgeRepository contestJudgeRepository;
@@ -99,9 +95,6 @@ class ReviewAssignmentAdminServiceImplTest {
 
     @Mock
     private AdminAuditLogger adminAuditLogger;
-
-    @Mock
-    private EntityManager entityManager;
 
     private ReviewAssignmentAdminServiceImpl service;
     private Organization organization;
@@ -118,13 +111,12 @@ class ReviewAssignmentAdminServiceImplTest {
         service = new ReviewAssignmentAdminServiceImpl(
                 userRepository,
                 contestRepository,
-                contestStageRepository,
+                reviewRoundRepository,
                 contestJudgeRepository,
                 reviewRoundEntryRepository,
                 reviewAssignmentRepository,
                 adminAuditLogger,
-                clock,
-                entityManager
+                clock
         );
 
         organization = org.mockito.Mockito.mock(Organization.class);
@@ -142,17 +134,17 @@ class ReviewAssignmentAdminServiceImplTest {
     }
 
     @Test
-    @DisplayName("PREPARING 단계의 모든 엔트리를 한 심사위원에게 배정하고 잠금 순서와 감사 로그를 지킨다")
+    @DisplayName("PREPARING 라운드의 모든 엔트리를 한 심사위원에게 배정하고 잠금 순서와 감사 로그를 지킨다")
     @SuppressWarnings("unchecked")
     void prepareAssignments_createsAssignmentsForAllEntriesInLockOrder() {
-        ContestStage stage = reviewStage(StageStatus.PREPARING);
+        ReviewRound round = reviewRound(ReviewRoundStatus.PREPARING);
         List<ReviewRoundEntry> entries = List.of(
-                entry(401L, stage, ReviewRoundEntryStatus.ELIGIBLE),
-                entry(402L, stage, ReviewRoundEntryStatus.IN_REVIEW)
+                entry(401L, round, ReviewRoundEntryStatus.ELIGIBLE),
+                entry(402L, round, ReviewRoundEntryStatus.IN_REVIEW)
         );
         LocalDateTime dueAt = NOW.plusHours(2);
         List<ReviewAssignment> persisted = new ArrayList<>();
-        stubLockedContext(stage, entries, List.of());
+        stubLockedContext(round, entries, List.of());
         given(reviewAssignmentRepository.saveAllAndFlush(anyList()))
                 .willAnswer(invocation -> {
                     List<ReviewAssignment> assignments =
@@ -168,15 +160,15 @@ class ReviewAssignmentAdminServiceImplTest {
                     return assignments;
                 });
         given(reviewAssignmentRepository
-                .findAllWithDetailsByJudgeIdAndReviewStageId(
+                .findAllWithDetailsByJudgeIdAndReviewRoundId(
                         JUDGE_ID,
-                        REVIEW_STAGE_ID
+                        REVIEW_ROUND_ID
                 )).willAnswer(invocation -> persisted);
 
         List<ReviewAssignmentRes> response = service.prepareAssignments(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID,
+                REVIEW_ROUND_ID,
                 JUDGE_ID,
                 new ReviewAssignmentPrepareReq(dueAt)
         );
@@ -209,17 +201,17 @@ class ReviewAssignmentAdminServiceImplTest {
 
         InOrder lockOrder = inOrder(
                 contestJudgeRepository,
-                contestStageRepository,
+                reviewRoundRepository,
                 reviewRoundEntryRepository,
                 reviewAssignmentRepository
         );
         lockOrder.verify(contestJudgeRepository)
                 .findByIdAndContestIdForUpdate(JUDGE_ID, CONTEST_ID);
-        lockOrder.verify(contestStageRepository)
-                .findByIdForShare(REVIEW_STAGE_ID);
+        lockOrder.verify(reviewRoundRepository)
+                .findByIdForShare(REVIEW_ROUND_ID);
         lockOrder.verify(reviewRoundEntryRepository)
-                .findAllForShareByReviewStageIdOrderByIdAsc(
-                        REVIEW_STAGE_ID);
+                .findAllForShareByReviewRoundIdOrderByIdAsc(
+                        REVIEW_ROUND_ID);
         lockOrder.verify(reviewAssignmentRepository)
                 .findAllForUpdateByJudgeIdAndEntryIdIn(
                         JUDGE_ID,
@@ -227,16 +219,12 @@ class ReviewAssignmentAdminServiceImplTest {
                 );
         lockOrder.verify(reviewAssignmentRepository)
                 .saveAllAndFlush(anyList());
-        verify(entityManager).refresh(
-                contest,
-                LockModeType.PESSIMISTIC_READ
-        );
         verify(adminAuditLogger).log(
                 ADMIN_ID,
                 ORGANIZATION_ID,
                 AuditAction.REVIEW_ASSIGNMENTS_PREPARE,
-                "REVIEW_STAGE",
-                REVIEW_STAGE_ID,
+                "REVIEW_ROUND",
+                REVIEW_ROUND_ID,
                 "judgeId=300, assignmentCount=2"
         );
     }
@@ -244,42 +232,42 @@ class ReviewAssignmentAdminServiceImplTest {
     @Test
     @DisplayName("모든 엔트리가 이미 배정되었으면 저장과 감사 로그 없이 기존 결과를 반환한다")
     void prepareAssignments_isIdempotentWhenAllAssignmentsExist() {
-        ContestStage stage = reviewStage(StageStatus.PREPARING);
+        ReviewRound round = reviewRound(ReviewRoundStatus.PREPARING);
         ReviewRoundEntry first =
-                entry(401L, stage, ReviewRoundEntryStatus.ELIGIBLE);
+                entry(401L, round, ReviewRoundEntryStatus.ELIGIBLE);
         ReviewRoundEntry second =
-                entry(402L, stage, ReviewRoundEntryStatus.IN_REVIEW);
+                entry(402L, round, ReviewRoundEntryStatus.IN_REVIEW);
         ReviewAssignment assigned = assignment(
                 501L,
                 first,
                 ReviewAssignmentStatus.ASSIGNED,
                 NOW.minusHours(1),
-                STAGE_ENDS_AT
+                ROUND_ENDS_AT
         );
         ReviewAssignment completed = assignment(
                 502L,
                 second,
                 ReviewAssignmentStatus.COMPLETED,
                 NOW.minusHours(1),
-                STAGE_ENDS_AT
+                ROUND_ENDS_AT
         );
         stubLockedContext(
-                stage,
+                round,
                 List.of(first, second),
                 List.of(assigned, completed)
         );
         given(reviewAssignmentRepository
-                .findAllWithDetailsByJudgeIdAndReviewStageId(
+                .findAllWithDetailsByJudgeIdAndReviewRoundId(
                         JUDGE_ID,
-                        REVIEW_STAGE_ID
+                        REVIEW_ROUND_ID
                 )).willReturn(List.of(assigned, completed));
 
         List<ReviewAssignmentRes> response = service.prepareAssignments(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID,
+                REVIEW_ROUND_ID,
                 JUDGE_ID,
-                new ReviewAssignmentPrepareReq(STAGE_ENDS_AT)
+                new ReviewAssignmentPrepareReq(ROUND_ENDS_AT)
         );
 
         assertThat(response)
@@ -287,24 +275,24 @@ class ReviewAssignmentAdminServiceImplTest {
                 .containsExactly(501L, 502L);
         verify(reviewAssignmentRepository, never())
                 .saveAllAndFlush(anyList());
-        verifyNoInteractions(adminAuditLogger, entityManager);
+        verifyNoInteractions(adminAuditLogger);
     }
 
     @Test
     @DisplayName("취소된 배정만 같은 행으로 재활성화하고 변경 건수만 감사 로그에 기록한다")
     @SuppressWarnings("unchecked")
     void prepareAssignments_reactivatesOnlyCanceledAssignment() {
-        ContestStage stage = reviewStage(StageStatus.PREPARING);
+        ReviewRound round = reviewRound(ReviewRoundStatus.PREPARING);
         ReviewRoundEntry first =
-                entry(401L, stage, ReviewRoundEntryStatus.ELIGIBLE);
+                entry(401L, round, ReviewRoundEntryStatus.ELIGIBLE);
         ReviewRoundEntry second =
-                entry(402L, stage, ReviewRoundEntryStatus.ELIGIBLE);
+                entry(402L, round, ReviewRoundEntryStatus.ELIGIBLE);
         ReviewAssignment active = assignment(
                 501L,
                 first,
                 ReviewAssignmentStatus.ASSIGNED,
                 NOW.minusDays(1),
-                STAGE_ENDS_AT
+                ROUND_ENDS_AT
         );
         ReviewAssignment canceled = assignment(
                 502L,
@@ -320,22 +308,22 @@ class ReviewAssignmentAdminServiceImplTest {
         );
         LocalDateTime newDueAt = NOW.plusHours(4);
         stubLockedContext(
-                stage,
+                round,
                 List.of(first, second),
                 List.of(active, canceled)
         );
         given(reviewAssignmentRepository.saveAllAndFlush(anyList()))
                 .willAnswer(invocation -> invocation.getArgument(0));
         given(reviewAssignmentRepository
-                .findAllWithDetailsByJudgeIdAndReviewStageId(
+                .findAllWithDetailsByJudgeIdAndReviewRoundId(
                         JUDGE_ID,
-                        REVIEW_STAGE_ID
+                        REVIEW_ROUND_ID
                 )).willReturn(List.of(active, canceled));
 
         service.prepareAssignments(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID,
+                REVIEW_ROUND_ID,
                 JUDGE_ID,
                 new ReviewAssignmentPrepareReq(newDueAt)
         );
@@ -355,20 +343,20 @@ class ReviewAssignmentAdminServiceImplTest {
                 ADMIN_ID,
                 ORGANIZATION_ID,
                 AuditAction.REVIEW_ASSIGNMENTS_PREPARE,
-                "REVIEW_STAGE",
-                REVIEW_STAGE_ID,
+                "REVIEW_ROUND",
+                REVIEW_ROUND_ID,
                 "judgeId=300, assignmentCount=1"
         );
     }
 
     @Test
-    @DisplayName("OPEN 단계에도 배정할 수 있고 단계 종료 시각과 같은 마감 시각을 허용한다")
-    void prepareAssignments_allowsOpenStageAndDeadlineAtStageEnd() {
-        ContestStage stage = reviewStage(StageStatus.OPEN);
+    @DisplayName("OPEN 라운드에도 배정할 수 있고 라운드 종료 시각과 같은 마감 시각을 허용한다")
+    void prepareAssignments_allowsOpenRoundAndDeadlineAtRoundEnd() {
+        ReviewRound round = reviewRound(ReviewRoundStatus.OPEN);
         ReviewRoundEntry entry =
-                entry(401L, stage, ReviewRoundEntryStatus.IN_REVIEW);
+                entry(401L, round, ReviewRoundEntryStatus.IN_REVIEW);
         List<ReviewAssignment> persisted = new ArrayList<>();
-        stubLockedContext(stage, List.of(entry), List.of());
+        stubLockedContext(round, List.of(entry), List.of());
         given(reviewAssignmentRepository.saveAllAndFlush(anyList()))
                 .willAnswer(invocation -> {
                     List<ReviewAssignment> assignments =
@@ -382,41 +370,41 @@ class ReviewAssignmentAdminServiceImplTest {
                     return assignments;
                 });
         given(reviewAssignmentRepository
-                .findAllWithDetailsByJudgeIdAndReviewStageId(
+                .findAllWithDetailsByJudgeIdAndReviewRoundId(
                         JUDGE_ID,
-                        REVIEW_STAGE_ID
+                        REVIEW_ROUND_ID
                 )).willAnswer(invocation -> persisted);
 
         List<ReviewAssignmentRes> response = service.prepareAssignments(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID,
+                REVIEW_ROUND_ID,
                 JUDGE_ID,
-                new ReviewAssignmentPrepareReq(STAGE_ENDS_AT)
+                new ReviewAssignmentPrepareReq(ROUND_ENDS_AT)
         );
 
         assertThat(response).singleElement().satisfies(assignment -> {
             assertThat(assignment.status())
                     .isEqualTo(ReviewAssignmentStatus.ASSIGNED);
-            assertThat(assignment.dueAt()).isEqualTo(STAGE_ENDS_AT);
+            assertThat(assignment.dueAt()).isEqualTo(ROUND_ENDS_AT);
         });
     }
 
     @Test
-    @DisplayName("COMPLETED 단계에는 새 배정을 만들 수 없다")
-    void prepareAssignments_rejectsCompletedStage() {
-        ContestStage stage = reviewStage(StageStatus.COMPLETED);
+    @DisplayName("FINALIZED 라운드에는 새 배정을 만들 수 없다")
+    void prepareAssignments_rejectsFinalizedRound() {
+        ReviewRound round = reviewRound(ReviewRoundStatus.FINALIZED);
         ReviewRoundEntry entry =
-                entry(401L, stage, ReviewRoundEntryStatus.IN_REVIEW);
-        stubLockedContext(stage, List.of(entry), List.of());
+                entry(401L, round, ReviewRoundEntryStatus.IN_REVIEW);
+        stubLockedContext(round, List.of(entry), List.of());
 
         assertCode(
                 () -> service.prepareAssignments(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                        REVIEW_ROUND_ID,
                         JUDGE_ID,
-                        new ReviewAssignmentPrepareReq(STAGE_ENDS_AT)
+                        new ReviewAssignmentPrepareReq(ROUND_ENDS_AT)
                 ),
                 ReviewErrorResponseCode
                         .REVIEW_ASSIGNMENT_PREPARATION_NOT_ALLOWED
@@ -424,38 +412,44 @@ class ReviewAssignmentAdminServiceImplTest {
 
         verify(reviewAssignmentRepository, never())
                 .saveAllAndFlush(anyList());
-        verifyNoInteractions(adminAuditLogger, entityManager);
+        verifyNoInteractions(adminAuditLogger);
     }
 
     @Test
-    @DisplayName("대회가 REVIEWING 상태가 아니면 새 배정을 만들 수 없다")
-    void prepareAssignments_rejectsContestNotReviewing() {
+    @DisplayName("배정 가능 여부는 기존 대회 상태가 아니라 리뷰 라운드 상태로 판단한다")
+    void prepareAssignments_doesNotDependOnLegacyContestStatus() {
         ReflectionTestUtils.setField(
                 contest,
                 "status",
                 ContestStatus.APPLICATION_OPEN
         );
-        ContestStage stage = reviewStage(StageStatus.PREPARING);
+        ReviewRound round = reviewRound(ReviewRoundStatus.PREPARING);
         ReviewRoundEntry entry =
-                entry(401L, stage, ReviewRoundEntryStatus.ELIGIBLE);
-        stubLockedContext(stage, List.of(entry), List.of());
-
-        assertCode(
-                () -> service.prepareAssignments(
-                        ADMIN_ID,
-                        CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                entry(401L, round, ReviewRoundEntryStatus.ELIGIBLE);
+        ReviewAssignment existing = assignment(
+                501L,
+                entry,
+                ReviewAssignmentStatus.ASSIGNED,
+                NOW.minusHours(1),
+                ROUND_ENDS_AT
+        );
+        stubLockedContext(round, List.of(entry), List.of(existing));
+        given(reviewAssignmentRepository
+                .findAllWithDetailsByJudgeIdAndReviewRoundId(
                         JUDGE_ID,
-                        new ReviewAssignmentPrepareReq(STAGE_ENDS_AT)
-                ),
-                ReviewErrorResponseCode
-                        .REVIEW_ENTRY_CONTEST_NOT_REVIEWING
+                        REVIEW_ROUND_ID
+                )).willReturn(List.of(existing));
+
+        List<ReviewAssignmentRes> response = service.prepareAssignments(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID,
+                JUDGE_ID,
+                new ReviewAssignmentPrepareReq(ROUND_ENDS_AT)
         );
 
-        verify(entityManager).refresh(
-                contest,
-                LockModeType.PESSIMISTIC_READ
-        );
+        assertThat(response).extracting(ReviewAssignmentRes::id)
+                .containsExactly(501L);
         verify(reviewAssignmentRepository, never())
                 .saveAllAndFlush(anyList());
     }
@@ -463,16 +457,16 @@ class ReviewAssignmentAdminServiceImplTest {
     @Test
     @DisplayName("마감 시각이 현재와 같으면 배정을 거부한다")
     void prepareAssignments_rejectsDeadlineAtNow() {
-        ContestStage stage = reviewStage(StageStatus.PREPARING);
+        ReviewRound round = reviewRound(ReviewRoundStatus.PREPARING);
         ReviewRoundEntry entry =
-                entry(401L, stage, ReviewRoundEntryStatus.ELIGIBLE);
-        stubLockedContext(stage, List.of(entry), List.of());
+                entry(401L, round, ReviewRoundEntryStatus.ELIGIBLE);
+        stubLockedContext(round, List.of(entry), List.of());
 
         assertCode(
                 () -> service.prepareAssignments(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                        REVIEW_ROUND_ID,
                         JUDGE_ID,
                         new ReviewAssignmentPrepareReq(NOW)
                 ),
@@ -484,21 +478,21 @@ class ReviewAssignmentAdminServiceImplTest {
     }
 
     @Test
-    @DisplayName("마감 시각이 단계 종료 시각보다 늦으면 배정을 거부한다")
-    void prepareAssignments_rejectsDeadlineAfterStageEnd() {
-        ContestStage stage = reviewStage(StageStatus.PREPARING);
+    @DisplayName("마감 시각이 라운드 종료 시각보다 늦으면 배정을 거부한다")
+    void prepareAssignments_rejectsDeadlineAfterRoundEnd() {
+        ReviewRound round = reviewRound(ReviewRoundStatus.PREPARING);
         ReviewRoundEntry entry =
-                entry(401L, stage, ReviewRoundEntryStatus.ELIGIBLE);
-        stubLockedContext(stage, List.of(entry), List.of());
+                entry(401L, round, ReviewRoundEntryStatus.ELIGIBLE);
+        stubLockedContext(round, List.of(entry), List.of());
 
         assertCode(
                 () -> service.prepareAssignments(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                        REVIEW_ROUND_ID,
                         JUDGE_ID,
                         new ReviewAssignmentPrepareReq(
-                                STAGE_ENDS_AT.plusNanos(1)
+                                ROUND_ENDS_AT.plusNanos(1)
                         )
                 ),
                 ReviewErrorResponseCode.REVIEW_ASSIGNMENT_DUE_AT_INVALID
@@ -511,51 +505,50 @@ class ReviewAssignmentAdminServiceImplTest {
     @Test
     @DisplayName("심사 엔트리가 없으면 배정을 거부한다")
     void prepareAssignments_rejectsEmptyEntries() {
-        ContestStage stage = reviewStage(StageStatus.PREPARING);
-        stubAdminContestAndStageOrganization();
+        ReviewRound round = reviewRound(ReviewRoundStatus.PREPARING);
+        stubAdminContestAndRoundOrganization();
         given(contestJudgeRepository
                 .findByIdAndContestIdForUpdate(JUDGE_ID, CONTEST_ID))
                 .willReturn(Optional.of(judge));
-        given(contestStageRepository.findByIdForShare(REVIEW_STAGE_ID))
-                .willReturn(Optional.of(stage));
+        given(reviewRoundRepository.findByIdForShare(REVIEW_ROUND_ID))
+                .willReturn(Optional.of(round));
         given(reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByIdAsc(
-                        REVIEW_STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderByIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(List.of());
 
         assertCode(
                 () -> service.prepareAssignments(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                        REVIEW_ROUND_ID,
                         JUDGE_ID,
-                        new ReviewAssignmentPrepareReq(STAGE_ENDS_AT)
+                        new ReviewAssignmentPrepareReq(ROUND_ENDS_AT)
                 ),
                 ReviewErrorResponseCode.REVIEW_ASSIGNMENT_ENTRY_REQUIRED
         );
 
         verifyNoInteractions(
                 reviewAssignmentRepository,
-                adminAuditLogger,
-                entityManager
+                adminAuditLogger
         );
     }
 
     @Test
     @DisplayName("선정 완료 등 terminal 상태의 엔트리가 포함되면 배정을 거부한다")
     void prepareAssignments_rejectsTerminalEntry() {
-        ContestStage stage = reviewStage(StageStatus.PREPARING);
+        ReviewRound round = reviewRound(ReviewRoundStatus.PREPARING);
         ReviewRoundEntry entry =
-                entry(401L, stage, ReviewRoundEntryStatus.SELECTED);
-        stubLockedContext(stage, List.of(entry), List.of());
+                entry(401L, round, ReviewRoundEntryStatus.SELECTED);
+        stubLockedContext(round, List.of(entry), List.of());
 
         assertCode(
                 () -> service.prepareAssignments(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                        REVIEW_ROUND_ID,
                         JUDGE_ID,
-                        new ReviewAssignmentPrepareReq(STAGE_ENDS_AT)
+                        new ReviewAssignmentPrepareReq(ROUND_ENDS_AT)
                 ),
                 ReviewErrorResponseCode.REVIEW_ASSIGNMENT_ENTRY_INVALID
         );
@@ -567,7 +560,7 @@ class ReviewAssignmentAdminServiceImplTest {
     @Test
     @DisplayName("요청 대회에 속하지 않는 심사위원은 찾을 수 없는 것으로 처리한다")
     void prepareAssignments_rejectsJudgeOutsideContest() {
-        stubAdminContestAndStageOrganization();
+        stubAdminContestAndRoundOrganization();
         given(contestJudgeRepository
                 .findByIdAndContestIdForUpdate(JUDGE_ID, CONTEST_ID))
                 .willReturn(Optional.empty());
@@ -576,53 +569,51 @@ class ReviewAssignmentAdminServiceImplTest {
                 () -> service.prepareAssignments(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                        REVIEW_ROUND_ID,
                         JUDGE_ID,
-                        new ReviewAssignmentPrepareReq(STAGE_ENDS_AT)
+                        new ReviewAssignmentPrepareReq(ROUND_ENDS_AT)
                 ),
                 ReviewErrorResponseCode.CONTEST_JUDGE_NOT_FOUND
         );
 
-        verify(contestStageRepository, never())
-                .findByIdForShare(REVIEW_STAGE_ID);
+        verify(reviewRoundRepository, never())
+                .findByIdForShare(REVIEW_ROUND_ID);
         verifyNoInteractions(
                 reviewRoundEntryRepository,
                 reviewAssignmentRepository,
-                adminAuditLogger,
-                entityManager
+                adminAuditLogger
         );
     }
 
     @Test
-    @DisplayName("요청 대회와 다른 대회의 심사 단계는 찾을 수 없는 것으로 처리한다")
-    void prepareAssignments_rejectsStageOutsideContest() {
+    @DisplayName("요청 대회와 다른 대회의 리뷰 라운드는 찾을 수 없는 것으로 처리한다")
+    void prepareAssignments_rejectsRoundOutsideContest() {
         Contest otherContest =
                 contest(999L, ContestStatus.REVIEWING);
-        ContestStage otherStage =
-                reviewStage(otherContest, StageStatus.PREPARING);
-        stubAdminContestAndStageOrganization();
+        ReviewRound otherRound =
+                reviewRound(otherContest, ReviewRoundStatus.PREPARING);
+        stubAdminContestAndRoundOrganization();
         given(contestJudgeRepository
                 .findByIdAndContestIdForUpdate(JUDGE_ID, CONTEST_ID))
                 .willReturn(Optional.of(judge));
-        given(contestStageRepository.findByIdForShare(REVIEW_STAGE_ID))
-                .willReturn(Optional.of(otherStage));
+        given(reviewRoundRepository.findByIdForShare(REVIEW_ROUND_ID))
+                .willReturn(Optional.of(otherRound));
 
         assertCode(
                 () -> service.prepareAssignments(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                        REVIEW_ROUND_ID,
                         JUDGE_ID,
-                        new ReviewAssignmentPrepareReq(STAGE_ENDS_AT)
+                        new ReviewAssignmentPrepareReq(ROUND_ENDS_AT)
                 ),
-                ContestErrorResponseCode.STAGE_NOT_FOUND
+                ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND
         );
 
         verifyNoInteractions(
                 reviewRoundEntryRepository,
                 reviewAssignmentRepository,
-                adminAuditLogger,
-                entityManager
+                adminAuditLogger
         );
     }
 
@@ -637,31 +628,30 @@ class ReviewAssignmentAdminServiceImplTest {
                 () -> service.prepareAssignments(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                        REVIEW_ROUND_ID,
                         JUDGE_ID,
-                        new ReviewAssignmentPrepareReq(STAGE_ENDS_AT)
+                        new ReviewAssignmentPrepareReq(ROUND_ENDS_AT)
                 ),
                 UserErrorResponseCode.USER_INVALID_TOKEN
         );
 
         verifyNoInteractions(
                 contestRepository,
-                contestStageRepository,
+                reviewRoundRepository,
                 contestJudgeRepository,
                 reviewRoundEntryRepository,
                 reviewAssignmentRepository,
-                adminAuditLogger,
-                entityManager
+                adminAuditLogger
         );
     }
 
     @Test
     @DisplayName("DB 복합 유니크 제약 충돌은 배정 중복 도메인 오류로 변환한다")
     void prepareAssignments_mapsUniqueViolationToDomainError() {
-        ContestStage stage = reviewStage(StageStatus.PREPARING);
+        ReviewRound round = reviewRound(ReviewRoundStatus.PREPARING);
         ReviewRoundEntry entry =
-                entry(401L, stage, ReviewRoundEntryStatus.ELIGIBLE);
-        stubLockedContext(stage, List.of(entry), List.of());
+                entry(401L, round, ReviewRoundEntryStatus.ELIGIBLE);
+        stubLockedContext(round, List.of(entry), List.of());
         given(reviewAssignmentRepository.saveAllAndFlush(anyList()))
                 .willThrow(new DataIntegrityViolationException("duplicate"));
 
@@ -669,35 +659,35 @@ class ReviewAssignmentAdminServiceImplTest {
                 () -> service.prepareAssignments(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                        REVIEW_ROUND_ID,
                         JUDGE_ID,
-                        new ReviewAssignmentPrepareReq(STAGE_ENDS_AT)
+                        new ReviewAssignmentPrepareReq(ROUND_ENDS_AT)
                 ),
                 ReviewErrorResponseCode.REVIEW_ASSIGNMENT_DUPLICATED
         );
 
         verifyNoInteractions(adminAuditLogger);
         verify(reviewAssignmentRepository, never())
-                .findAllWithDetailsByJudgeIdAndReviewStageId(
+                .findAllWithDetailsByJudgeIdAndReviewRoundId(
                         JUDGE_ID,
-                        REVIEW_STAGE_ID
+                        REVIEW_ROUND_ID
                 );
     }
 
     private void stubLockedContext(
-            ContestStage stage,
+            ReviewRound round,
             List<ReviewRoundEntry> entries,
             List<ReviewAssignment> existingAssignments
     ) {
-        stubAdminContestAndStageOrganization();
+        stubAdminContestAndRoundOrganization();
         given(contestJudgeRepository
                 .findByIdAndContestIdForUpdate(JUDGE_ID, CONTEST_ID))
                 .willReturn(Optional.of(judge));
-        given(contestStageRepository.findByIdForShare(REVIEW_STAGE_ID))
-                .willReturn(Optional.of(stage));
+        given(reviewRoundRepository.findByIdForShare(REVIEW_ROUND_ID))
+                .willReturn(Optional.of(round));
         given(reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByIdAsc(
-                        REVIEW_STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderByIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(entries);
         given(reviewAssignmentRepository
                 .findAllForUpdateByJudgeIdAndEntryIdIn(
@@ -708,43 +698,42 @@ class ReviewAssignmentAdminServiceImplTest {
                 )).willReturn(existingAssignments);
     }
 
-    private void stubAdminContestAndStageOrganization() {
+    private void stubAdminContestAndRoundOrganization() {
         given(userRepository.findById(ADMIN_ID))
                 .willReturn(Optional.of(admin));
         given(contestRepository.findByPublicId(CONTEST_PUBLIC_ID))
                 .willReturn(Optional.of(contest));
-        given(contestStageRepository
-                .findOrganizationIdById(REVIEW_STAGE_ID))
+        given(reviewRoundRepository
+                .findOrganizationIdById(REVIEW_ROUND_ID))
                 .willReturn(Optional.of(ORGANIZATION_ID));
     }
 
-    private ContestStage reviewStage(StageStatus status) {
-        return reviewStage(contest, status);
+    private ReviewRound reviewRound(ReviewRoundStatus status) {
+        return reviewRound(contest, status);
     }
 
-    private ContestStage reviewStage(
-            Contest stageContest,
-            StageStatus status
+    private ReviewRound reviewRound(
+            Contest roundContest,
+            ReviewRoundStatus status
     ) {
-        ContestStage stage = ContestStage.builder()
-                .contest(stageContest)
+        ReviewRound round = ReviewRound.builder()
+                .contest(roundContest)
+                .roundNo(1)
                 .name("본선 심사")
-                .stageType(StageType.REVIEW)
-                .sequenceNo(3)
                 .status(status)
                 .startsAt(NOW.minusHours(1))
-                .endsAt(STAGE_ENDS_AT)
-                .targetType(StageTargetType.ALL_SUBMISSIONS)
-                .passRule(StagePassRule.TOP_N)
-                .passCount(1)
+                .endsAt(ROUND_ENDS_AT)
+                .targetType(ReviewRoundTargetType.ALL_SUBMISSIONS)
+                .decisionRule(ReviewRoundDecisionRule.TOP_N)
+                .selectCount(1)
                 .build();
-        ReflectionTestUtils.setField(stage, "id", REVIEW_STAGE_ID);
-        return stage;
+        ReflectionTestUtils.setField(round, "id", REVIEW_ROUND_ID);
+        return round;
     }
 
     private ReviewRoundEntry entry(
             Long id,
-            ContestStage stage,
+            ReviewRound round,
             ReviewRoundEntryStatus status
     ) {
         Team team = Team.builder()
@@ -770,7 +759,7 @@ class ReviewAssignmentAdminServiceImplTest {
                 .build();
         ReflectionTestUtils.setField(submission, "id", id + 2000);
         ReviewRoundEntry entry = ReviewRoundEntry.builder()
-                .reviewStage(stage)
+                .reviewRound(round)
                 .submission(submission)
                 .status(status)
                 .build();

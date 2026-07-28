@@ -26,6 +26,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Table(
+        name = "review_assignment",
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_review_assignment_judge_entry",
                 columnNames = {
@@ -50,11 +51,13 @@ public class ReviewAssignment extends BaseEntity {
     @Column(nullable = false, length = 30)
     private ReviewAssignmentStatus status;
 
-    @Column(nullable = false)
+    @Column(name = "assigned_at", nullable = false)
     private LocalDateTime assignedAt;
 
+    @Column(name = "due_at")
     private LocalDateTime dueAt;
 
+    @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
     public boolean complete(LocalDateTime completedAt) {

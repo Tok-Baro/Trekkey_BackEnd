@@ -62,7 +62,7 @@ class ReviewRoundEntryAdminControllerTest {
         )).willReturn(List.of(entryRes()));
 
         mockMvc.perform(post(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}/entries/prepare",
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}/entries/prepare",
                         "contest-public-id",
                         300L
                 ))
@@ -72,7 +72,7 @@ class ReviewRoundEntryAdminControllerTest {
                 .andExpect(jsonPath("$.httpStatus").value(200))
                 .andExpect(jsonPath("$.message").value("심사 대상을 준비했습니다."))
                 .andExpect(jsonPath("$.data[0].id").value(400L))
-                .andExpect(jsonPath("$.data[0].reviewStageId").value(300L))
+                .andExpect(jsonPath("$.data[0].reviewRoundId").value(300L))
                 .andExpect(jsonPath("$.data[0].submissionPublicId")
                         .value("submission-public-id"))
                 .andExpect(jsonPath("$.data[0].submissionTitle").value("AI 작품"))
@@ -101,7 +101,7 @@ class ReviewRoundEntryAdminControllerTest {
         )).willReturn(List.of(entryRes()));
 
         mockMvc.perform(get(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}/entries",
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}/entries",
                         "contest-public-id",
                         300L
                 ))
@@ -110,7 +110,7 @@ class ReviewRoundEntryAdminControllerTest {
                 .andExpect(jsonPath("$.code").value("SUCCESS_200"))
                 .andExpect(jsonPath("$.httpStatus").value(200))
                 .andExpect(jsonPath("$.data[0].id").value(400L))
-                .andExpect(jsonPath("$.data[0].reviewStageId").value(300L))
+                .andExpect(jsonPath("$.data[0].reviewRoundId").value(300L))
                 .andExpect(jsonPath("$.data[0].submissionPublicId")
                         .value("submission-public-id"))
                 .andExpect(jsonPath("$.data[0].status").value("ELIGIBLE"));
@@ -130,7 +130,7 @@ class ReviewRoundEntryAdminControllerTest {
                 ReviewErrorResponseCode.REVIEW_ENTRY_PREPARATION_NOT_ALLOWED));
 
         mockMvc.perform(post(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}/entries/prepare",
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}/entries/prepare",
                         "contest-public-id",
                         300L
                 ))

@@ -1,6 +1,6 @@
 package com.api.trekkey.domain.contest.web.dto;
 
-import com.api.trekkey.domain.contest.entity.ReviewCriterion;
+import com.api.trekkey.domain.review.entity.ReviewCriterion;
 
 public record CriterionRes(
         Long id,

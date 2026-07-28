@@ -4,26 +4,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.api.trekkey.domain.audit.repository.AdminAuditLogRepository;
 import com.api.trekkey.domain.contest.entity.Contest;
-import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
-import com.api.trekkey.domain.contest.entity.StagePassRule;
-import com.api.trekkey.domain.contest.entity.StageStatus;
-import com.api.trekkey.domain.contest.entity.StageTargetType;
-import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
-import com.api.trekkey.domain.contest.repository.ContestStageRepository;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.organization.entity.OrganizationStatus;
 import com.api.trekkey.domain.organization.repository.OrganizationRepository;
 import com.api.trekkey.domain.review.entity.ContestJudge;
 import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
+import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundDecisionRule;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.repository.ContestJudgeRepository;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.service.ReviewAccessService;
 import com.api.trekkey.domain.review.service.ReviewAssignmentAdminService;
 import com.api.trekkey.domain.review.support.ReviewLinkTokenManager;
@@ -103,7 +102,7 @@ class ReviewAssignmentMySqlIntegrationTest {
     private TeamRepository teamRepository;
 
     @Autowired
-    private ContestStageRepository contestStageRepository;
+    private ReviewRoundRepository reviewRoundRepository;
 
     @Autowired
     private ContestRepository contestRepository;
@@ -119,7 +118,7 @@ class ReviewAssignmentMySqlIntegrationTest {
 
     private User admin;
     private Contest contest;
-    private ContestStage reviewStage;
+    private ReviewRound reviewRound;
     private ContestJudge judge;
 
     @DynamicPropertySource
@@ -193,15 +192,16 @@ class ReviewAssignmentMySqlIntegrationTest {
                 .detailHtml("<p>본문</p>")
                 .build());
 
-        reviewStage = contestStageRepository.saveAndFlush(
-                ContestStage.builder()
+        reviewRound = reviewRoundRepository.saveAndFlush(
+                ReviewRound.builder()
                         .contest(contest)
                         .name("1차 심사")
-                        .stageType(StageType.REVIEW)
-                        .sequenceNo(1)
-                        .status(StageStatus.PREPARING)
-                        .targetType(StageTargetType.ALL_SUBMISSIONS)
-                        .passRule(StagePassRule.FINAL)
+                        .roundNo(1)
+                        .status(ReviewRoundStatus.PREPARING)
+                        .startsAt(LocalDateTime.now().minusHours(1))
+                        .endsAt(LocalDateTime.now().plusDays(1))
+                        .targetType(ReviewRoundTargetType.ALL_SUBMISSIONS)
+                        .decisionRule(ReviewRoundDecisionRule.MANUAL)
                         .build()
         );
 
@@ -229,7 +229,7 @@ class ReviewAssignmentMySqlIntegrationTest {
 
         reviewRoundEntryRepository.saveAndFlush(
                 ReviewRoundEntry.builder()
-                        .reviewStage(reviewStage)
+                        .reviewRound(reviewRound)
                         .submission(submission)
                         .status(ReviewRoundEntryStatus.ELIGIBLE)
                         .build()
@@ -259,7 +259,7 @@ class ReviewAssignmentMySqlIntegrationTest {
                 reviewAssignmentAdminService.prepareAssignments(
                         admin.getId(),
                         contest.getPublicId(),
-                        reviewStage.getId(),
+                        reviewRound.getId(),
                         judge.getId(),
                         request
                 );
@@ -267,7 +267,7 @@ class ReviewAssignmentMySqlIntegrationTest {
                 reviewAssignmentAdminService.prepareAssignments(
                         admin.getId(),
                         contest.getPublicId(),
-                        reviewStage.getId(),
+                        reviewRound.getId(),
                         judge.getId(),
                         request
                 );
@@ -278,8 +278,8 @@ class ReviewAssignmentMySqlIntegrationTest {
                             .isEqualTo(ReviewAssignmentStatus.ASSIGNED);
                     assertThat(assignment.judgeId())
                             .isEqualTo(judge.getId());
-                    assertThat(assignment.reviewStageId())
-                            .isEqualTo(reviewStage.getId());
+                    assertThat(assignment.reviewRoundId())
+                            .isEqualTo(reviewRound.getId());
                 });
         assertThat(retried).singleElement()
                 .extracting(ReviewAssignmentRes::id)
@@ -375,7 +375,7 @@ class ReviewAssignmentMySqlIntegrationTest {
                     reviewAssignmentAdminService.prepareAssignments(
                             admin.getId(),
                             contest.getPublicId(),
-                            reviewStage.getId(),
+                            reviewRound.getId(),
                             judge.getId(),
                             new ReviewAssignmentPrepareReq(null)
                     ),
@@ -393,7 +393,7 @@ class ReviewAssignmentMySqlIntegrationTest {
         contestJudgeRepository.deleteAllInBatch();
         submissionRepository.deleteAllInBatch();
         teamRepository.deleteAllInBatch();
-        contestStageRepository.deleteAllInBatch();
+        reviewRoundRepository.deleteAllInBatch();
         contestRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
         organizationRepository.deleteAllInBatch();

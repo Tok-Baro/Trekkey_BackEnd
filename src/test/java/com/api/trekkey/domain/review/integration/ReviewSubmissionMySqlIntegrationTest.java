@@ -3,17 +3,9 @@ package com.api.trekkey.domain.review.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.api.trekkey.domain.contest.entity.Contest;
-import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
-import com.api.trekkey.domain.contest.entity.ReviewCriterion;
-import com.api.trekkey.domain.contest.entity.StagePassRule;
-import com.api.trekkey.domain.contest.entity.StageStatus;
-import com.api.trekkey.domain.contest.entity.StageTargetType;
-import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
-import com.api.trekkey.domain.contest.repository.ContestStageRepository;
-import com.api.trekkey.domain.contest.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.organization.entity.OrganizationStatus;
 import com.api.trekkey.domain.organization.repository.OrganizationRepository;
@@ -21,14 +13,21 @@ import com.api.trekkey.domain.review.entity.ContestJudge;
 import com.api.trekkey.domain.review.entity.Review;
 import com.api.trekkey.domain.review.entity.ReviewAssignment;
 import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
+import com.api.trekkey.domain.review.entity.ReviewCriterion;
+import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundDecisionRule;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
 import com.api.trekkey.domain.review.entity.ReviewScoreItem;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.repository.ContestJudgeRepository;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
+import com.api.trekkey.domain.review.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.repository.ReviewRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.repository.ReviewScoreItemRepository;
 import com.api.trekkey.domain.review.service.ReviewSubmissionService;
 import com.api.trekkey.domain.review.support.ReviewLinkTokenManager;
@@ -116,7 +115,7 @@ class ReviewSubmissionMySqlIntegrationTest {
     private TeamRepository teamRepository;
 
     @Autowired
-    private ContestStageRepository contestStageRepository;
+    private ReviewRoundRepository reviewRoundRepository;
 
     @Autowired
     private ContestRepository contestRepository;
@@ -203,23 +202,22 @@ class ReviewSubmissionMySqlIntegrationTest {
                 .build());
 
         LocalDateTime now = LocalDateTime.now();
-        ContestStage reviewStage = contestStageRepository.saveAndFlush(
-                ContestStage.builder()
+        ReviewRound reviewRound = reviewRoundRepository.saveAndFlush(
+                ReviewRound.builder()
                         .contest(contest)
                         .name("1차 심사")
-                        .stageType(StageType.REVIEW)
-                        .sequenceNo(1)
-                        .status(StageStatus.OPEN)
+                        .roundNo(1)
+                        .status(ReviewRoundStatus.OPEN)
                         .startsAt(now.minusHours(1))
                         .endsAt(now.plusHours(2))
-                        .targetType(StageTargetType.ALL_SUBMISSIONS)
-                        .passRule(StagePassRule.FINAL)
+                        .targetType(ReviewRoundTargetType.ALL_SUBMISSIONS)
+                        .decisionRule(ReviewRoundDecisionRule.MANUAL)
                         .build()
         );
 
         creativityCriterion = reviewCriterionRepository.saveAndFlush(
                 ReviewCriterion.builder()
-                        .contestStage(reviewStage)
+                        .reviewRound(reviewRound)
                         .code("creativity")
                         .label("창의성")
                         .maxScore(10)
@@ -229,7 +227,7 @@ class ReviewSubmissionMySqlIntegrationTest {
         );
         completenessCriterion = reviewCriterionRepository.saveAndFlush(
                 ReviewCriterion.builder()
-                        .contestStage(reviewStage)
+                        .reviewRound(reviewRound)
                         .code("completeness")
                         .label("완성도")
                         .maxScore(20)
@@ -262,7 +260,7 @@ class ReviewSubmissionMySqlIntegrationTest {
 
         ReviewRoundEntry entry = reviewRoundEntryRepository.saveAndFlush(
                 ReviewRoundEntry.builder()
-                        .reviewStage(reviewStage)
+                        .reviewRound(reviewRound)
                         .submission(submission)
                         .status(ReviewRoundEntryStatus.IN_REVIEW)
                         .build()
@@ -525,7 +523,7 @@ class ReviewSubmissionMySqlIntegrationTest {
         contestJudgeRepository.deleteAllInBatch();
         submissionRepository.deleteAllInBatch();
         teamRepository.deleteAllInBatch();
-        contestStageRepository.deleteAllInBatch();
+        reviewRoundRepository.deleteAllInBatch();
         contestRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
         organizationRepository.deleteAllInBatch();

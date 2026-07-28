@@ -8,10 +8,10 @@ public interface ReviewRoundEntryAdminService {
     List<ReviewRoundEntryRes> prepareEntries(
             Long adminUserId,
             String contestPublicId,
-            Long reviewStageId);
+            Long reviewRoundId);
 
     List<ReviewRoundEntryRes> getEntries(
             Long adminUserId,
             String contestPublicId,
-            Long reviewStageId);
+            Long reviewRoundId);
 }

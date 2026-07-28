@@ -15,7 +15,7 @@ import com.api.trekkey.domain.review.web.dto.request.ReviewAccessReq;
 import com.api.trekkey.domain.review.web.dto.response.ReviewSheetAssignmentRes;
 import com.api.trekkey.domain.review.web.dto.response.ReviewSheetCriterionRes;
 import com.api.trekkey.domain.review.web.dto.response.ReviewSheetRes;
-import com.api.trekkey.domain.review.web.dto.response.ReviewSheetStageRes;
+import com.api.trekkey.domain.review.web.dto.response.ReviewSheetRoundRes;
 import com.api.trekkey.global.exception.CustomException;
 import com.api.trekkey.global.exception.GlobalExceptionHandler;
 import java.time.LocalDateTime;
@@ -71,24 +71,26 @@ class ReviewSheetControllerTest {
                         .value("contest-public-id"))
                 .andExpect(jsonPath("$.data.contestTitle")
                         .value("AI 공모전"))
-                .andExpect(jsonPath("$.data.stages[0].reviewStageId")
+                .andExpect(jsonPath("$.data.rounds[0].reviewRoundId")
                         .value(300L))
-                .andExpect(jsonPath("$.data.stages[0].stageName")
+                .andExpect(jsonPath("$.data.rounds[0].roundNo")
+                        .value(1))
+                .andExpect(jsonPath("$.data.rounds[0].roundName")
                         .value("1차 심사"))
-                .andExpect(jsonPath("$.data.stages[0].criteria[0].id")
+                .andExpect(jsonPath("$.data.rounds[0].criteria[0].id")
                         .value(600L))
-                .andExpect(jsonPath("$.data.stages[0].criteria[0].code")
+                .andExpect(jsonPath("$.data.rounds[0].criteria[0].code")
                         .value("creativity"))
-                .andExpect(jsonPath("$.data.stages[0].criteria[0].maxScore")
+                .andExpect(jsonPath("$.data.rounds[0].criteria[0].maxScore")
                         .value(30))
                 .andExpect(jsonPath(
-                        "$.data.stages[0].assignments[0].assignmentId")
+                        "$.data.rounds[0].assignments[0].assignmentId")
                         .value(500L))
                 .andExpect(jsonPath(
-                        "$.data.stages[0].assignments[0].submissionPublicId")
+                        "$.data.rounds[0].assignments[0].submissionPublicId")
                         .value("submission-public-id"))
                 .andExpect(jsonPath(
-                        "$.data.stages[0].assignments[0].status")
+                        "$.data.rounds[0].assignments[0].status")
                         .value("ASSIGNED"))
                 .andExpect(jsonPath("$.data.token").doesNotExist())
                 .andExpect(jsonPath("$.data.judgeId").doesNotExist())
@@ -133,8 +135,9 @@ class ReviewSheetControllerTest {
                 "contest-public-id",
                 "AI 공모전",
                 LocalDateTime.of(2099, 8, 1, 18, 0),
-                List.of(new ReviewSheetStageRes(
+                List.of(new ReviewSheetRoundRes(
                         300L,
+                        1,
                         "1차 심사",
                         LocalDateTime.of(2026, 7, 24, 9, 0),
                         LocalDateTime.of(2099, 8, 1, 18, 0),

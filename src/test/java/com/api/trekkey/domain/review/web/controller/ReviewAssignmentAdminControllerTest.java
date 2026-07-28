@@ -36,7 +36,7 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 class ReviewAssignmentAdminControllerTest {
 
     private static final String CONTEST_PUBLIC_ID = "contest-public-id";
-    private static final Long REVIEW_STAGE_ID = 300L;
+    private static final Long REVIEW_ROUND_ID = 300L;
     private static final Long JUDGE_ID = 200L;
     private static final LocalDateTime DUE_AT =
             LocalDateTime.of(2099, 8, 1, 18, 0);
@@ -67,16 +67,16 @@ class ReviewAssignmentAdminControllerTest {
         given(reviewAssignmentAdminService.prepareAssignments(
                 10L,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID,
+                REVIEW_ROUND_ID,
                 JUDGE_ID,
                 request
         )).willReturn(List.of(assignmentRes()));
 
         mockMvc.perform(post(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}"
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}"
                                 + "/judges/{judgeId}/assignments/prepare",
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                        REVIEW_ROUND_ID,
                         JUDGE_ID
                 )
                         .contentType(MediaType.APPLICATION_JSON)
@@ -88,8 +88,8 @@ class ReviewAssignmentAdminControllerTest {
                 .andExpect(jsonPath("$.data[0].id").value(500L))
                 .andExpect(jsonPath("$.data[0].judgeId").value(JUDGE_ID))
                 .andExpect(jsonPath("$.data[0].judgeName").value("김심사"))
-                .andExpect(jsonPath("$.data[0].reviewStageId")
-                        .value(REVIEW_STAGE_ID))
+                .andExpect(jsonPath("$.data[0].reviewRoundId")
+                        .value(REVIEW_ROUND_ID))
                 .andExpect(jsonPath("$.data[0].reviewRoundEntryId")
                         .value(400L))
                 .andExpect(jsonPath("$.data[0].submissionPublicId")
@@ -103,7 +103,7 @@ class ReviewAssignmentAdminControllerTest {
         verify(reviewAssignmentAdminService).prepareAssignments(
                 10L,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID,
+                REVIEW_ROUND_ID,
                 JUDGE_ID,
                 request
         );
@@ -115,30 +115,30 @@ class ReviewAssignmentAdminControllerTest {
         given(reviewAssignmentAdminService.getAssignments(
                 10L,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID,
+                REVIEW_ROUND_ID,
                 JUDGE_ID
         )).willReturn(List.of(assignmentRes()));
 
         mockMvc.perform(get(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}"
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}"
                                 + "/judges/{judgeId}/assignments",
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                        REVIEW_ROUND_ID,
                         JUDGE_ID
                 ))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.data[0].id").value(500L))
                 .andExpect(jsonPath("$.data[0].judgeId").value(JUDGE_ID))
-                .andExpect(jsonPath("$.data[0].reviewStageId")
-                        .value(REVIEW_STAGE_ID))
+                .andExpect(jsonPath("$.data[0].reviewRoundId")
+                        .value(REVIEW_ROUND_ID))
                 .andExpect(jsonPath("$.data[0].status")
                         .value("ASSIGNED"));
 
         verify(reviewAssignmentAdminService).getAssignments(
                 10L,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID,
+                REVIEW_ROUND_ID,
                 JUDGE_ID
         );
     }
@@ -151,7 +151,7 @@ class ReviewAssignmentAdminControllerTest {
         given(reviewAssignmentAdminService.prepareAssignments(
                 10L,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID,
+                REVIEW_ROUND_ID,
                 JUDGE_ID,
                 request
         )).willThrow(new CustomException(
@@ -159,10 +159,10 @@ class ReviewAssignmentAdminControllerTest {
                         .REVIEW_ASSIGNMENT_PREPARATION_NOT_ALLOWED));
 
         mockMvc.perform(post(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}"
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}"
                                 + "/judges/{judgeId}/assignments/prepare",
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID,
+                        REVIEW_ROUND_ID,
                         JUDGE_ID
                 )
                         .contentType(MediaType.APPLICATION_JSON)
@@ -176,7 +176,7 @@ class ReviewAssignmentAdminControllerTest {
         verify(reviewAssignmentAdminService).prepareAssignments(
                 10L,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID,
+                REVIEW_ROUND_ID,
                 JUDGE_ID,
                 request
         );
@@ -209,7 +209,7 @@ class ReviewAssignmentAdminControllerTest {
                 500L,
                 JUDGE_ID,
                 "김심사",
-                REVIEW_STAGE_ID,
+                REVIEW_ROUND_ID,
                 400L,
                 "submission-public-id",
                 "AI 작품",

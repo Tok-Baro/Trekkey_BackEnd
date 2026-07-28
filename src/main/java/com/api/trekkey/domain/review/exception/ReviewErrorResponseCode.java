@@ -27,26 +27,66 @@ public enum ReviewErrorResponseCode implements BaseResponseCode {
             "REVIEW_LINK_INVALID",
             401,
             "유효하지 않거나 만료된 심사 링크입니다."),
-    REVIEW_STAGE_INVALID(
-            "REVIEW_STAGE_INVALID",
+    REVIEW_ROUND_NOT_FOUND(
+            "REVIEW_ROUND_NOT_FOUND",
+            404,
+            "심사 라운드를 찾을 수 없습니다."),
+    REVIEW_ROUND_DUPLICATED(
+            "REVIEW_ROUND_DUPLICATED",
             409,
-            "심사 대상을 설정할 수 있는 단계가 아닙니다."),
+            "같은 순서의 심사 라운드가 이미 존재합니다."),
+    REVIEW_ROUND_CONFIGURATION_LOCKED(
+            "REVIEW_ROUND_CONFIGURATION_LOCKED",
+            409,
+            "진행 중이거나 확정된 심사 라운드의 설정은 변경할 수 없습니다."),
+    REVIEW_ROUND_CONFIGURATION_INVALID(
+            "REVIEW_ROUND_CONFIGURATION_INVALID",
+            409,
+            "심사 라운드를 시작하기 위한 설정이 올바르지 않습니다."),
+    REVIEW_ROUND_STATUS_TRANSITION_INVALID(
+            "REVIEW_ROUND_STATUS_TRANSITION_INVALID",
+            409,
+            "허용되지 않는 심사 라운드 상태 변경입니다."),
+    REVIEW_ROUND_OPEN_WINDOW_EXPIRED(
+            "REVIEW_ROUND_OPEN_WINDOW_EXPIRED",
+            409,
+            "종료 시각이 지난 심사 라운드는 시작할 수 없습니다."),
+    REVIEW_ROUND_CRITERION_NOT_FOUND(
+            "REVIEW_ROUND_CRITERION_NOT_FOUND",
+            404,
+            "심사 라운드의 평가 기준을 찾을 수 없습니다."),
+    REVIEW_ROUND_CRITERION_INVALID(
+            "REVIEW_ROUND_CRITERION_INVALID",
+            400,
+            "평가 기준의 코드, 이름, 배점 또는 순서가 올바르지 않습니다."),
+    REVIEW_ROUND_CRITERION_CODE_IMMUTABLE(
+            "REVIEW_ROUND_CRITERION_CODE_IMMUTABLE",
+            409,
+            "저장된 평가 기준 코드는 변경할 수 없습니다."),
+    REVIEW_ROUND_CRITERION_DUPLICATED(
+            "REVIEW_ROUND_CRITERION_DUPLICATED",
+            409,
+            "같은 심사 라운드에 중복된 평가 기준이 있습니다."),
+    REVIEW_ROUND_CRITERION_REQUIRED(
+            "REVIEW_ROUND_CRITERION_REQUIRED",
+            409,
+            "심사 라운드를 시작하려면 활성 평가 기준이 하나 이상 필요합니다."),
+    REVIEW_ROUND_REQUIRED(
+            "REVIEW_ROUND_REQUIRED",
+            409,
+            "심사 설정과 상태 변경은 심사 라운드 API에서 처리해야 합니다."),
+    REVIEW_ROUND_ENTRY_INVALID(
+            "REVIEW_ROUND_ENTRY_INVALID",
+            409,
+            "심사 라운드를 시작할 수 없는 상태의 심사 대상이 포함되어 있습니다."),
     REVIEW_ENTRY_PREPARATION_NOT_ALLOWED(
             "REVIEW_ENTRY_PREPARATION_NOT_ALLOWED",
             409,
-            "준비 중인 심사 단계에서만 심사 대상을 생성할 수 있습니다."),
-    REVIEW_ENTRY_CONTEST_NOT_REVIEWING(
-            "REVIEW_ENTRY_CONTEST_NOT_REVIEWING",
-            409,
-            "대회가 심사 중인 상태에서만 심사 대상을 준비하거나 심사 단계를 시작할 수 있습니다."),
+            "준비 중인 심사 라운드에서만 심사 대상을 생성할 수 있습니다."),
     REVIEW_ENTRY_TARGET_TYPE_UNSUPPORTED(
             "REVIEW_ENTRY_TARGET_TYPE_UNSUPPORTED",
             409,
             "현재 심사 대상 선정 방식은 아직 지원하지 않습니다."),
-    REVIEW_ENTRY_SUBMISSION_STAGE_NOT_COMPLETED(
-            "REVIEW_ENTRY_SUBMISSION_STAGE_NOT_COMPLETED",
-            409,
-            "제출 단계가 완료된 후 심사 대상을 준비할 수 있습니다."),
     REVIEW_ENTRY_SUBMISSION_REQUIRED(
             "REVIEW_ENTRY_SUBMISSION_REQUIRED",
             409,
@@ -62,11 +102,11 @@ public enum ReviewErrorResponseCode implements BaseResponseCode {
     REVIEW_ENTRY_REQUIRED(
             "REVIEW_ENTRY_REQUIRED",
             409,
-            "심사 단계를 시작하려면 심사 대상을 먼저 준비해야 합니다."),
+            "심사 라운드를 시작하려면 심사 대상을 먼저 준비해야 합니다."),
     REVIEW_ASSIGNMENT_PREPARATION_NOT_ALLOWED(
             "REVIEW_ASSIGNMENT_PREPARATION_NOT_ALLOWED",
             409,
-            "준비 중이거나 진행 중인 심사 단계에서만 심사위원을 배정할 수 있습니다."),
+            "준비 중이거나 진행 중인 심사 라운드에서만 심사위원을 배정할 수 있습니다."),
     REVIEW_ASSIGNMENT_ENTRY_REQUIRED(
             "REVIEW_ASSIGNMENT_ENTRY_REQUIRED",
             409,

@@ -1,6 +1,5 @@
 package com.api.trekkey.domain.review.entity;
 
-import com.api.trekkey.domain.contest.entity.ReviewCriterion;
 import com.api.trekkey.global.entity.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -25,6 +24,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Table(
+        name = "review_score_item",
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_review_score_item_review_criterion",
                 columnNames = {"review_id", "criterion_id"}))

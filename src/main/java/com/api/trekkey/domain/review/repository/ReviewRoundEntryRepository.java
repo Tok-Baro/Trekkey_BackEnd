@@ -1,6 +1,6 @@
 package com.api.trekkey.domain.review.repository;
 
-import com.api.trekkey.domain.contest.entity.ContestStage;
+import com.api.trekkey.domain.review.entity.ReviewRound;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import jakarta.persistence.LockModeType;
 import java.util.Collection;
@@ -18,70 +18,70 @@ public interface ReviewRoundEntryRepository
     @Query("""
             select entry
             from ReviewRoundEntry entry
-            where entry.reviewStage.id = :reviewStageId
+            where entry.reviewRound.id = :reviewRoundId
             order by entry.id
             """)
-    List<ReviewRoundEntry> findAllForShareByReviewStageIdOrderByIdAsc(
-            @Param("reviewStageId") Long reviewStageId);
+    List<ReviewRoundEntry> findAllForShareByReviewRoundIdOrderByIdAsc(
+            @Param("reviewRoundId") Long reviewRoundId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select entry
             from ReviewRoundEntry entry
-            where entry.reviewStage.id = :reviewStageId
+            where entry.reviewRound.id = :reviewRoundId
             order by entry.id
             """)
-    List<ReviewRoundEntry> findAllForUpdateByReviewStageIdOrderByIdAsc(
-            @Param("reviewStageId") Long reviewStageId);
+    List<ReviewRoundEntry> findAllForUpdateByReviewRoundIdOrderByIdAsc(
+            @Param("reviewRoundId") Long reviewRoundId);
 
     @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("""
             select entry
             from ReviewRoundEntry entry
             where entry.id = :entryId
-              and entry.reviewStage.id = :reviewStageId
+              and entry.reviewRound.id = :reviewRoundId
             """)
-    Optional<ReviewRoundEntry> findByIdAndReviewStageIdForShare(
+    Optional<ReviewRoundEntry> findByIdAndReviewRoundIdForShare(
             @Param("entryId") Long entryId,
-            @Param("reviewStageId") Long reviewStageId);
+            @Param("reviewRoundId") Long reviewRoundId);
 
     @Query("""
             select entry
             from ReviewRoundEntry entry
-            join fetch entry.reviewStage
+            join fetch entry.reviewRound
             join fetch entry.submission submission
             join fetch submission.team
-            where entry.reviewStage.id = :reviewStageId
+            where entry.reviewRound.id = :reviewRoundId
             order by entry.createdAt, entry.id
             """)
-    List<ReviewRoundEntry> findAllByReviewStageIdOrderByCreatedAtAscIdAsc(
-            @Param("reviewStageId") Long reviewStageId);
+    List<ReviewRoundEntry> findAllByReviewRoundIdOrderByCreatedAtAscIdAsc(
+            @Param("reviewRoundId") Long reviewRoundId);
 
     @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("""
             select entry
             from ReviewRoundEntry entry
-            join fetch entry.reviewStage
+            join fetch entry.reviewRound
             join fetch entry.submission submission
             join fetch submission.team
-            where entry.reviewStage.id = :reviewStageId
+            where entry.reviewRound.id = :reviewRoundId
             order by entry.createdAt, entry.id
             """)
     List<ReviewRoundEntry>
-            findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                    @Param("reviewStageId") Long reviewStageId);
+            findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                    @Param("reviewRoundId") Long reviewRoundId);
 
     @Lock(LockModeType.PESSIMISTIC_READ)
     @Query("""
-            select stage
-            from ContestStage stage
-            where stage.id in :reviewStageIds
+            select reviewRound
+            from ReviewRound reviewRound
+            where reviewRound.id in :reviewRoundIds
               and exists (
                     select entry.id
                     from ReviewRoundEntry entry
-                    where entry.reviewStage = stage
+                    where entry.reviewRound = reviewRound
               )
             """)
-    List<ContestStage> findStagesWithEntriesForShare(
-            @Param("reviewStageIds") Collection<Long> reviewStageIds);
+    List<ReviewRound> findRoundsWithEntriesForShare(
+            @Param("reviewRoundIds") Collection<Long> reviewRoundIds);
 }

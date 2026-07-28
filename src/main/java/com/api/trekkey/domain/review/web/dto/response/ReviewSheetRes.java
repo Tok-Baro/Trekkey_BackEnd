@@ -10,11 +10,11 @@ public record ReviewSheetRes(
         String contestPublicId,
         String contestTitle,
         LocalDateTime tokenExpiresAt,
-        List<ReviewSheetStageRes> stages
+        List<ReviewSheetRoundRes> rounds
 ) {
     public static ReviewSheetRes of(
             ContestJudge judge,
-            List<ReviewSheetStageRes> stages
+            List<ReviewSheetRoundRes> rounds
     ) {
         return new ReviewSheetRes(
                 judge.getName(),
@@ -22,7 +22,7 @@ public record ReviewSheetRes(
                 judge.getContest().getPublicId(),
                 judge.getContest().getTitle(),
                 judge.getTokenExpiresAt(),
-                stages
+                rounds
         );
     }
 }

@@ -12,23 +12,22 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
 import com.api.trekkey.domain.contest.entity.Contest;
-import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
-import com.api.trekkey.domain.contest.entity.ReviewCriterion;
-import com.api.trekkey.domain.contest.entity.StagePassRule;
-import com.api.trekkey.domain.contest.entity.StageStatus;
-import com.api.trekkey.domain.contest.entity.StageTargetType;
-import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
-import com.api.trekkey.domain.contest.repository.ContestStageRepository;
-import com.api.trekkey.domain.contest.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.organization.entity.Organization;
+import com.api.trekkey.domain.review.entity.ReviewCriterion;
+import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundDecisionRule;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
+import com.api.trekkey.domain.review.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.web.dto.response.ReviewRoundEntryRes;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
@@ -43,8 +42,6 @@ import com.api.trekkey.domain.user.entity.UserStatus;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -68,8 +65,7 @@ class ReviewRoundEntryAdminServiceImplTest {
     private static final Long ADMIN_ID = 10L;
     private static final Long ORGANIZATION_ID = 1L;
     private static final Long CONTEST_ID = 100L;
-    private static final Long SUBMISSION_STAGE_ID = 201L;
-    private static final Long REVIEW_STAGE_ID = 202L;
+    private static final Long REVIEW_ROUND_ID = 202L;
     private static final Long TEAM_ID = 301L;
     private static final Long SUBMISSION_ID = 401L;
     private static final String CONTEST_PUBLIC_ID = "contest-public-id";
@@ -83,7 +79,7 @@ class ReviewRoundEntryAdminServiceImplTest {
     private ContestRepository contestRepository;
 
     @Mock
-    private ContestStageRepository contestStageRepository;
+    private ReviewRoundRepository reviewRoundRepository;
 
     @Mock
     private ReviewCriterionRepository reviewCriterionRepository;
@@ -100,9 +96,6 @@ class ReviewRoundEntryAdminServiceImplTest {
     @Mock
     private AdminAuditLogger adminAuditLogger;
 
-    @Mock
-    private EntityManager entityManager;
-
     private ReviewRoundEntryAdminServiceImpl service;
     private Organization organization;
     private User admin;
@@ -117,14 +110,13 @@ class ReviewRoundEntryAdminServiceImplTest {
         service = new ReviewRoundEntryAdminServiceImpl(
                 userRepository,
                 contestRepository,
-                contestStageRepository,
+                reviewRoundRepository,
                 reviewCriterionRepository,
                 teamRepository,
                 submissionRepository,
                 reviewRoundEntryRepository,
                 adminAuditLogger,
-                clock,
-                entityManager
+                clock
         );
 
         organization = org.mockito.Mockito.mock(Organization.class);
@@ -163,12 +155,13 @@ class ReviewRoundEntryAdminServiceImplTest {
     @DisplayName("ALL_SUBMISSIONS 대상을 준비하면 제출물을 잠그고 ELIGIBLE 엔트리와 감사 로그를 생성한다")
     @SuppressWarnings("unchecked")
     void prepareEntries_finalizesSubmissionAndCreatesEligibleEntry() {
-        ContestStage submissionStage = submissionStage(StageStatus.COMPLETED);
-        ContestStage reviewStage =
-                reviewStage(StageTargetType.ALL_SUBMISSIONS, StageStatus.PREPARING);
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
+        );
         Team team = approvedTeam();
         Submission submission = submittedSubmission(team);
-        stubAdminContestAndLockedStages(submissionStage, reviewStage);
+        stubAdminContestAndLockedRound(reviewRound);
         given(teamRepository.findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
                 .willReturn(List.of(team));
         given(submissionRepository
@@ -178,8 +171,8 @@ class ReviewRoundEntryAdminServiceImplTest {
                         TeamStatus.APPROVED
                 )).willReturn(List.of(submission));
         given(reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                        REVIEW_STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(List.of());
         given(reviewRoundEntryRepository.saveAllAndFlush(anyList()))
                 .willAnswer(invocation -> {
@@ -191,14 +184,14 @@ class ReviewRoundEntryAdminServiceImplTest {
         List<ReviewRoundEntryRes> response = service.prepareEntries(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID
+                REVIEW_ROUND_ID
         );
 
         assertThat(response).hasSize(1);
         assertThat(response.getFirst().id()).isEqualTo(501L);
         assertThat(response.getFirst().status())
                 .isEqualTo(ReviewRoundEntryStatus.ELIGIBLE);
-        assertThat(response.getFirst().reviewStageId()).isEqualTo(REVIEW_STAGE_ID);
+        assertThat(response.getFirst().reviewRoundId()).isEqualTo(REVIEW_ROUND_ID);
         assertThat(response.getFirst().submissionPublicId())
                 .isEqualTo("submission-public-id");
         assertThat(response.getFirst().submissionFinalizedAt()).isEqualTo(NOW);
@@ -208,26 +201,26 @@ class ReviewRoundEntryAdminServiceImplTest {
                 ArgumentCaptor.forClass(List.class);
         verify(reviewRoundEntryRepository).saveAllAndFlush(captor.capture());
         assertThat(captor.getValue()).singleElement().satisfies(entry -> {
-            assertThat(entry.getReviewStage()).isSameAs(reviewStage);
+            assertThat(entry.getReviewRound()).isSameAs(reviewRound);
             assertThat(entry.getSubmission()).isSameAs(submission);
             assertThat(entry.getStatus()).isEqualTo(ReviewRoundEntryStatus.ELIGIBLE);
         });
 
         InOrder lockOrder = inOrder(
-                contestStageRepository,
+                reviewRoundRepository,
                 reviewCriterionRepository,
                 reviewRoundEntryRepository,
                 teamRepository,
                 submissionRepository
         );
-        lockOrder.verify(contestStageRepository)
-                .findAllForUpdateByContestIdOrderBySequenceNoAsc(CONTEST_ID);
+        lockOrder.verify(reviewRoundRepository)
+                .findByIdForUpdate(REVIEW_ROUND_ID);
         lockOrder.verify(reviewCriterionRepository)
-                .findAllForUpdateByContestStageIdInOrderBySortOrderAsc(
-                        List.of(REVIEW_STAGE_ID));
+                .findAllForUpdateByReviewRoundIdInOrderBySortOrderAsc(
+                        List.of(REVIEW_ROUND_ID));
         lockOrder.verify(reviewRoundEntryRepository)
-                .findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                        REVIEW_STAGE_ID);
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID);
         lockOrder.verify(teamRepository)
                 .findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID);
         lockOrder.verify(submissionRepository)
@@ -236,17 +229,12 @@ class ReviewRoundEntryAdminServiceImplTest {
                         SubmissionStatus.SUBMITTED,
                         TeamStatus.APPROVED
                 );
-        verify(entityManager).refresh(
-                contest,
-                LockModeType.PESSIMISTIC_READ
-        );
-
         verify(adminAuditLogger).log(
                 ADMIN_ID,
                 ORGANIZATION_ID,
                 AuditAction.REVIEW_ENTRIES_PREPARE,
-                "REVIEW_STAGE",
-                REVIEW_STAGE_ID,
+                "REVIEW_ROUND",
+                REVIEW_ROUND_ID,
                 "contestId=100, entryCount=1"
         );
     }
@@ -265,7 +253,7 @@ class ReviewRoundEntryAdminServiceImplTest {
         assertThatThrownBy(() -> service.prepareEntries(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID
+                REVIEW_ROUND_ID
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e)
@@ -274,7 +262,7 @@ class ReviewRoundEntryAdminServiceImplTest {
 
         verifyNoInteractions(
                 contestRepository,
-                contestStageRepository,
+                reviewRoundRepository,
                 reviewCriterionRepository,
                 teamRepository,
                 submissionRepository,
@@ -301,7 +289,7 @@ class ReviewRoundEntryAdminServiceImplTest {
         assertThatThrownBy(() -> service.prepareEntries(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID
+                REVIEW_ROUND_ID
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e)
@@ -309,7 +297,7 @@ class ReviewRoundEntryAdminServiceImplTest {
                 .isEqualTo(ContestErrorResponseCode.CONTEST_FORBIDDEN);
 
         verifyNoInteractions(
-                contestStageRepository,
+                reviewRoundRepository,
                 reviewCriterionRepository,
                 teamRepository,
                 submissionRepository,
@@ -318,27 +306,45 @@ class ReviewRoundEntryAdminServiceImplTest {
     }
 
     @Test
-    @DisplayName("같은 조직이어도 URL의 대회에 속하지 않은 단계는 사용할 수 없다")
-    void prepareEntries_rejectsStageFromAnotherContest() {
-        ContestStage submissionStage =
-                submissionStage(StageStatus.COMPLETED);
+    @DisplayName("같은 조직이어도 URL의 대회에 속하지 않은 리뷰 라운드는 사용할 수 없다")
+    void prepareEntries_rejectsRoundFromAnotherContest() {
+        Contest otherContest = Contest.builder()
+                .publicId("other-contest")
+                .organization(organization)
+                .ownerUser(admin)
+                .title("다른 공모전")
+                .department("교무처")
+                .status(ContestStatus.REVIEWING)
+                .participationType(ParticipationType.TEAM)
+                .awardCount(1)
+                .summary("다른 공모전")
+                .target("재학생")
+                .applicationMethod("온라인")
+                .benefits("상장")
+                .detailHtml("<p>본문</p>")
+                .build();
+        ReflectionTestUtils.setField(otherContest, "id", 999L);
+        ReviewRound otherRound = reviewRound(
+                otherContest,
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
+        );
         stubAdminAndContest();
-        given(contestStageRepository
-                .findOrganizationIdById(REVIEW_STAGE_ID))
+        given(reviewRoundRepository
+                .findOrganizationIdById(REVIEW_ROUND_ID))
                 .willReturn(Optional.of(ORGANIZATION_ID));
-        given(contestStageRepository
-                .findAllForUpdateByContestIdOrderBySequenceNoAsc(CONTEST_ID))
-                .willReturn(List.of(submissionStage));
+        given(reviewRoundRepository.findByIdForUpdate(REVIEW_ROUND_ID))
+                .willReturn(Optional.of(otherRound));
 
         assertThatThrownBy(() -> service.prepareEntries(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID
+                REVIEW_ROUND_ID
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e)
                         .getBaseResponseCode())
-                .isEqualTo(ContestErrorResponseCode.STAGE_NOT_FOUND);
+                .isEqualTo(ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND);
 
         verifyNoInteractions(
                 reviewCriterionRepository,
@@ -351,23 +357,24 @@ class ReviewRoundEntryAdminServiceImplTest {
     @Test
     @DisplayName("이미 준비된 심사 대상은 재호출해도 다시 잠그거나 생성하지 않는다")
     void prepareEntries_returnsExistingEntriesIdempotently() {
-        ContestStage submissionStage = submissionStage(StageStatus.COMPLETED);
-        ContestStage reviewStage =
-                reviewStage(StageTargetType.ALL_SUBMISSIONS, StageStatus.PREPARING);
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
+        );
         Team team = approvedTeam();
         Submission submission = submittedSubmission(team);
         assertThat(submission.finalizeAt(NOW.minusHours(1))).isTrue();
-        ReviewRoundEntry existingEntry = entry(501L, reviewStage, submission);
-        stubAdminContestAndLockedStages(submissionStage, reviewStage);
+        ReviewRoundEntry existingEntry = entry(501L, reviewRound, submission);
+        stubAdminContestAndLockedRound(reviewRound);
         given(reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                        REVIEW_STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(List.of(existingEntry));
 
         List<ReviewRoundEntryRes> response = service.prepareEntries(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID
+                REVIEW_ROUND_ID
         );
 
         assertThat(response).hasSize(1);
@@ -387,16 +394,17 @@ class ReviewRoundEntryAdminServiceImplTest {
     @Test
     @DisplayName("ALL_SUBMISSIONS가 아닌 대상 방식은 지원하지 않는 오류로 거부한다")
     void prepareEntries_rejectsUnsupportedTargetType() {
-        ContestStage submissionStage = submissionStage(StageStatus.COMPLETED);
-        ContestStage reviewStage =
-                reviewStage(StageTargetType.PREVIOUS_PASSED, StageStatus.PREPARING);
-        stubAdminContestAndLockedStages(submissionStage, reviewStage);
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.PREVIOUS_SELECTED,
+                ReviewRoundStatus.PREPARING
+        );
+        stubAdminContestAndLockedRound(reviewRound);
 
         assertReviewError(
                 () -> service.prepareEntries(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID
+                        REVIEW_ROUND_ID
                 ),
                 ReviewErrorResponseCode.REVIEW_ENTRY_TARGET_TYPE_UNSUPPORTED
         );
@@ -406,22 +414,23 @@ class ReviewRoundEntryAdminServiceImplTest {
     }
 
     @Test
-    @DisplayName("준비 중이 아닌 심사 단계에는 대상을 생성할 수 없다")
-    void prepareEntries_rejectsReviewStageThatIsNotPreparing() {
-        ContestStage submissionStage = submissionStage(StageStatus.COMPLETED);
-        ContestStage reviewStage =
-                reviewStage(StageTargetType.ALL_SUBMISSIONS, StageStatus.OPEN);
-        stubAdminContestAndLockedStages(submissionStage, reviewStage);
+    @DisplayName("준비 중이 아닌 리뷰 라운드에는 대상을 생성할 수 없다")
+    void prepareEntries_rejectsReviewRoundThatIsNotPreparing() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.OPEN
+        );
+        stubAdminContestAndLockedRound(reviewRound);
         given(reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                        REVIEW_STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(List.of());
 
         assertReviewError(
                 () -> service.prepareEntries(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID
+                        REVIEW_ROUND_ID
                 ),
                 ReviewErrorResponseCode.REVIEW_ENTRY_PREPARATION_NOT_ALLOWED
         );
@@ -431,101 +440,122 @@ class ReviewRoundEntryAdminServiceImplTest {
     }
 
     @Test
-    @DisplayName("대회가 REVIEWING 상태가 아니면 새 심사 대상을 준비할 수 없다")
-    void prepareEntries_rejectsContestThatIsNotReviewing() {
+    @DisplayName("심사 대상 준비 여부는 기존 대회 상태가 아니라 리뷰 라운드 상태로 판단한다")
+    @SuppressWarnings("unchecked")
+    void prepareEntries_doesNotDependOnLegacyContestStatus() {
         ReflectionTestUtils.setField(
                 contest,
                 "status",
                 ContestStatus.AWARDED
         );
-        ContestStage submissionStage =
-                submissionStage(StageStatus.COMPLETED);
-        ContestStage reviewStage =
-                reviewStage(
-                        StageTargetType.ALL_SUBMISSIONS,
-                        StageStatus.PREPARING
-                );
-        stubAdminContestAndLockedStages(submissionStage, reviewStage);
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
+        );
+        Team team = approvedTeam();
+        Submission submission = submittedSubmission(team);
+        stubAdminContestAndLockedRound(reviewRound);
         given(reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                        REVIEW_STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(List.of());
+        given(teamRepository.findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
+                .willReturn(List.of(team));
+        given(submissionRepository
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        CONTEST_ID,
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED
+                )).willReturn(List.of(submission));
+        given(reviewRoundEntryRepository.saveAllAndFlush(anyList()))
+                .willAnswer(invocation -> {
+                    List<ReviewRoundEntry> entries = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(entries.getFirst(), "id", 501L);
+                    return entries;
+                });
 
-        assertReviewError(
-                () -> service.prepareEntries(
-                        ADMIN_ID,
-                        CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID
-                ),
-                ReviewErrorResponseCode
-                        .REVIEW_ENTRY_CONTEST_NOT_REVIEWING
+        List<ReviewRoundEntryRes> response = service.prepareEntries(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID
         );
 
-        verify(entityManager).refresh(
-                contest,
-                LockModeType.PESSIMISTIC_READ
-        );
-        verifyNoInteractions(teamRepository, submissionRepository);
-        verify(reviewRoundEntryRepository, never())
-                .saveAllAndFlush(anyList());
+        assertThat(response).extracting(ReviewRoundEntryRes::id)
+                .containsExactly(501L);
     }
 
     @Test
-    @DisplayName("제출 단계가 완료되지 않았으면 심사 대상을 준비하지 않는다")
-    void prepareEntries_rejectsIncompleteSubmissionStage() {
-        ContestStage submissionStage = submissionStage(StageStatus.OPEN);
-        ContestStage reviewStage =
-                reviewStage(StageTargetType.ALL_SUBMISSIONS, StageStatus.PREPARING);
-        stubAdminContestAndLockedStages(submissionStage, reviewStage);
+    @DisplayName("별도 제출 단계 없이 제출 상태와 팀 승인만으로 심사 대상을 준비한다")
+    @SuppressWarnings("unchecked")
+    void prepareEntries_doesNotDependOnSubmissionStage() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
+        );
+        Team team = approvedTeam();
+        Submission submission = submittedSubmission(team);
+        stubAdminContestAndLockedRound(reviewRound);
         given(reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                        REVIEW_STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(List.of());
+        given(teamRepository.findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
+                .willReturn(List.of(team));
+        given(submissionRepository
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        CONTEST_ID,
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED
+                )).willReturn(List.of(submission));
+        given(reviewRoundEntryRepository.saveAllAndFlush(anyList()))
+                .willAnswer(invocation -> {
+                    List<ReviewRoundEntry> entries = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(entries.getFirst(), "id", 501L);
+                    return entries;
+                });
 
-        assertReviewError(
-                () -> service.prepareEntries(
-                        ADMIN_ID,
-                        CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID
-                ),
-                ReviewErrorResponseCode
-                        .REVIEW_ENTRY_SUBMISSION_STAGE_NOT_COMPLETED
+        List<ReviewRoundEntryRes> response = service.prepareEntries(
+                ADMIN_ID,
+                CONTEST_PUBLIC_ID,
+                REVIEW_ROUND_ID
         );
 
-        verifyNoInteractions(teamRepository, submissionRepository);
-        verify(reviewRoundEntryRepository, never()).saveAllAndFlush(anyList());
+        assertThat(response).singleElement().satisfies(entry -> {
+            assertThat(entry.submissionPublicId())
+                    .isEqualTo("submission-public-id");
+            assertThat(entry.status())
+                    .isEqualTo(ReviewRoundEntryStatus.ELIGIBLE);
+        });
     }
 
     @Test
     @DisplayName("활성 평가 기준이 없으면 대상을 고정하지 않고 설정을 수정할 수 있게 둔다")
-    void prepareEntries_rejectsReviewStageWithoutActiveCriterion() {
-        ContestStage submissionStage =
-                submissionStage(StageStatus.COMPLETED);
-        ContestStage reviewStage =
-                reviewStage(
-                        StageTargetType.ALL_SUBMISSIONS,
-                        StageStatus.PREPARING
-                );
-        stubAdminContestAndLockedStages(submissionStage, reviewStage);
+    void prepareEntries_rejectsReviewRoundWithoutActiveCriterion() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
+        );
+        stubAdminContestAndLockedRound(reviewRound);
         given(reviewCriterionRepository
-                .findAllForUpdateByContestStageIdInOrderBySortOrderAsc(
-                        List.of(REVIEW_STAGE_ID)))
+                .findAllForUpdateByReviewRoundIdInOrderBySortOrderAsc(
+                        List.of(REVIEW_ROUND_ID)))
                 .willReturn(List.of());
         given(reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                        REVIEW_STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(List.of());
 
         assertThatThrownBy(() -> service.prepareEntries(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID
+                REVIEW_ROUND_ID
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e)
                         .getBaseResponseCode())
                 .isEqualTo(
-                        ContestErrorResponseCode.REVIEW_CRITERION_REQUIRED);
+                        ReviewErrorResponseCode
+                                .REVIEW_ROUND_CRITERION_REQUIRED);
 
         verifyNoInteractions(teamRepository, submissionRepository);
         verify(reviewRoundEntryRepository, never())
@@ -534,41 +564,29 @@ class ReviewRoundEntryAdminServiceImplTest {
 
     @Test
     @DisplayName("오픈할 수 없는 라운드 설정이면 심사 대상을 만들기 전에 거부한다")
-    void prepareEntries_rejectsInvalidReviewStageConfiguration() {
-        ContestStage submissionStage =
-                submissionStage(StageStatus.COMPLETED);
-        ContestStage reviewStage =
-                reviewStage(
-                        StageTargetType.ALL_SUBMISSIONS,
-                        StageStatus.PREPARING
-                );
-        reviewStage.updateConfiguration(
-                reviewStage.getName(),
-                reviewStage.getStageType(),
-                reviewStage.getSequenceNo(),
-                reviewStage.getStartsAt(),
-                reviewStage.getEndsAt(),
-                reviewStage.getTargetType(),
-                null,
-                null,
-                null
+    void prepareEntries_rejectsInvalidReviewRoundConfiguration() {
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
         );
-        stubAdminContestAndLockedStages(submissionStage, reviewStage);
+        ReflectionTestUtils.setField(reviewRound, "decisionRule", null);
+        stubAdminContestAndLockedRound(reviewRound);
         given(reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                        REVIEW_STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(List.of());
 
         assertThatThrownBy(() -> service.prepareEntries(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID
+                REVIEW_ROUND_ID
         ))
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e)
                         .getBaseResponseCode())
                 .isEqualTo(
-                        ContestErrorResponseCode.STAGE_CONFIGURATION_INVALID);
+                        ReviewErrorResponseCode
+                                .REVIEW_ROUND_CONFIGURATION_INVALID);
 
         verifyNoInteractions(teamRepository, submissionRepository);
         verify(reviewRoundEntryRepository, never())
@@ -578,14 +596,15 @@ class ReviewRoundEntryAdminServiceImplTest {
     @Test
     @DisplayName("제출 완료 후보가 없으면 빈 라운드를 만들지 않는다")
     void prepareEntries_rejectsWhenNoEligibleSubmissionsExist() {
-        ContestStage submissionStage = submissionStage(StageStatus.COMPLETED);
-        ContestStage reviewStage =
-                reviewStage(StageTargetType.ALL_SUBMISSIONS, StageStatus.PREPARING);
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
+        );
         Team team = approvedTeam();
-        stubAdminContestAndLockedStages(submissionStage, reviewStage);
+        stubAdminContestAndLockedRound(reviewRound);
         given(reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                        REVIEW_STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(List.of());
         given(teamRepository.findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
                 .willReturn(List.of(team));
@@ -600,7 +619,7 @@ class ReviewRoundEntryAdminServiceImplTest {
                 () -> service.prepareEntries(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID
+                        REVIEW_ROUND_ID
                 ),
                 ReviewErrorResponseCode.REVIEW_ENTRY_SUBMISSION_REQUIRED
         );
@@ -619,21 +638,18 @@ class ReviewRoundEntryAdminServiceImplTest {
     @Test
     @DisplayName("이전 라운드에서 이미 확정된 제출물은 확정 시각을 유지한 채 다음 심사 대상이 된다")
     void prepareEntries_preservesExistingSubmissionFinalization() {
-        ContestStage submissionStage =
-                submissionStage(StageStatus.COMPLETED);
-        ContestStage reviewStage =
-                reviewStage(
-                        StageTargetType.ALL_SUBMISSIONS,
-                        StageStatus.PREPARING
-                );
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
+        );
         Team team = approvedTeam();
         Submission submission = submittedSubmission(team);
         LocalDateTime originalFinalizedAt = NOW.minusHours(2);
         assertThat(submission.finalizeAt(originalFinalizedAt)).isTrue();
-        stubAdminContestAndLockedStages(submissionStage, reviewStage);
+        stubAdminContestAndLockedRound(reviewRound);
         given(reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                        REVIEW_STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(List.of());
         given(teamRepository
                 .findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
@@ -659,7 +675,7 @@ class ReviewRoundEntryAdminServiceImplTest {
         List<ReviewRoundEntryRes> response = service.prepareEntries(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID
+                REVIEW_ROUND_ID
         );
 
         assertThat(response.getFirst().submissionFinalizedAt())
@@ -671,19 +687,16 @@ class ReviewRoundEntryAdminServiceImplTest {
     @Test
     @DisplayName("DB 유니크 제약과 충돌하면 중복 심사 대상 오류로 변환한다")
     void prepareEntries_mapsUniqueConstraintConflict() {
-        ContestStage submissionStage =
-                submissionStage(StageStatus.COMPLETED);
-        ContestStage reviewStage =
-                reviewStage(
-                        StageTargetType.ALL_SUBMISSIONS,
-                        StageStatus.PREPARING
-                );
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.PREPARING
+        );
         Team team = approvedTeam();
         Submission submission = submittedSubmission(team);
-        stubAdminContestAndLockedStages(submissionStage, reviewStage);
+        stubAdminContestAndLockedRound(reviewRound);
         given(reviewRoundEntryRepository
-                .findAllForShareByReviewStageIdOrderByCreatedAtAscIdAsc(
-                        REVIEW_STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(List.of());
         given(teamRepository
                 .findAllForUpdateByContestIdOrderByIdAsc(CONTEST_ID))
@@ -701,7 +714,7 @@ class ReviewRoundEntryAdminServiceImplTest {
                 () -> service.prepareEntries(
                         ADMIN_ID,
                         CONTEST_PUBLIC_ID,
-                        REVIEW_STAGE_ID
+                        REVIEW_ROUND_ID
                 ),
                 ReviewErrorResponseCode.REVIEW_ENTRY_DUPLICATED
         );
@@ -719,8 +732,10 @@ class ReviewRoundEntryAdminServiceImplTest {
     @Test
     @DisplayName("심사 대상 목록은 저장 순서대로 안전한 제출 정보와 함께 반환한다")
     void getEntries_returnsEntriesInRepositoryOrder() {
-        ContestStage reviewStage =
-                reviewStage(StageTargetType.ALL_SUBMISSIONS, StageStatus.OPEN);
+        ReviewRound reviewRound = reviewRound(
+                ReviewRoundTargetType.ALL_SUBMISSIONS,
+                ReviewRoundStatus.OPEN
+        );
         Team firstTeam = approvedTeam();
         Team secondTeam = approvedTeam();
         ReflectionTestUtils.setField(secondTeam, "id", 302L);
@@ -735,22 +750,23 @@ class ReviewRoundEntryAdminServiceImplTest {
         );
         ReflectionTestUtils.setField(secondSubmission, "title", "두 번째 작품");
         ReviewRoundEntry firstEntry =
-                entry(501L, reviewStage, firstSubmission);
+                entry(501L, reviewRound, firstSubmission);
         ReviewRoundEntry secondEntry =
-                entry(502L, reviewStage, secondSubmission);
+                entry(502L, reviewRound, secondSubmission);
         stubAdminAndContest();
-        given(contestStageRepository.findOrganizationIdById(REVIEW_STAGE_ID))
+        given(reviewRoundRepository.findOrganizationIdById(REVIEW_ROUND_ID))
                 .willReturn(Optional.of(ORGANIZATION_ID));
-        given(contestStageRepository.findById(REVIEW_STAGE_ID))
-                .willReturn(Optional.of(reviewStage));
+        given(reviewRoundRepository.findById(REVIEW_ROUND_ID))
+                .willReturn(Optional.of(reviewRound));
         given(reviewRoundEntryRepository
-                .findAllByReviewStageIdOrderByCreatedAtAscIdAsc(REVIEW_STAGE_ID))
+                .findAllByReviewRoundIdOrderByCreatedAtAscIdAsc(
+                        REVIEW_ROUND_ID))
                 .willReturn(List.of(firstEntry, secondEntry));
 
         List<ReviewRoundEntryRes> response = service.getEntries(
                 ADMIN_ID,
                 CONTEST_PUBLIC_ID,
-                REVIEW_STAGE_ID
+                REVIEW_ROUND_ID
         );
 
         assertThat(response).extracting(ReviewRoundEntryRes::id)
@@ -779,18 +795,14 @@ class ReviewRoundEntryAdminServiceImplTest {
                 .willReturn(Optional.of(contest));
     }
 
-    private void stubAdminContestAndLockedStages(
-            ContestStage submissionStage,
-            ContestStage reviewStage
-    ) {
+    private void stubAdminContestAndLockedRound(ReviewRound reviewRound) {
         stubAdminAndContest();
-        given(contestStageRepository.findOrganizationIdById(REVIEW_STAGE_ID))
+        given(reviewRoundRepository.findOrganizationIdById(REVIEW_ROUND_ID))
                 .willReturn(Optional.of(ORGANIZATION_ID));
-        given(contestStageRepository
-                .findAllForUpdateByContestIdOrderBySequenceNoAsc(CONTEST_ID))
-                .willReturn(List.of(submissionStage, reviewStage));
+        given(reviewRoundRepository.findByIdForUpdate(REVIEW_ROUND_ID))
+                .willReturn(Optional.of(reviewRound));
         ReviewCriterion criterion = ReviewCriterion.builder()
-                .contestStage(reviewStage)
+                .reviewRound(reviewRound)
                 .code("creativity")
                 .label("창의성")
                 .maxScore(30)
@@ -800,38 +812,36 @@ class ReviewRoundEntryAdminServiceImplTest {
         ReflectionTestUtils.setField(criterion, "id", 601L);
         org.mockito.Mockito.lenient()
                 .when(reviewCriterionRepository
-                        .findAllForUpdateByContestStageIdInOrderBySortOrderAsc(
-                                List.of(REVIEW_STAGE_ID)))
+                        .findAllForUpdateByReviewRoundIdInOrderBySortOrderAsc(
+                                List.of(REVIEW_ROUND_ID)))
                 .thenReturn(List.of(criterion));
     }
 
-    private ContestStage submissionStage(StageStatus status) {
-        ContestStage stage = ContestStage.builder()
-                .contest(contest)
-                .name("작품 제출")
-                .stageType(StageType.SUBMISSION)
-                .sequenceNo(1)
-                .status(status)
-                .build();
-        ReflectionTestUtils.setField(stage, "id", SUBMISSION_STAGE_ID);
-        return stage;
+    private ReviewRound reviewRound(
+            ReviewRoundTargetType targetType,
+            ReviewRoundStatus status
+    ) {
+        return reviewRound(contest, targetType, status);
     }
 
-    private ContestStage reviewStage(
-            StageTargetType targetType,
-            StageStatus status
+    private ReviewRound reviewRound(
+            Contest roundContest,
+            ReviewRoundTargetType targetType,
+            ReviewRoundStatus status
     ) {
-        ContestStage stage = ContestStage.builder()
-                .contest(contest)
+        ReviewRound round = ReviewRound.builder()
+                .contest(roundContest)
+                .roundNo(1)
                 .name("1차 심사")
-                .stageType(StageType.REVIEW)
-                .sequenceNo(2)
                 .status(status)
+                .startsAt(NOW.minusHours(1))
+                .endsAt(NOW.plusDays(1))
                 .targetType(targetType)
-                .passRule(StagePassRule.FINAL)
+                .decisionRule(ReviewRoundDecisionRule.TOP_N)
+                .selectCount(1)
                 .build();
-        ReflectionTestUtils.setField(stage, "id", REVIEW_STAGE_ID);
-        return stage;
+        ReflectionTestUtils.setField(round, "id", REVIEW_ROUND_ID);
+        return round;
     }
 
     private Team approvedTeam() {
@@ -865,11 +875,11 @@ class ReviewRoundEntryAdminServiceImplTest {
 
     private ReviewRoundEntry entry(
             Long id,
-            ContestStage reviewStage,
+            ReviewRound reviewRound,
             Submission submission
     ) {
         ReviewRoundEntry entry = ReviewRoundEntry.builder()
-                .reviewStage(reviewStage)
+                .reviewRound(reviewRound)
                 .submission(submission)
                 .status(ReviewRoundEntryStatus.ELIGIBLE)
                 .build();

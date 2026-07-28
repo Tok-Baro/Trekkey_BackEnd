@@ -1,19 +1,18 @@
 package com.api.trekkey.domain.review.service;
 
-import com.api.trekkey.domain.contest.entity.ContestStage;
-import com.api.trekkey.domain.contest.entity.ContestStatus;
-import com.api.trekkey.domain.contest.entity.ReviewCriterion;
-import com.api.trekkey.domain.contest.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.entity.ContestJudge;
 import com.api.trekkey.domain.review.entity.ReviewAssignment;
 import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
+import com.api.trekkey.domain.review.entity.ReviewCriterion;
+import com.api.trekkey.domain.review.entity.ReviewRound;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
+import com.api.trekkey.domain.review.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.support.ReviewLinkAuthenticator;
 import com.api.trekkey.domain.review.web.dto.request.ReviewAccessReq;
 import com.api.trekkey.domain.review.web.dto.response.ReviewSheetAssignmentRes;
 import com.api.trekkey.domain.review.web.dto.response.ReviewSheetCriterionRes;
 import com.api.trekkey.domain.review.web.dto.response.ReviewSheetRes;
-import com.api.trekkey.domain.review.web.dto.response.ReviewSheetStageRes;
+import com.api.trekkey.domain.review.web.dto.response.ReviewSheetRoundRes;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -42,10 +41,6 @@ public class ReviewSheetServiceImpl implements ReviewSheetService {
         ContestJudge judge =
                 reviewLinkAuthenticator.authenticate(rawToken, now);
 
-        if (judge.getContest().getStatus() != ContestStatus.REVIEWING) {
-            return ReviewSheetRes.of(judge, List.of());
-        }
-
         List<ReviewAssignment> visibleAssignments =
                 reviewAssignmentRepository
                         .findAllWithDetailsByJudgeId(judge.getId())
@@ -56,67 +51,68 @@ public class ReviewSheetServiceImpl implements ReviewSheetService {
             return ReviewSheetRes.of(judge, List.of());
         }
 
-        List<Long> stageIds = visibleAssignments.stream()
+        List<Long> roundIds = visibleAssignments.stream()
                 .map(assignment -> assignment
                         .getReviewRoundEntry()
-                        .getReviewStage()
+                        .getReviewRound()
                         .getId())
                 .distinct()
                 .toList();
-        Map<Long, List<ReviewCriterion>> criteriaByStageId =
+        Map<Long, List<ReviewCriterion>> criteriaByRoundId =
                 groupActiveCriteria(reviewCriterionRepository
-                        .findAllByContestStageIdInOrderBySortOrderAsc(
-                                stageIds));
+                        .findAllByReviewRoundIdInOrderBySortOrderAsc(
+                                roundIds));
 
-        Map<Long, List<ReviewAssignment>> assignmentsByStageId =
+        Map<Long, List<ReviewAssignment>> assignmentsByRoundId =
                 new LinkedHashMap<>();
         for (ReviewAssignment assignment : visibleAssignments) {
-            Long stageId = assignment
+            Long roundId = assignment
                     .getReviewRoundEntry()
-                    .getReviewStage()
+                    .getReviewRound()
                     .getId();
-            assignmentsByStageId
-                    .computeIfAbsent(stageId, key -> new ArrayList<>())
+            assignmentsByRoundId
+                    .computeIfAbsent(roundId, key -> new ArrayList<>())
                     .add(assignment);
         }
 
-        List<ReviewSheetStageRes> stages = new ArrayList<>();
-        for (List<ReviewAssignment> stageAssignments
-                : assignmentsByStageId.values()) {
-            ContestStage stage = stageAssignments.getFirst()
+        List<ReviewSheetRoundRes> rounds = new ArrayList<>();
+        for (List<ReviewAssignment> roundAssignments
+                : assignmentsByRoundId.values()) {
+            ReviewRound round = roundAssignments.getFirst()
                     .getReviewRoundEntry()
-                    .getReviewStage();
+                    .getReviewRound();
             List<ReviewSheetCriterionRes> criteria =
-                    criteriaByStageId
-                            .getOrDefault(stage.getId(), List.of())
+                    criteriaByRoundId
+                            .getOrDefault(round.getId(), List.of())
                             .stream()
                             .map(ReviewSheetCriterionRes::from)
                             .toList();
             List<ReviewSheetAssignmentRes> assignments =
-                    stageAssignments.stream()
+                    roundAssignments.stream()
                             .map(ReviewSheetAssignmentRes::from)
                             .toList();
-            stages.add(new ReviewSheetStageRes(
-                    stage.getId(),
-                    stage.getName(),
-                    stage.getStartsAt(),
-                    stage.getEndsAt(),
+            rounds.add(new ReviewSheetRoundRes(
+                    round.getId(),
+                    round.getRoundNo(),
+                    round.getName(),
+                    round.getStartsAt(),
+                    round.getEndsAt(),
                     criteria,
                     assignments
             ));
         }
 
-        return ReviewSheetRes.of(judge, stages);
+        return ReviewSheetRes.of(judge, rounds);
     }
 
     private boolean isVisible(
             ReviewAssignment assignment,
             LocalDateTime now
     ) {
-        ContestStage stage = assignment
+        ReviewRound round = assignment
                 .getReviewRoundEntry()
-                .getReviewStage();
-        if (!stage.isOpenAt(now)
+                .getReviewRound();
+        if (!round.isOpenAt(now)
                 || assignment.getStatus()
                 == ReviewAssignmentStatus.CANCELED) {
             return false;
@@ -134,7 +130,7 @@ public class ReviewSheetServiceImpl implements ReviewSheetService {
                 .filter(ReviewCriterion::isActive)
                 .sorted(Comparator
                         .comparing((ReviewCriterion criterion) ->
-                                criterion.getContestStage().getId())
+                                criterion.getReviewRound().getRoundNo())
                         .thenComparingInt(ReviewCriterion::getSortOrder)
                         .thenComparing(
                                 ReviewCriterion::getId,
@@ -142,7 +138,7 @@ public class ReviewSheetServiceImpl implements ReviewSheetService {
                         ))
                 .forEach(criterion -> grouped
                         .computeIfAbsent(
-                                criterion.getContestStage().getId(),
+                                criterion.getReviewRound().getId(),
                                 key -> new ArrayList<>()
                         )
                         .add(criterion));

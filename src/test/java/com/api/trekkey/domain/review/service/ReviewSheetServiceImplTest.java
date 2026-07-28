@@ -7,24 +7,25 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.api.trekkey.domain.contest.entity.Contest;
-import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
-import com.api.trekkey.domain.contest.entity.ReviewCriterion;
-import com.api.trekkey.domain.contest.entity.StageStatus;
-import com.api.trekkey.domain.contest.entity.StageType;
-import com.api.trekkey.domain.contest.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.entity.ContestJudge;
 import com.api.trekkey.domain.review.entity.ReviewAssignment;
 import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
+import com.api.trekkey.domain.review.entity.ReviewCriterion;
+import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundDecisionRule;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
+import com.api.trekkey.domain.review.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.support.ReviewLinkAuthenticator;
 import com.api.trekkey.domain.review.web.dto.request.ReviewAccessReq;
 import com.api.trekkey.domain.review.web.dto.response.ReviewSheetAssignmentRes;
 import com.api.trekkey.domain.review.web.dto.response.ReviewSheetCriterionRes;
 import com.api.trekkey.domain.review.web.dto.response.ReviewSheetRes;
-import com.api.trekkey.domain.review.web.dto.response.ReviewSheetStageRes;
+import com.api.trekkey.domain.review.web.dto.response.ReviewSheetRoundRes;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
 import java.lang.reflect.RecordComponent;
@@ -79,11 +80,11 @@ class ReviewSheetServiceImplTest {
     @Test
     @DisplayName("요청 값이 아닌 인증된 심사위원 ID로만 평가표를 조회한다")
     void getReviewSheet_queriesByAuthenticatedJudgeOnly() {
-        Contest contest = contest(100L, ContestStatus.REVIEWING);
+        Contest contest = contest(100L, ContestStatus.PREPARING);
         ContestJudge judge = judge(200L, contest, "김심사");
-        ContestStage stage = openStage(300L, contest, 1);
+        ReviewRound round = openRound(300L, contest, 1);
         ReviewAssignment assignment =
-                assignment(400L, judge, stage, "submission-a");
+                assignment(400L, judge, round, "submission-a");
         ReviewAccessReq request = new ReviewAccessReq(RAW_TOKEN_A);
 
         given(reviewLinkAuthenticator.authenticate(RAW_TOKEN_A, NOW))
@@ -91,13 +92,13 @@ class ReviewSheetServiceImplTest {
         given(reviewAssignmentRepository.findAllWithDetailsByJudgeId(200L))
                 .willReturn(List.of(assignment));
         given(reviewCriterionRepository
-                .findAllByContestStageIdInOrderBySortOrderAsc(List.of(300L)))
+                .findAllByReviewRoundIdInOrderBySortOrderAsc(List.of(300L)))
                 .willReturn(List.of());
 
         ReviewSheetRes response = service.getReviewSheet(request);
 
-        assertThat(response.stages()).hasSize(1);
-        assertThat(response.stages().getFirst().assignments())
+        assertThat(response.rounds()).hasSize(1);
+        assertThat(response.rounds().getFirst().assignments())
                 .extracting(ReviewSheetAssignmentRes::submissionPublicId)
                 .containsExactly("submission-a");
         verify(reviewLinkAuthenticator).authenticate(RAW_TOKEN_A, NOW);
@@ -108,14 +109,14 @@ class ReviewSheetServiceImplTest {
     @Test
     @DisplayName("서로 다른 심사위원의 토큰은 각자 배정된 제출물만 조회한다")
     void getReviewSheet_isolatesAssignmentsByJudge() {
-        Contest contest = contest(100L, ContestStatus.REVIEWING);
+        Contest contest = contest(100L, ContestStatus.PREPARING);
         ContestJudge judgeA = judge(201L, contest, "김심사");
         ContestJudge judgeB = judge(202L, contest, "이심사");
-        ContestStage stage = openStage(300L, contest, 1);
+        ReviewRound round = openRound(300L, contest, 1);
         ReviewAssignment assignmentA =
-                assignment(401L, judgeA, stage, "submission-a");
+                assignment(401L, judgeA, round, "submission-a");
         ReviewAssignment assignmentB =
-                assignment(402L, judgeB, stage, "submission-b");
+                assignment(402L, judgeB, round, "submission-b");
 
         given(reviewLinkAuthenticator.authenticate(RAW_TOKEN_A, NOW))
                 .willReturn(judgeA);
@@ -126,7 +127,7 @@ class ReviewSheetServiceImplTest {
         given(reviewAssignmentRepository.findAllWithDetailsByJudgeId(202L))
                 .willReturn(List.of(assignmentB));
         given(reviewCriterionRepository
-                .findAllByContestStageIdInOrderBySortOrderAsc(List.of(300L)))
+                .findAllByReviewRoundIdInOrderBySortOrderAsc(List.of(300L)))
                 .willReturn(List.of());
 
         ReviewSheetRes responseA =
@@ -134,11 +135,11 @@ class ReviewSheetServiceImplTest {
         ReviewSheetRes responseB =
                 service.getReviewSheet(new ReviewAccessReq(RAW_TOKEN_B));
 
-        assertThat(responseA.stages().getFirst().assignments())
+        assertThat(responseA.rounds().getFirst().assignments())
                 .extracting(ReviewSheetAssignmentRes::submissionPublicId)
                 .containsExactly("submission-a")
                 .doesNotContain("submission-b");
-        assertThat(responseB.stages().getFirst().assignments())
+        assertThat(responseB.rounds().getFirst().assignments())
                 .extracting(ReviewSheetAssignmentRes::submissionPublicId)
                 .containsExactly("submission-b")
                 .doesNotContain("submission-a");
@@ -149,59 +150,60 @@ class ReviewSheetServiceImplTest {
     }
 
     @Test
-    @DisplayName("대회가 심사 중이 아니면 배정 저장소를 조회하지 않고 빈 평가표를 반환한다")
-    void getReviewSheet_returnsEmptyWhenContestIsNotReviewing() {
+    @DisplayName("대회 상태가 아닌 라운드 상태를 기준으로 평가표를 조회한다")
+    void getReviewSheet_queriesAssignmentsRegardlessOfContestStatus() {
         Contest contest = contest(100L, ContestStatus.PREPARING);
         ContestJudge judge = judge(200L, contest, "김심사");
         given(reviewLinkAuthenticator.authenticate(RAW_TOKEN_A, NOW))
                 .willReturn(judge);
+        given(reviewAssignmentRepository.findAllWithDetailsByJudgeId(200L))
+                .willReturn(List.of());
 
         ReviewSheetRes response =
                 service.getReviewSheet(new ReviewAccessReq(RAW_TOKEN_A));
 
         assertThat(response.judgeName()).isEqualTo("김심사");
         assertThat(response.contestPublicId()).isEqualTo("contest-public-id");
-        assertThat(response.stages()).isEmpty();
-        verifyNoInteractions(
-                reviewAssignmentRepository,
-                reviewCriterionRepository
-        );
+        assertThat(response.rounds()).isEmpty();
+        verify(reviewAssignmentRepository)
+                .findAllWithDetailsByJudgeId(200L);
+        verifyNoInteractions(reviewCriterionRepository);
     }
 
     @Test
-    @DisplayName("OPEN 상태이고 실제 시작과 종료 시각 안에 있는 단계만 노출한다")
-    void getReviewSheet_filtersStagesByActualOpenWindow() {
-        Contest contest = contest(100L, ContestStatus.REVIEWING);
+    @DisplayName("OPEN 상태이고 실제 시작과 종료 시각 안에 있는 라운드만 노출한다")
+    void getReviewSheet_filtersRoundsByActualOpenWindow() {
+        Contest contest = contest(100L, ContestStatus.PREPARING);
         ContestJudge judge = judge(200L, contest, "김심사");
-        ContestStage visibleStage = stage(
+        ReviewRound visibleRound = round(
                 301L,
                 contest,
                 1,
-                StageStatus.OPEN,
+                ReviewRoundStatus.OPEN,
                 NOW,
                 NOW.plusHours(1)
         );
-        ContestStage futureStage = stage(
+        ReviewRound futureRound = round(
                 302L,
                 contest,
                 2,
-                StageStatus.OPEN,
+                ReviewRoundStatus.OPEN,
                 NOW.plusSeconds(1),
                 NOW.plusHours(2)
         );
-        ContestStage endedAtBoundaryStage = stage(
+        ReviewRound endedAtBoundaryRound = round(
                 303L,
                 contest,
                 3,
-                StageStatus.OPEN,
+                ReviewRoundStatus.OPEN,
                 NOW.minusHours(2),
                 NOW
         );
-        ContestStage preparingStage = stage(
+        ReviewRound preparingRound = round(
                 304L,
                 contest,
                 4,
-                StageStatus.PREPARING,
+                ReviewRoundStatus.PREPARING,
                 NOW.minusHours(1),
                 NOW.plusHours(1)
         );
@@ -209,61 +211,61 @@ class ReviewSheetServiceImplTest {
                 .willReturn(judge);
         given(reviewAssignmentRepository.findAllWithDetailsByJudgeId(200L))
                 .willReturn(List.of(
-                        assignment(401L, judge, futureStage, "future"),
+                        assignment(401L, judge, futureRound, "future"),
                         assignment(
                                 402L,
                                 judge,
-                                endedAtBoundaryStage,
+                                endedAtBoundaryRound,
                                 "ended"
                         ),
                         assignment(
                                 403L,
                                 judge,
-                                preparingStage,
+                                preparingRound,
                                 "preparing"
                         ),
-                        assignment(404L, judge, visibleStage, "visible")
+                        assignment(404L, judge, visibleRound, "visible")
                 ));
         given(reviewCriterionRepository
-                .findAllByContestStageIdInOrderBySortOrderAsc(List.of(301L)))
+                .findAllByReviewRoundIdInOrderBySortOrderAsc(List.of(301L)))
                 .willReturn(List.of());
 
         ReviewSheetRes response =
                 service.getReviewSheet(new ReviewAccessReq(RAW_TOKEN_A));
 
-        assertThat(response.stages())
-                .extracting(ReviewSheetStageRes::reviewStageId)
+        assertThat(response.rounds())
+                .extracting(ReviewSheetRoundRes::reviewRoundId)
                 .containsExactly(301L);
-        assertThat(response.stages().getFirst().assignments())
+        assertThat(response.rounds().getFirst().assignments())
                 .extracting(ReviewSheetAssignmentRes::submissionPublicId)
                 .containsExactly("visible");
         verify(reviewCriterionRepository)
-                .findAllByContestStageIdInOrderBySortOrderAsc(List.of(301L));
+                .findAllByReviewRoundIdInOrderBySortOrderAsc(List.of(301L));
     }
 
     @Test
     @DisplayName("배정 상태와 마감 시각에 따라 평가 가능한 제출물만 노출한다")
     void getReviewSheet_filtersAssignmentsByStatusAndDueAt() {
-        Contest contest = contest(100L, ContestStatus.REVIEWING);
+        Contest contest = contest(100L, ContestStatus.PREPARING);
         ContestJudge judge = judge(200L, contest, "김심사");
-        ContestStage stage = openStage(300L, contest, 1);
+        ReviewRound round = openRound(300L, contest, 1);
         ReviewAssignment available =
-                assignment(401L, judge, stage, "available");
+                assignment(401L, judge, round, "available");
         ReviewAssignment withoutDueAt =
-                assignment(402L, judge, stage, "without-due-at");
+                assignment(402L, judge, round, "without-due-at");
         ReflectionTestUtils.setField(withoutDueAt, "dueAt", null);
         ReviewAssignment expiredAtBoundary =
-                assignment(403L, judge, stage, "expired-at-boundary");
+                assignment(403L, judge, round, "expired-at-boundary");
         ReflectionTestUtils.setField(expiredAtBoundary, "dueAt", NOW);
         ReviewAssignment canceled =
-                assignment(404L, judge, stage, "canceled");
+                assignment(404L, judge, round, "canceled");
         ReflectionTestUtils.setField(
                 canceled,
                 "status",
                 ReviewAssignmentStatus.CANCELED
         );
         ReviewAssignment completed =
-                assignment(405L, judge, stage, "completed");
+                assignment(405L, judge, round, "completed");
         ReflectionTestUtils.setField(
                 completed,
                 "status",
@@ -291,13 +293,13 @@ class ReviewSheetServiceImplTest {
                         completed
                 ));
         given(reviewCriterionRepository
-                .findAllByContestStageIdInOrderBySortOrderAsc(List.of(300L)))
+                .findAllByReviewRoundIdInOrderBySortOrderAsc(List.of(300L)))
                 .willReturn(List.of());
 
         ReviewSheetRes response =
                 service.getReviewSheet(new ReviewAccessReq(RAW_TOKEN_A));
 
-        assertThat(response.stages().getFirst().assignments())
+        assertThat(response.rounds().getFirst().assignments())
                 .extracting(ReviewSheetAssignmentRes::submissionPublicId)
                 .containsExactly(
                         "available",
@@ -311,27 +313,27 @@ class ReviewSheetServiceImplTest {
     }
 
     @Test
-    @DisplayName("활성 평가 기준만 단계별로 묶고 표시 순서대로 반환한다")
-    void getReviewSheet_groupsOnlyActiveCriteriaByStage() {
-        Contest contest = contest(100L, ContestStatus.REVIEWING);
+    @DisplayName("활성 평가 기준만 라운드별로 묶고 표시 순서대로 반환한다")
+    void getReviewSheet_groupsOnlyActiveCriteriaByRound() {
+        Contest contest = contest(100L, ContestStatus.PREPARING);
         ContestJudge judge = judge(200L, contest, "김심사");
-        ContestStage firstStage = openStage(301L, contest, 1);
-        ContestStage secondStage = openStage(302L, contest, 2);
+        ReviewRound firstRound = openRound(301L, contest, 1);
+        ReviewRound secondRound = openRound(302L, contest, 2);
         given(reviewLinkAuthenticator.authenticate(RAW_TOKEN_A, NOW))
                 .willReturn(judge);
         given(reviewAssignmentRepository.findAllWithDetailsByJudgeId(200L))
                 .willReturn(List.of(
-                        assignment(401L, judge, firstStage, "submission-a"),
-                        assignment(402L, judge, secondStage, "submission-b")
+                        assignment(401L, judge, firstRound, "submission-a"),
+                        assignment(402L, judge, secondRound, "submission-b")
                 ));
         given(reviewCriterionRepository
-                .findAllByContestStageIdInOrderBySortOrderAsc(
+                .findAllByReviewRoundIdInOrderBySortOrderAsc(
                         List.of(301L, 302L)
                 ))
                 .willReturn(List.of(
                         criterion(
                                 503L,
-                                secondStage,
+                                secondRound,
                                 "impact",
                                 "파급력",
                                 2,
@@ -339,7 +341,7 @@ class ReviewSheetServiceImplTest {
                         ),
                         criterion(
                                 501L,
-                                firstStage,
+                                firstRound,
                                 "feasibility",
                                 "실현 가능성",
                                 2,
@@ -347,7 +349,7 @@ class ReviewSheetServiceImplTest {
                         ),
                         criterion(
                                 504L,
-                                secondStage,
+                                secondRound,
                                 "inactive",
                                 "미사용 기준",
                                 1,
@@ -355,7 +357,7 @@ class ReviewSheetServiceImplTest {
                         ),
                         criterion(
                                 500L,
-                                firstStage,
+                                firstRound,
                                 "creativity",
                                 "창의성",
                                 1,
@@ -366,13 +368,13 @@ class ReviewSheetServiceImplTest {
         ReviewSheetRes response =
                 service.getReviewSheet(new ReviewAccessReq(RAW_TOKEN_A));
 
-        assertThat(response.stages())
-                .extracting(ReviewSheetStageRes::reviewStageId)
+        assertThat(response.rounds())
+                .extracting(ReviewSheetRoundRes::reviewRoundId)
                 .containsExactly(301L, 302L);
-        assertThat(response.stages().get(0).criteria())
+        assertThat(response.rounds().get(0).criteria())
                 .extracting(ReviewSheetCriterionRes::code)
                 .containsExactly("creativity", "feasibility");
-        assertThat(response.stages().get(1).criteria())
+        assertThat(response.rounds().get(1).criteria())
                 .extracting(ReviewSheetCriterionRes::code)
                 .containsExactly("impact")
                 .doesNotContain("inactive");
@@ -381,20 +383,20 @@ class ReviewSheetServiceImplTest {
     @Test
     @DisplayName("심사위원 평가표 응답 모델은 팀·사용자·토큰과 공식 결과를 노출하지 않는다")
     void getReviewSheet_responseModelDoesNotExposeSensitiveFields() {
-        Contest contest = contest(100L, ContestStatus.REVIEWING);
+        Contest contest = contest(100L, ContestStatus.PREPARING);
         ContestJudge judge = judge(200L, contest, "김심사");
-        ContestStage stage = openStage(300L, contest, 1);
+        ReviewRound round = openRound(300L, contest, 1);
         ReviewAssignment assignment =
-                assignment(400L, judge, stage, "submission-a");
+                assignment(400L, judge, round, "submission-a");
         given(reviewLinkAuthenticator.authenticate(RAW_TOKEN_A, NOW))
                 .willReturn(judge);
         given(reviewAssignmentRepository.findAllWithDetailsByJudgeId(200L))
                 .willReturn(List.of(assignment));
         given(reviewCriterionRepository
-                .findAllByContestStageIdInOrderBySortOrderAsc(List.of(300L)))
+                .findAllByReviewRoundIdInOrderBySortOrderAsc(List.of(300L)))
                 .willReturn(List.of(criterion(
                         500L,
-                        stage,
+                        round,
                         "creativity",
                         "창의성",
                         1,
@@ -406,7 +408,7 @@ class ReviewSheetServiceImplTest {
 
         Set<String> responseFieldNames = Stream.of(
                         ReviewSheetRes.class,
-                        ReviewSheetStageRes.class,
+                        ReviewSheetRoundRes.class,
                         ReviewSheetAssignmentRes.class,
                         ReviewSheetCriterionRes.class
                 )
@@ -440,7 +442,7 @@ class ReviewSheetServiceImplTest {
     @Test
     @DisplayName("배정이 없으면 기준을 조회하지 않고 심사위원 정보가 포함된 빈 평가표를 반환한다")
     void getReviewSheet_returnsEmptySheetWhenNoAssignmentsExist() {
-        Contest contest = contest(100L, ContestStatus.REVIEWING);
+        Contest contest = contest(100L, ContestStatus.PREPARING);
         ContestJudge judge = judge(200L, contest, "김심사");
         given(reviewLinkAuthenticator.authenticate(RAW_TOKEN_A, NOW))
                 .willReturn(judge);
@@ -455,9 +457,9 @@ class ReviewSheetServiceImplTest {
         assertThat(response.contestPublicId()).isEqualTo("contest-public-id");
         assertThat(response.contestTitle()).isEqualTo("AI 공모전");
         assertThat(response.tokenExpiresAt()).isEqualTo(NOW.plusDays(1));
-        assertThat(response.stages()).isEmpty();
+        assertThat(response.rounds()).isEmpty();
         verify(reviewCriterionRepository, never())
-                .findAllByContestStageIdInOrderBySortOrderAsc(
+                .findAllByReviewRoundIdInOrderBySortOrderAsc(
                         org.mockito.ArgumentMatchers.anyCollection()
                 );
     }
@@ -487,46 +489,47 @@ class ReviewSheetServiceImplTest {
         return judge;
     }
 
-    private ContestStage openStage(
+    private ReviewRound openRound(
             Long id,
             Contest contest,
-            int sequenceNo
+            int roundNo
     ) {
-        return stage(
+        return round(
                 id,
                 contest,
-                sequenceNo,
-                StageStatus.OPEN,
+                roundNo,
+                ReviewRoundStatus.OPEN,
                 NOW.minusHours(1),
                 NOW.plusHours(1)
         );
     }
 
-    private ContestStage stage(
+    private ReviewRound round(
             Long id,
             Contest contest,
-            int sequenceNo,
-            StageStatus status,
+            int roundNo,
+            ReviewRoundStatus status,
             LocalDateTime startsAt,
             LocalDateTime endsAt
     ) {
-        ContestStage stage = ContestStage.builder()
+        ReviewRound round = ReviewRound.builder()
                 .contest(contest)
-                .name(sequenceNo + "차 심사")
-                .stageType(StageType.REVIEW)
-                .sequenceNo(sequenceNo)
+                .name(roundNo + "차 심사")
+                .roundNo(roundNo)
                 .status(status)
                 .startsAt(startsAt)
                 .endsAt(endsAt)
+                .targetType(ReviewRoundTargetType.MANUAL)
+                .decisionRule(ReviewRoundDecisionRule.MANUAL)
                 .build();
-        ReflectionTestUtils.setField(stage, "id", id);
-        return stage;
+        ReflectionTestUtils.setField(round, "id", id);
+        return round;
     }
 
     private ReviewAssignment assignment(
             Long id,
             ContestJudge judge,
-            ContestStage stage,
+            ReviewRound round,
             String submissionPublicId
     ) {
         Submission submission = Submission.builder()
@@ -535,7 +538,7 @@ class ReviewSheetServiceImplTest {
                 .status(SubmissionStatus.SUBMITTED)
                 .build();
         ReviewRoundEntry entry = ReviewRoundEntry.builder()
-                .reviewStage(stage)
+                .reviewRound(round)
                 .submission(submission)
                 .status(ReviewRoundEntryStatus.IN_REVIEW)
                 .build();
@@ -551,7 +554,7 @@ class ReviewSheetServiceImplTest {
 
     private ReviewCriterion criterion(
             Long id,
-            ContestStage stage,
+            ReviewRound round,
             String code,
             String label,
             int sortOrder,
@@ -559,7 +562,7 @@ class ReviewSheetServiceImplTest {
     ) {
         return ReviewCriterion.builder()
                 .id(id)
-                .contestStage(stage)
+                .reviewRound(round)
                 .code(code)
                 .label(label)
                 .maxScore(10)

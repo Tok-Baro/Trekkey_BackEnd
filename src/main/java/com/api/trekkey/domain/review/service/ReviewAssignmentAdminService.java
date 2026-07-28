@@ -9,13 +9,13 @@ public interface ReviewAssignmentAdminService {
     List<ReviewAssignmentRes> prepareAssignments(
             Long adminUserId,
             String contestPublicId,
-            Long reviewStageId,
+            Long reviewRoundId,
             Long judgeId,
             ReviewAssignmentPrepareReq req);
 
     List<ReviewAssignmentRes> getAssignments(
             Long adminUserId,
             String contestPublicId,
-            Long reviewStageId,
+            Long reviewRoundId,
             Long judgeId);
 }

@@ -312,7 +312,7 @@ class SecurityConfigTest {
     @DisplayName("심사위원 배정 API는 인증 없이 요청할 수 없다")
     void reviewAssignmentPreparation_rejectsAnonymous() throws Exception {
         mockMvc.perform(post(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}"
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}"
                                 + "/judges/{judgeId}/assignments/prepare",
                         "public-id",
                         20L,
@@ -329,7 +329,7 @@ class SecurityConfigTest {
     @DisplayName("참가자는 심사위원 배정 API를 사용할 수 없다")
     void reviewAssignmentPreparation_rejectsParticipant() throws Exception {
         mockMvc.perform(post(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}"
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}"
                                 + "/judges/{judgeId}/assignments/prepare",
                         "public-id",
                         20L,
@@ -359,7 +359,7 @@ class SecurityConfigTest {
         )).willReturn(List.of());
 
         mockMvc.perform(post(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}"
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}"
                                 + "/judges/{judgeId}/assignments/prepare",
                         "public-id",
                         20L,
@@ -395,7 +395,7 @@ class SecurityConfigTest {
         )).willReturn(List.of());
 
         mockMvc.perform(post(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}"
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}"
                                 + "/judges/{judgeId}/assignments/prepare",
                         "public-id",
                         20L,
@@ -421,7 +421,7 @@ class SecurityConfigTest {
     @DisplayName("심사 대상 준비 API는 인증 없이 요청할 수 없다")
     void reviewEntryPreparation_rejectsAnonymous() throws Exception {
         mockMvc.perform(post(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}/entries/prepare",
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}/entries/prepare",
                         "public-id",
                         20L
                 ))
@@ -435,7 +435,7 @@ class SecurityConfigTest {
     @DisplayName("참가자는 심사 대상 준비 API를 사용할 수 없다")
     void reviewEntryPreparation_rejectsParticipant() throws Exception {
         mockMvc.perform(post(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}/entries/prepare",
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}/entries/prepare",
                         "public-id",
                         20L
                 ).header(
@@ -458,7 +458,7 @@ class SecurityConfigTest {
         )).willReturn(List.of());
 
         mockMvc.perform(post(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}/entries/prepare",
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}/entries/prepare",
                         "public-id",
                         20L
                 ).header(
@@ -482,7 +482,7 @@ class SecurityConfigTest {
         )).willReturn(List.of());
 
         mockMvc.perform(post(
-                        "/api/admin/contests/{publicId}/review-stages/{stageId}/entries/prepare",
+                        "/api/admin/contests/{publicId}/review-rounds/{roundId}/entries/prepare",
                         "public-id",
                         20L
                 ).header(

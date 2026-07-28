@@ -1,4 +1,4 @@
-package com.api.trekkey.domain.contest.entity;
+package com.api.trekkey.domain.review.entity;
 
 import com.api.trekkey.global.entity.BaseEntity;
 import jakarta.persistence.Column;
@@ -23,9 +23,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Table(
+        name = "review_criterion",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_review_criterion_stage_code",
-                columnNames = {"contest_stage_id", "code"}))
+                name = "uk_review_criterion_round_code",
+                columnNames = {"review_round_id", "code"}))
 public class ReviewCriterion extends BaseEntity {
 
     @Id
@@ -34,9 +35,9 @@ public class ReviewCriterion extends BaseEntity {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "contest_stage_id", nullable = false)
-    // 평가 기준이 적용되는 심사 단계
-    private ContestStage contestStage;
+    @JoinColumn(name = "review_round_id", nullable = false)
+    // 평가 기준이 적용되는 심사 라운드
+    private ReviewRound reviewRound;
 
     @Column(nullable = false, length = 60)
     // 내부 기준 코드. 예: creativity

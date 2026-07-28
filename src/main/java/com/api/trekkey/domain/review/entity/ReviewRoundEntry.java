@@ -1,6 +1,5 @@
 package com.api.trekkey.domain.review.entity;
 
-import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.global.entity.BaseEntity;
@@ -30,9 +29,10 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Table(
+        name = "review_round_entry",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_review_round_entry_stage_submission",
-                columnNames = {"review_stage_id", "submission_id"}))
+                name = "uk_review_round_entry_round_submission",
+                columnNames = {"review_round_id", "submission_id"}))
 public class ReviewRoundEntry extends BaseEntity {
 
     @Id
@@ -40,8 +40,8 @@ public class ReviewRoundEntry extends BaseEntity {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "review_stage_id", nullable = false)
-    private ContestStage reviewStage;
+    @JoinColumn(name = "review_round_id", nullable = false)
+    private ReviewRound reviewRound;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "submission_id", nullable = false)

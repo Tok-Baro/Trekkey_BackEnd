@@ -11,33 +11,32 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.api.trekkey.domain.contest.entity.Contest;
-import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
-import com.api.trekkey.domain.contest.entity.ReviewCriterion;
-import com.api.trekkey.domain.contest.entity.StageStatus;
-import com.api.trekkey.domain.contest.entity.StageType;
-import com.api.trekkey.domain.contest.repository.ContestStageRepository;
-import com.api.trekkey.domain.contest.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.entity.ContestJudge;
 import com.api.trekkey.domain.review.entity.Review;
 import com.api.trekkey.domain.review.entity.ReviewAssignment;
 import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
+import com.api.trekkey.domain.review.entity.ReviewCriterion;
+import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundDecisionRule;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
 import com.api.trekkey.domain.review.entity.ReviewScoreItem;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository.ReviewSubmissionScope;
+import com.api.trekkey.domain.review.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.review.repository.ReviewRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.repository.ReviewScoreItemRepository;
 import com.api.trekkey.domain.review.support.ReviewLinkAuthenticator;
 import com.api.trekkey.domain.review.web.dto.request.ReviewScoreReq;
 import com.api.trekkey.domain.review.web.dto.request.ReviewSubmitReq;
 import com.api.trekkey.domain.review.web.dto.response.ReviewSubmitRes;
 import com.api.trekkey.global.exception.CustomException;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -66,7 +65,7 @@ class ReviewSubmissionServiceImplTest {
 
     private static final String RAW_TOKEN = "a".repeat(43);
     private static final Long CONTEST_ID = 100L;
-    private static final Long STAGE_ID = 200L;
+    private static final Long ROUND_ID = 200L;
     private static final Long JUDGE_ID = 300L;
     private static final Long ENTRY_ID = 400L;
     private static final Long ASSIGNMENT_ID = 500L;
@@ -81,7 +80,7 @@ class ReviewSubmissionServiceImplTest {
     private ReviewLinkAuthenticator reviewLinkAuthenticator;
 
     @Mock
-    private ContestStageRepository contestStageRepository;
+    private ReviewRoundRepository reviewRoundRepository;
 
     @Mock
     private ReviewCriterionRepository reviewCriterionRepository;
@@ -98,13 +97,10 @@ class ReviewSubmissionServiceImplTest {
     @Mock
     private ReviewScoreItemRepository reviewScoreItemRepository;
 
-    @Mock
-    private EntityManager entityManager;
-
     private ReviewSubmissionServiceImpl service;
     private Contest contest;
     private ContestJudge judge;
-    private ContestStage stage;
+    private ReviewRound round;
     private ReviewCriterion creativity;
     private ReviewCriterion completeness;
     private List<ReviewCriterion> criteria;
@@ -119,28 +115,27 @@ class ReviewSubmissionServiceImplTest {
         );
         service = new ReviewSubmissionServiceImpl(
                 reviewLinkAuthenticator,
-                contestStageRepository,
+                reviewRoundRepository,
                 reviewCriterionRepository,
                 reviewRoundEntryRepository,
                 reviewAssignmentRepository,
                 reviewRepository,
                 reviewScoreItemRepository,
-                clock,
-                entityManager
+                clock
         );
 
-        contest = contest(CONTEST_ID, ContestStatus.REVIEWING);
+        contest = contest(CONTEST_ID, ContestStatus.PREPARING);
         judge = judge(JUDGE_ID, contest);
-        stage = stage(
-                STAGE_ID,
+        round = round(
+                ROUND_ID,
                 contest,
-                StageStatus.OPEN,
+                ReviewRoundStatus.OPEN,
                 NOW.minusHours(1),
                 NOW.plusHours(1)
         );
         creativity = criterion(
                 CREATIVITY_ID,
-                stage,
+                round,
                 "creativity",
                 40,
                 1,
@@ -148,7 +143,7 @@ class ReviewSubmissionServiceImplTest {
         );
         completeness = criterion(
                 COMPLETENESS_ID,
-                stage,
+                round,
                 "completeness",
                 60,
                 2,
@@ -157,7 +152,7 @@ class ReviewSubmissionServiceImplTest {
         criteria = List.of(creativity, completeness);
         entry = entry(
                 ENTRY_ID,
-                stage,
+                round,
                 ReviewRoundEntryStatus.IN_REVIEW
         );
         assignment = assignment(
@@ -228,10 +223,9 @@ class ReviewSubmissionServiceImplTest {
         InOrder lockOrder = inOrder(
                 reviewLinkAuthenticator,
                 reviewAssignmentRepository,
-                contestStageRepository,
+                reviewRoundRepository,
                 reviewCriterionRepository,
                 reviewRoundEntryRepository,
-                entityManager,
                 reviewRepository,
                 reviewScoreItemRepository
         );
@@ -242,15 +236,15 @@ class ReviewSubmissionServiceImplTest {
                         ASSIGNMENT_ID,
                         JUDGE_ID
                 );
-        lockOrder.verify(contestStageRepository)
-                .findByIdForShare(STAGE_ID);
+        lockOrder.verify(reviewRoundRepository)
+                .findByIdForShare(ROUND_ID);
         lockOrder.verify(reviewCriterionRepository)
-                .findAllForShareByContestStageIdOrderBySortOrderAsc(
-                        STAGE_ID);
+                .findAllForShareByReviewRoundIdOrderBySortOrderAsc(
+                        ROUND_ID);
         lockOrder.verify(reviewRoundEntryRepository)
-                .findByIdAndReviewStageIdForShare(
+                .findByIdAndReviewRoundIdForShare(
                         ENTRY_ID,
-                        STAGE_ID
+                        ROUND_ID
                 );
         lockOrder.verify(reviewAssignmentRepository)
                 .findByIdAndJudgeIdAndEntryIdForUpdate(
@@ -258,10 +252,6 @@ class ReviewSubmissionServiceImplTest {
                         JUDGE_ID,
                         ENTRY_ID
                 );
-        lockOrder.verify(entityManager).refresh(
-                contest,
-                LockModeType.PESSIMISTIC_READ
-        );
         lockOrder.verify(reviewRepository)
                 .findByAssignmentIdForShare(ASSIGNMENT_ID);
         lockOrder.verify(reviewRepository)
@@ -310,9 +300,9 @@ class ReviewSubmissionServiceImplTest {
                 ContestStatus.AWARDED
         );
         ReflectionTestUtils.setField(
-                stage,
+                round,
                 "status",
-                StageStatus.COMPLETED
+                ReviewRoundStatus.FINALIZED
         );
         ReflectionTestUtils.setField(
                 entry,
@@ -505,12 +495,11 @@ class ReviewSubmissionServiceImplTest {
                         .getHttpStatus()
         ).isEqualTo(404);
         verifyNoInteractions(
-                contestStageRepository,
+                reviewRoundRepository,
                 reviewCriterionRepository,
                 reviewRoundEntryRepository,
                 reviewRepository,
-                reviewScoreItemRepository,
-                entityManager
+                reviewScoreItemRepository
         );
     }
 
@@ -529,28 +518,27 @@ class ReviewSubmissionServiceImplTest {
                 )
         );
         verifyNoInteractions(
-                contestStageRepository,
+                reviewRoundRepository,
                 reviewCriterionRepository,
                 reviewRoundEntryRepository,
                 reviewAssignmentRepository,
                 reviewRepository,
-                reviewScoreItemRepository,
-                entityManager
+                reviewScoreItemRepository
         );
     }
 
     @ParameterizedTest(name = "{0}")
-    @MethodSource("notOpenStageCases")
-    @DisplayName("단계 상태와 실제 심사 시간 경계 밖에서는 제출할 수 없다")
-    void submitReview_rejectsStageOutsideOpenWindow(
+    @MethodSource("notOpenRoundCases")
+    @DisplayName("라운드 상태와 실제 심사 시간 경계 밖에서는 제출할 수 없다")
+    void submitReview_rejectsRoundOutsideOpenWindow(
             String ignoredName,
-            StageStatus status,
+            ReviewRoundStatus status,
             LocalDateTime startsAt,
             LocalDateTime endsAt
     ) {
-        ReflectionTestUtils.setField(stage, "status", status);
-        ReflectionTestUtils.setField(stage, "startsAt", startsAt);
-        ReflectionTestUtils.setField(stage, "endsAt", endsAt);
+        ReflectionTestUtils.setField(round, "status", status);
+        ReflectionTestUtils.setField(round, "startsAt", startsAt);
+        ReflectionTestUtils.setField(round, "endsAt", endsAt);
         stubLockedContext(null);
 
         assertReviewError(
@@ -565,24 +553,22 @@ class ReviewSubmissionServiceImplTest {
     }
 
     @Test
-    @DisplayName("대회가 REVIEWING 상태가 아니면 채점을 제출할 수 없다")
-    void submitReview_rejectsContestThatIsNotReviewing() {
+    @DisplayName("대회 상태와 무관하게 OPEN 시간 안의 라운드는 채점을 제출할 수 있다")
+    void submitReview_allowsOpenRoundRegardlessOfContestStatus() {
         ReflectionTestUtils.setField(
                 contest,
                 "status",
                 ContestStatus.AWARDED
         );
         stubLockedContext(null);
+        stubSuccessfulSaves();
 
-        assertReviewError(
-                ReviewErrorResponseCode.REVIEW_SUBMISSION_NOT_ALLOWED,
-                () -> service.submitReview(
-                        ASSIGNMENT_ID,
-                        validRequest()
-                )
-        );
-        verify(reviewRepository, never())
-                .saveAndFlush(any(Review.class));
+        ReviewSubmitRes response =
+                service.submitReview(ASSIGNMENT_ID, validRequest());
+
+        assertThat(response.reviewId()).isEqualTo(REVIEW_ID);
+        assertThat(assignment.getStatus())
+                .isEqualTo(ReviewAssignmentStatus.COMPLETED);
     }
 
     @Test
@@ -740,7 +726,7 @@ class ReviewSubmissionServiceImplTest {
             long criterionId = 900L + index;
             largeCriteria.add(criterion(
                     criterionId,
-                    stage,
+                    round,
                     "large-" + index,
                     Integer.MAX_VALUE,
                     (int) index,
@@ -810,7 +796,7 @@ class ReviewSubmissionServiceImplTest {
     private void stubLockedContext(Review existingReview) {
         ReviewSubmissionScope scope =
                 org.mockito.Mockito.mock(ReviewSubmissionScope.class);
-        given(scope.getReviewStageId()).willReturn(STAGE_ID);
+        given(scope.getReviewRoundId()).willReturn(ROUND_ID);
         given(scope.getReviewRoundEntryId()).willReturn(ENTRY_ID);
         given(reviewLinkAuthenticator.authenticate(RAW_TOKEN, NOW))
                 .willReturn(judge);
@@ -819,16 +805,16 @@ class ReviewSubmissionServiceImplTest {
                         ASSIGNMENT_ID,
                         JUDGE_ID
                 )).willReturn(Optional.of(scope));
-        given(contestStageRepository.findByIdForShare(STAGE_ID))
-                .willReturn(Optional.of(stage));
+        given(reviewRoundRepository.findByIdForShare(ROUND_ID))
+                .willReturn(Optional.of(round));
         given(reviewCriterionRepository
-                .findAllForShareByContestStageIdOrderBySortOrderAsc(
-                        STAGE_ID))
+                .findAllForShareByReviewRoundIdOrderBySortOrderAsc(
+                        ROUND_ID))
                 .willReturn(criteria);
         given(reviewRoundEntryRepository
-                .findByIdAndReviewStageIdForShare(
+                .findByIdAndReviewRoundIdForShare(
                         ENTRY_ID,
-                        STAGE_ID
+                        ROUND_ID
                 )).willReturn(Optional.of(entry));
         given(reviewAssignmentRepository
                 .findByIdAndJudgeIdAndEntryIdForUpdate(
@@ -973,21 +959,22 @@ class ReviewSubmissionServiceImplTest {
         return result;
     }
 
-    private ContestStage stage(
+    private ReviewRound round(
             Long id,
-            Contest stageContest,
-            StageStatus status,
+            Contest roundContest,
+            ReviewRoundStatus status,
             LocalDateTime startsAt,
             LocalDateTime endsAt
     ) {
-        ContestStage result = ContestStage.builder()
-                .contest(stageContest)
+        ReviewRound result = ReviewRound.builder()
+                .contest(roundContest)
+                .roundNo(1)
                 .name("본선 심사")
-                .stageType(StageType.REVIEW)
-                .sequenceNo(2)
                 .status(status)
                 .startsAt(startsAt)
                 .endsAt(endsAt)
+                .targetType(ReviewRoundTargetType.MANUAL)
+                .decisionRule(ReviewRoundDecisionRule.MANUAL)
                 .build();
         ReflectionTestUtils.setField(result, "id", id);
         return result;
@@ -995,14 +982,14 @@ class ReviewSubmissionServiceImplTest {
 
     private ReviewCriterion criterion(
             Long id,
-            ContestStage criterionStage,
+            ReviewRound criterionRound,
             String code,
             int maxScore,
             int sortOrder,
             boolean active
     ) {
         ReviewCriterion result = ReviewCriterion.builder()
-                .contestStage(criterionStage)
+                .reviewRound(criterionRound)
                 .code(code)
                 .label(code)
                 .maxScore(maxScore)
@@ -1015,11 +1002,11 @@ class ReviewSubmissionServiceImplTest {
 
     private ReviewRoundEntry entry(
             Long id,
-            ContestStage entryStage,
+            ReviewRound entryRound,
             ReviewRoundEntryStatus status
     ) {
         ReviewRoundEntry result = ReviewRoundEntry.builder()
-                .reviewStage(entryStage)
+                .reviewRound(entryRound)
                 .status(status)
                 .build();
         ReflectionTestUtils.setField(result, "id", id);
@@ -1081,23 +1068,23 @@ class ReviewSubmissionServiceImplTest {
         return result;
     }
 
-    private static Stream<Arguments> notOpenStageCases() {
+    private static Stream<Arguments> notOpenRoundCases() {
         return Stream.of(
                 Arguments.of(
                         "PREPARING 상태",
-                        StageStatus.PREPARING,
+                        ReviewRoundStatus.PREPARING,
                         NOW.minusHours(1),
                         NOW.plusHours(1)
                 ),
                 Arguments.of(
                         "시작 1초 전",
-                        StageStatus.OPEN,
+                        ReviewRoundStatus.OPEN,
                         NOW.plusSeconds(1),
                         NOW.plusHours(1)
                 ),
                 Arguments.of(
                         "종료 시각 경계",
-                        StageStatus.OPEN,
+                        ReviewRoundStatus.OPEN,
                         NOW.minusHours(1),
                         NOW
                 )

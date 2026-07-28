@@ -8,7 +8,7 @@ public record ReviewAssignmentRes(
         Long id,
         Long judgeId,
         String judgeName,
-        Long reviewStageId,
+        Long reviewRoundId,
         Long reviewRoundEntryId,
         String submissionPublicId,
         String submissionTitle,
@@ -27,7 +27,7 @@ public record ReviewAssignmentRes(
                 assignment.getContestJudge().getId(),
                 assignment.getContestJudge().getName(),
                 assignment.getReviewRoundEntry()
-                        .getReviewStage()
+                        .getReviewRound()
                         .getId(),
                 assignment.getReviewRoundEntry().getId(),
                 assignment.getReviewRoundEntry()

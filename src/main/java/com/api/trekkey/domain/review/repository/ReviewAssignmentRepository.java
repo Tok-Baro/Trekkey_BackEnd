@@ -15,18 +15,18 @@ public interface ReviewAssignmentRepository
 
     interface ReviewSubmissionScope {
 
-        Long getReviewStageId();
+        Long getReviewRoundId();
 
         Long getReviewRoundEntryId();
     }
 
     @Query("""
-            select stage.id as reviewStageId,
+            select reviewRound.id as reviewRoundId,
                    entry.id as reviewRoundEntryId
             from ReviewAssignment assignment
             join assignment.contestJudge judge
             join assignment.reviewRoundEntry entry
-            join entry.reviewStage stage
+            join entry.reviewRound reviewRound
             where assignment.id = :assignmentId
               and judge.id = :judgeId
             """)
@@ -64,15 +64,15 @@ public interface ReviewAssignmentRepository
             from ReviewAssignment assignment
             join fetch assignment.contestJudge judge
             join fetch assignment.reviewRoundEntry entry
-            join fetch entry.reviewStage stage
+            join fetch entry.reviewRound reviewRound
             join fetch entry.submission submission
             where judge.id = :judgeId
-              and stage.id = :reviewStageId
+              and reviewRound.id = :reviewRoundId
             order by entry.id, assignment.id
             """)
-    List<ReviewAssignment> findAllWithDetailsByJudgeIdAndReviewStageId(
+    List<ReviewAssignment> findAllWithDetailsByJudgeIdAndReviewRoundId(
             @Param("judgeId") Long judgeId,
-            @Param("reviewStageId") Long reviewStageId);
+            @Param("reviewRoundId") Long reviewRoundId);
 
     @Query("""
             select assignment
@@ -80,10 +80,10 @@ public interface ReviewAssignmentRepository
             join fetch assignment.contestJudge judge
             join fetch judge.contest
             join fetch assignment.reviewRoundEntry entry
-            join fetch entry.reviewStage stage
+            join fetch entry.reviewRound reviewRound
             join fetch entry.submission submission
             where judge.id = :judgeId
-            order by stage.sequenceNo, entry.id, assignment.id
+            order by reviewRound.roundNo, entry.id, assignment.id
             """)
     List<ReviewAssignment> findAllWithDetailsByJudgeId(
             @Param("judgeId") Long judgeId);
