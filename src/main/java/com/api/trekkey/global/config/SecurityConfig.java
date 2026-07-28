@@ -72,6 +72,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/contests/*/applications").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.POST, "/api/contests/*/like").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.GET, "/api/me/applications").hasRole("PARTICIPANT")
+                        .requestMatchers(HttpMethod.GET, "/api/me/applications/*/progress")
+                        .hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.PATCH, "/api/me/applications/*").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.GET, "/api/me/teams").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.GET, "/api/participants/search").hasRole("PARTICIPANT")

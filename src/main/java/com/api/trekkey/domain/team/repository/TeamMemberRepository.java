@@ -4,6 +4,7 @@ import com.api.trekkey.domain.team.entity.TeamMember;
 import com.api.trekkey.domain.team.entity.TeamMemberRole;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -28,6 +29,18 @@ public interface TeamMemberRepository extends JpaRepository<TeamMember, Long> {
             order by team.createdAt desc
             """)
     List<TeamMember> findAllWithTeamAndContestByUserId(@Param("userId") Long userId);
+
+    @Query("""
+            select teamMember
+            from TeamMember teamMember
+            join fetch teamMember.team team
+            join fetch team.contest contest
+            where teamMember.user.id = :userId
+              and contest.publicId = :contestPublicId
+            """)
+    Optional<TeamMember> findWithTeamAndContestByUserIdAndContestPublicId(
+            @Param("userId") Long userId,
+            @Param("contestPublicId") String contestPublicId);
 
     boolean existsByTeamContestIdAndUserIdIn(Long contestId, Collection<Long> userIds);
 
