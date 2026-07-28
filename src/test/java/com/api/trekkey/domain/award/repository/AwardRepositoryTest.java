@@ -14,6 +14,7 @@ import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.organization.entity.OrganizationStatus;
 import com.api.trekkey.domain.review.entity.ContestStageEntry;
 import com.api.trekkey.domain.review.entity.EntryStatus;
+import com.api.trekkey.domain.review.repository.ContestStageEntryRepository;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
 import com.api.trekkey.domain.team.entity.Team;
@@ -49,6 +50,9 @@ class AwardRepositoryTest {
 
     @Autowired
     private TeamMemberRepository teamMemberRepository;
+
+    @Autowired
+    private ContestStageEntryRepository contestStageEntryRepository;
 
     @Test
     void confirmedTeamAwardIsVisibleToLeaderAndMember() {
@@ -105,15 +109,30 @@ class AwardRepositoryTest {
                 .status(SubmissionStatus.SUBMITTED)
                 .submittedAt(NOW.minusDays(1))
                 .build());
-        ContestStage stage = entityManager.persist(ContestStage.builder()
+        ContestStage firstStage = entityManager.persist(ContestStage.builder()
                 .contest(contest)
-                .name("최종 심사")
+                .name("1차 심사")
                 .stageType(StageType.REVIEW)
                 .sequenceNo(1)
                 .status(StageStatus.COMPLETED)
                 .build());
+        ContestStageEntry firstEntry = ContestStageEntry.builder()
+                .contestStage(firstStage)
+                .submission(submission)
+                .status(EntryStatus.IN_REVIEW)
+                .build();
+        firstEntry.finalizeByRule(new BigDecimal("90.0"), 1, EntryStatus.PASSED, NOW.minusHours(1));
+        entityManager.persist(firstEntry);
+
+        ContestStage finalStage = entityManager.persist(ContestStage.builder()
+                .contest(contest)
+                .name("최종 심사")
+                .stageType(StageType.REVIEW)
+                .sequenceNo(2)
+                .status(StageStatus.COMPLETED)
+                .build());
         ContestStageEntry entry = ContestStageEntry.builder()
-                .contestStage(stage)
+                .contestStage(finalStage)
                 .submission(submission)
                 .status(EntryStatus.IN_REVIEW)
                 .build();
@@ -143,6 +162,26 @@ class AwardRepositoryTest {
         assertThat(teamMemberRepository.findAllByTeamIdOrderByUserIdAsc(team.getId()))
                 .extracting(teamMember -> teamMember.getUser().getId())
                 .containsExactly(member.getId(), member2.getId());
+        assertThat(teamMemberRepository.findWithTeamAndContestByUserIdAndContestPublicId(
+                member.getId(), contest.getPublicId()))
+                .get()
+                .extracting(teamMember -> teamMember.getTeam().getId())
+                .isEqualTo(team.getId());
+        assertThat(teamMemberRepository.findWithTeamAndContestByUserIdAndContestPublicId(
+                outsider.getId(), contest.getPublicId()))
+                .isEmpty();
+        assertThat(contestStageEntryRepository
+                .findAllWithStageBySubmissionIdOrderBySequenceNoAsc(submission.getId()))
+                .extracting(stageEntry -> stageEntry.getContestStage().getName())
+                .containsExactly("1차 심사", "최종 심사");
+        assertThat(awardRepository.findFirstByTeamIdAndStatusOrderByAwardRankNoAsc(
+                team.getId(), AwardStatus.CONFIRMED))
+                .get()
+                .extracting(Award::getPrize)
+                .isEqualTo("대상");
+        assertThat(awardRepository.findFirstByTeamIdAndStatusOrderByAwardRankNoAsc(
+                team.getId(), AwardStatus.CANDIDATE))
+                .isEmpty();
     }
 
     private Organization organization() {
