@@ -44,16 +44,48 @@ The current Hardhat 2 dependency graph reports high-severity advisories in devel
 
 ## Kairos deployment
 
+Current V1 testnet deployment:
+
+- Chain ID: `1001`
+- Registry: [`0x4ca738CC22Af5aE40EA8A23E001FA93e1e044117`](https://kairos.kaiascan.io/address/0x4ca738CC22Af5aE40EA8A23E001FA93e1e044117)
+- Deployment manifest: [`deployments/kairos-1001.json`](./deployments/kairos-1001.json)
+- Human-readable evidence and procedure: [`../docs/blockchain-kairos-deployment.md`](../docs/blockchain-kairos-deployment.md)
+
 1. Fund the deployment account with Kairos test KAIA.
-2. Set `DEPLOYER_PRIVATE_KEY` in `contracts/.env`. Do not place a private key in source control, tickets, or logs.
-3. Optionally override `KAIROS_RPC_URL`. The default is Kaia's official public endpoint `https://public-en-kairos.node.kaia.io`.
-4. Deploy:
+2. Put only the public deployment values in `contracts/.env`:
+
+```dotenv
+DEPLOYER_ADDRESS=0x...
+ISSUER_PUBLIC_ID=<organization.publicId>
+ISSUER_KEY_VERSION=1
+ISSUER_SIGNER_ADDRESS=0x...
+RELAYER_ADDRESS=0x...
+```
+
+3. Start the loopback-only deployment console:
 
 ```bash
+npm run deploy:kairos:wallet
+```
+
+4. Open `http://127.0.0.1:4173` in the Chrome profile that has Kaia Wallet installed.
+5. Connect the expected deployer on Kairos and approve the registry deployment transaction.
+6. Switch Kaia Wallet to the configured issuer signer, reconnect, and sign the EIP-712 ownership proof. This signature does not spend gas.
+7. Switch back to the deployer, reconnect, and approve the relayer-role and issuer-key registration transactions.
+8. Run the on-chain verification, then copy the resulting registry address to `REGISTRY_ADDRESS` in `contracts/.env` and to the backend's `BLOCKCHAIN_CONTRACT_ADDRESS`.
+
+The console accepts only the configured deployer and issuer signer accounts. It persists the deployment transaction hash and predicted contract address in browser storage as soon as the transaction is broadcast, then recovers the result after refresh instead of allowing an accidental duplicate deployment.
+
+The local server has an explicit asset allowlist. It serves the UI, compiled contract artifact, local ethers bundle, and public deployment configuration only. It cannot serve `.env`, private keys, arbitrary `node_modules`, or parent paths.
+
+For non-interactive Kairos CI or isolated development environments, the private-key Hardhat path remains available:
+
+```bash
+DEPLOYER_PRIVATE_KEY=0x...
 npm run deploy:kairos
 ```
 
-After deployment, set `REGISTRY_ADDRESS`, `ISSUER_PUBLIC_ID`, `ISSUER_KEY_VERSION`, `ISSUER_SIGNER_ADDRESS`, and `RELAYER_ADDRESS`, then run:
+Never place a mainnet or production key in a plaintext `.env`. The CLI path is limited to disposable Kairos accounts. After a CLI deployment, set `REGISTRY_ADDRESS`, `ISSUER_PUBLIC_ID`, `ISSUER_KEY_VERSION`, `ISSUER_SIGNER_ADDRESS`, and `RELAYER_ADDRESS`, then run:
 
 ```bash
 npm run configure:kairos

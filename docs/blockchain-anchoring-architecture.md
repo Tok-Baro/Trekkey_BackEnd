@@ -1,7 +1,7 @@
 # Trekkey Credential 및 Kaia 앵커링 설계
 
 - 기준일: 2026-07-28
-- 상태: 블록체인 기반 구현 및 업무 도메인 연결 완료, Kairos 배포 전
+- 상태: 블록체인 기반 구현 및 업무 도메인 연결 완료, Kairos Registry 배포·초기 설정 완료
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 기준 ERD: [Trekkey 공모전·Credential 최종 ERD](./erd.md)
 - 대상 네트워크: Kaia Kairos 우선, EVM 체인 교체 가능 구조
@@ -52,7 +52,9 @@ Trekkey는 대회 원문과 개인정보를 SQL 및 객체 저장소에 보관�
 
 - 구현 완료: canonical JSON, source fingerprint, file manifest, Merkle batch/proof, EIP-712, Solidity registry, web3j adapter, Transactional Outbox, 공개 검증, revoke/supersede, Portable Package
 - 연결 완료: `TEAM`, `SUBMISSION`, `AWARD` 확정 서비스에서 내부 `CredentialIssuanceService` 호출
-- 배포 대기: Kairos 실제 contract address와 운영 계정은 저장소에 포함하지 않음
+- 배포 완료: Kairos `chainId=1001`, Registry `0x4ca738CC22Af5aE40EA8A23E001FA93e1e044117`, relayer·test issuer key 등록
+- 매핑 대기: test issuer public ID와 실제 테스트 `ORGANIZATION.publicId` 일치 확정
+- 통합 시험 대기: 실제 Credential 발급, batch 승인, anchor, 공개 검증, revoke/supersede
 - 후속 구현: QR UI, KMS/HSM adapter, 복수 chain registry/router, mainnet 운영
 
 ## 3. 시스템 경계
@@ -811,7 +813,8 @@ Kaia는 BFT 기반 immediate finality를 제공하므로 임의의 Ethereum conf
 
 - 완료: 관리자 batch API, anchor worker, 외부 서명 제출 경계, relayer, JSON-RPC adapter
 - 완료: 공개 verify API, outbox 재시도, raw transaction/receipt 원장
-- 배포 대기: Kairos contract 배포 및 explorer 검증
+- 완료: Kairos contract 배포와 relayer·issuer 초기 설정
+- 대기: Kaiascan source verification 및 실제 Credential end-to-end 통합 시험
 - 후속: QR 화면과 운영 모니터링
 
 ### Phase 5. 운영 확장

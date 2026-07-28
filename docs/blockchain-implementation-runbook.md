@@ -4,6 +4,9 @@
 - 대상: Trekkey 백엔드 개발자, 학교 관리자, 배포 담당자
 - 네트워크: Kaia Kairos `chainId=1001`
 - 컨트랙트: `TrekkeyCredentialRegistryV1`
+- 현재 Registry: `0x4ca738CC22Af5aE40EA8A23E001FA93e1e044117`
+- 현재 Kairos test issuer public ID: `725050e0-2a2f-48a8-a8b8-2e51e12524b7` (DB 학교 매핑 대기)
+- 실제 배포 증적: [Kairos Registry 배포 기록과 재현 절차](./blockchain-kairos-deployment.md)
 
 ## 1. 현재 구현된 범위
 
@@ -28,7 +31,8 @@
 - QR 및 공개 검증 프론트 화면
 - 운영 KMS/HSM signer
 - Kaia mainnet 배포
-- Kairos 실제 컨트랙트 배포와 통합 시험
+- Kairos 실제 Credential end-to-end 통합 시험
+- Kaiascan source-code verification
 
 임의 발급 HTTP API는 열지 않는다. 최종 업무 원장을 확정하는 서비스만 내부
 `CredentialIssuanceService`를 호출하므로, 미확정 데이터를 브라우저가 직접 Credential로 만들 수 없다.
@@ -37,10 +41,11 @@
 
 1. 기존 `ORGANIZATION` 데이터에 `publicId`를 backfill하고 운영 migration에서 `NOT NULL + UNIQUE`로 고정한다.
 2. Kairos용 deployer, 학교 issuer, Trekkey relayer 계정을 서로 다르게 만들고 테스트 KAIA는 deployer와 relayer에만 넣는다.
-3. 컨트랙트를 Kairos에 배포하고 relayer 역할과 학교 issuer 공개 주소를 등록한다.
-4. 백엔드를 먼저 `READ_ONLY`로 연결해 조회를 확인한 뒤, 한 worker 인스턴스만 `LOCAL_RELAYER`로 전환한다.
-5. 테스트 Credential 1건을 발급하고 배치 서명, 앵커링, 공개 검증, package 다운로드, 폐기까지 한 번 완주한다.
-6. Kairos 운영 결과와 장애 복구 절차가 확인되기 전에는 mainnet으로 전환하지 않는다.
+3. 완료된 Kairos Registry 주소와 issuer·relayer 설정을 배포 증적 문서에서 확인한다.
+4. 백엔드를 먼저 `READ_ONLY`로 연결해 조회를 확인한 뒤, 자동 서명 가능한 relayer secret 또는 KMS를 준비한다.
+5. 트랜잭션을 보내는 worker 인스턴스 하나만 `LOCAL_RELAYER`로 전환한다.
+6. 테스트 Credential 1건을 발급하고 배치 서명, 앵커링, 공개 검증, package 다운로드, 폐기까지 한 번 완주한다.
+7. Kairos 운영 결과와 장애 복구 절차가 확인되기 전에는 mainnet으로 전환하지 않는다.
 
 ## 2. 키와 역할
 
@@ -135,22 +140,65 @@ npx tsc --noEmit
 
 ## 4. Kairos 배포
 
-`contracts/.env`에 개발용 배포 키를 설정한다.
+Kairos 수동 배포는 개인키를 파일로 내보내지 않고 Kaia Wallet 크롬 확장 프로그램으로 직접 승인한다.
+
+2026-07-28 실제 배포 결과와 승인창별 검증값은
+[Kairos Registry 배포 기록과 재현 절차](./blockchain-kairos-deployment.md)에 고정한다.
+
+`contracts/.env`에는 공개값만 설정한다.
 
 ```dotenv
 KAIROS_RPC_URL=https://public-en-kairos.node.kaia.io
-DEPLOYER_PRIVATE_KEY=0x...
+DEPLOYER_ADDRESS=0x...
+REGISTRY_ADDRESS=
+ISSUER_PUBLIC_ID=<organization.publicId>
+ISSUER_KEY_VERSION=1
+ISSUER_SIGNER_ADDRESS=0x...
+RELAYER_ADDRESS=0x...
 KAIASCAN_API_KEY=
 ```
 
-배포와 소스 검증:
+로컬 배포 화면 실행:
+
+```bash
+npm run deploy:kairos:wallet
+```
+
+Chrome에서 `http://127.0.0.1:4173`을 열고 다음 순서로 진행한다.
+
+1. Kaia Wallet에서 deployer 계정을 선택하고 연결한다.
+2. 화면이 `chainId=1001`과 예상 deployer 주소를 확인한다.
+3. Registry 배포 트랜잭션을 승인한다.
+4. Kaia Wallet을 issuer signer 계정으로 전환하고 화면에서 다시 연결한다.
+5. EIP-712 소유 증명에 서명한다. 메시지 서명이라 가스는 들지 않는다.
+6. Kaia Wallet을 deployer 계정으로 되돌리고 화면에서 다시 연결한다.
+7. relayer 역할 부여와 issuer signer 등록 트랜잭션을 각각 승인한다.
+8. 온체인 검증을 실행한다.
+9. 결과 contract address를 `REGISTRY_ADDRESS`와 백엔드 `BLOCKCHAIN_CONTRACT_ADDRESS`에 저장한다.
+
+배포 트랜잭션이 전송되는 즉시 tx hash와 예상 contract address를 브라우저 저장소에 기록한다. 승인 직후 새로고침되거나 RPC 응답이 지연돼도 기존 영수증을 복구하며, 결과가 불명확한 동안에는 중복 배포를 허용하지 않는다.
+
+로컬 서버는 loopback에만 바인딩되며 UI, ethers 번들, contract artifact, 공개 설정만 allowlist로 제공한다. `.env`, 개인키, 임의의 `node_modules`, 상위 경로는 제공하지 않는다.
+
+CLI 자동 배포는 격리된 Kairos 개발환경에서만 선택적으로 사용한다.
+
+```dotenv
+DEPLOYER_PRIVATE_KEY=0x...
+```
 
 ```bash
 npm run deploy:kairos
+```
+
+운영·메인넷 키를 평문 `.env`에 넣지 않는다.
+
+배포 후 소스 검증:
+
+```bash
 npm run verify:kairos -- <REGISTRY_ADDRESS> <INITIAL_ADMIN_ADDRESS>
 ```
 
-배포 출력의 contract address를 보관한다. 이후 백엔드의 `BLOCKCHAIN_CONTRACT_ADDRESS`와 EIP-712 `verifyingContract`는 반드시 이 주소여야 한다.
+배포 결과 contract address는 백엔드의 `BLOCKCHAIN_CONTRACT_ADDRESS`와 EIP-712 `verifyingContract`에서 반드시 동일해야 한다.
 
 Kaia Foundation public RPC는 개발·시험용이다. 운영에서는 SLA와 rate limit이 명확한 provider를 사용하고, 장애 시 조회 전용 보조 provider를 둘 것을 권장한다.
 
@@ -158,7 +206,7 @@ Kaia Foundation public RPC는 개발·시험용이다. 운영에서는 SLA와 ra
 
 학교의 `ORGANIZATION.publicId`가 먼저 DB에 고정되어 있어야 한다. 표시 이름이나 내부 bigint ID가 아니라 이 UUID가 issuer ID 계산의 입력이다.
 
-`contracts/.env`:
+CLI 설정 스크립트를 사용할 경우 `contracts/.env`:
 
 ```dotenv
 REGISTRY_ADDRESS=0x...
@@ -173,6 +221,8 @@ RELAYER_ADDRESS=0x...
 ```bash
 npm run configure:kairos
 ```
+
+Kaia Wallet 배포 화면에서 권한과 issuer 등록까지 완료했다면 같은 설정을 다시 실행할 필요는 없다. 스크립트와 화면 모두 현재 온체인 값을 먼저 읽는 멱등 절차이므로 재검증 목적으로 실행해도 같은 값에서는 트랜잭션을 만들지 않는다.
 
 이 스크립트는 다음을 수행한다.
 
@@ -444,11 +494,12 @@ POST /api/admin/blockchain/status-events/{statusEventId}/reconcile
 
 action, effective time, issuer key version, replacement hash가 모두 일치해야 한다.
 
-## 12. 배포 전 필수 확인
+## 12. Mainnet 전 필수 확인
 
 - [ ] `ORGANIZATION.publicId` 기존 데이터 backfill 및 `NOT NULL + UNIQUE` migration
 - [ ] 대회·팀·제출·수상 FK와 tenant 소속 검증 연결
-- [ ] Kairos contract source 검증
+- [x] Kairos Registry 배포, relayer 역할, issuer key 등록, 온체인 readback
+- [ ] Kaiascan contract source 검증
 - [ ] Java와 OpenZeppelin Merkle fixture 교차 테스트
 - [ ] 학교 issuer와 relayer 키 분리
 - [ ] 승인 nonce·deadline·chain ID·contract address 확인

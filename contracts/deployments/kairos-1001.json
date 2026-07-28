@@ -1,0 +1,23 @@
+{
+  "network": "kaia-kairos",
+  "chainId": 1001,
+  "contractName": "TrekkeyCredentialRegistryV1",
+  "contractVersion": "1",
+  "address": "0x4ca738CC22Af5aE40EA8A23E001FA93e1e044117",
+  "runtimeCodeBytes": 10522,
+  "runtimeCodeHash": "0x6bdcd078a99c833e1e6126d71954b570fb7bfb4afe4720fc4a438009039571a2",
+  "deployer": "0x5cc66C91d390336bD58Db75C261a994A78C14486",
+  "deploymentTransactionHash": "0xf3b88b691c8cf475576c2178e2f7325f105dce1e0694dbe121c2140f0b11eb34",
+  "deploymentBlockNumber": 223574298,
+  "deployedAt": "2026-07-28T05:45:01Z",
+  "configuration": {
+    "issuerPublicId": "725050e0-2a2f-48a8-a8b8-2e51e12524b7",
+    "issuerPublicIdStatus": "test-identifier-db-mapping-pending",
+    "issuerId": "0x21240e02415b5fef8fdada2d39b44494fe28d292dab8ecb1f62645fd44298184",
+    "issuerKeyVersion": 1,
+    "issuerSigner": "0x16912745426d9A108A91e303dd865B1045B75aE1",
+    "issuerRegistrationTransactionHash": "0x35f4844b8932ac2b5a3d9361b0bb1ee7f2ac64063e5b425f12e2c40e8241cb10",
+    "relayer": "0xFf3BFF4FfF5d0699E82Fd5b045F034AB01FF8Ed6",
+    "relayerGrantTransactionHash": "0xda3e39525679ec2029c2bdc705a647298c824d1d53b6a42dfc2da8ecd9560230"
+  }
+}

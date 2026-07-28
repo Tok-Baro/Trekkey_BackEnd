@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trekkey Kairos 배포</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="product">TREKKEY</p>
+        <h1>Credential Registry 배포</h1>
+      </div>
+      <div class="topbar-actions">
+        <span id="connection-badge" class="status-badge" data-state="idle">연결 안 됨</span>
+        <button id="connect-button" class="primary-button" type="button" disabled>Kaia Wallet 연결</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="status-strip" aria-label="연결 상태">
+        <div class="status-item">
+          <span>네트워크</span>
+          <strong id="network-value">-</strong>
+        </div>
+        <div class="status-item">
+          <span>연결 계정</span>
+          <strong id="account-value">-</strong>
+        </div>
+        <div class="status-item">
+          <span>잔액</span>
+          <strong id="balance-value">-</strong>
+        </div>
+        <div class="status-item">
+          <span>Registry</span>
+          <strong id="registry-status-value">미배포</strong>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="configuration">
+          <div class="section-heading">
+            <div>
+              <p class="section-label">CONFIGURATION</p>
+              <h2>Kairos 설정</h2>
+            </div>
+            <span class="network-label">Chain ID 1001</span>
+          </div>
+
+          <div class="field-grid">
+            <label class="field">
+              <span>예상 deployer</span>
+              <input id="expected-deployer" type="text" readonly>
+            </label>
+            <label class="field">
+              <span>학교 issuer public ID</span>
+              <input id="issuer-public-id" type="text" readonly>
+            </label>
+            <label class="field">
+              <span>Issuer signer</span>
+              <input id="issuer-signer" type="text" readonly>
+            </label>
+            <label class="field">
+              <span>Relayer</span>
+              <input id="relayer-address" type="text" readonly>
+            </label>
+            <label class="field registry-field">
+              <span>Registry address</span>
+              <span class="input-command">
+                <input id="registry-address" type="text" placeholder="배포 후 자동 입력" readonly>
+                <button id="copy-registry-button" class="secondary-button compact-button" type="button" disabled>
+                  복사
+                </button>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="actions-panel">
+          <div class="section-heading">
+            <div>
+              <p class="section-label">TRANSACTIONS</p>
+              <h2>실행</h2>
+            </div>
+          </div>
+
+          <div class="action-list">
+            <div class="action-row">
+              <div>
+                <strong>1. Registry 배포</strong>
+                <span>연결된 deployer를 초기 관리자로 지정</span>
+              </div>
+              <button id="deploy-button" class="primary-button" type="button" disabled>배포</button>
+            </div>
+            <div class="action-row">
+              <div>
+                <strong>2. Issuer signer 검증</strong>
+                <span>Issuer 계정의 EIP-712 서명 복구 주소 확인</span>
+              </div>
+              <button id="prove-issuer-button" class="primary-button" type="button" disabled>서명</button>
+            </div>
+            <div class="action-row">
+              <div>
+                <strong>3. 권한 및 issuer 등록</strong>
+                <span>Relayer 역할과 issuer key version 1 설정</span>
+              </div>
+              <button id="configure-button" class="primary-button" type="button" disabled>설정</button>
+            </div>
+            <div class="action-row">
+              <div>
+                <strong>4. 온체인 검증</strong>
+                <span>코드·관리자·relayer·issuer signer 조회</span>
+              </div>
+              <button id="verify-button" class="secondary-button" type="button" disabled>검증</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="activity">
+        <div class="section-heading">
+          <div>
+            <p class="section-label">ACTIVITY</p>
+            <h2>처리 기록</h2>
+          </div>
+          <button id="clear-log-button" class="secondary-button compact-button" type="button">지우기</button>
+        </div>
+        <ol id="activity-log" class="activity-log" aria-live="polite"></ol>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

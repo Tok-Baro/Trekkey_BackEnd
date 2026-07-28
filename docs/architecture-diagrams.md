@@ -605,7 +605,8 @@ flowchart LR
     phase3 --> p3a["OpenZeppelin 호환 Fixture"]
     phase3 --> p3b["RegistryV1과 EIP-712"]
     phase4 --> p4a["Batch·Anchor Worker"]
-    phase4 --> p4b["공개 Verify API 완료·Kairos 배포 대기"]
+    phase4 --> p4b["Kairos Registry 배포·초기 설정 완료"]
+    phase4 --> p4c["Credential E2E 통합 시험 대기"]
     phase5 --> p5a["Mainnet Multisig·KMS·복수 RPC"]
     phase5 --> p5b["학교별 Adapter와 졸업 Credential"]
 ```

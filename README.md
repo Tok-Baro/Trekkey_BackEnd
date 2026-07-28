@@ -143,5 +143,6 @@ Java 단위·JPA 테스트는 H2를 사용한다. 별도의 MySQL 통합 테스�
 - [공모전·Credential 최종 ERD](docs/erd.md)
 - [Credential 및 Kaia 앵커링 설계](docs/blockchain-anchoring-architecture.md)
 - [블록체인 구현 및 Kairos 실행 가이드](docs/blockchain-implementation-runbook.md)
+- [2026-07-28 Kairos Registry 배포 기록과 재현 절차](docs/blockchain-kairos-deployment.md)
 - [2026-07-27 통합 회의 안건](docs/meetings/2026-07-27-integration-agenda.md)
 - [설계 문서 인덱스](docs/README.md)
