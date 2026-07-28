@@ -3,7 +3,9 @@ package com.api.trekkey.domain.contest.publicapi.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -18,6 +20,7 @@ import com.api.trekkey.domain.contest.repository.ContestLikeRepository;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestDetailRes;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestLikeRes;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchRes;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
 import com.api.trekkey.domain.organization.entity.Organization;
@@ -32,6 +35,7 @@ import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -57,7 +61,8 @@ class ContestServiceImplTest {
     @Test
     @DisplayName("검색어와 접수중 필터를 적용하고 카드 응답을 조립한다")
     void searchContests_returnsContestCards() {
-        givenParticipant(10L, 2L);
+        User participant = givenParticipant(10L, 2L);
+        given(participant.getId()).willReturn(10L);
         Contest contest = contest();
         LocalDateTime submissionDueAt = LocalDateTime.of(2026, 8, 10, 23, 59);
         ContestStage submissionStage = ContestStage.builder()
@@ -67,6 +72,7 @@ class ContestServiceImplTest {
                 .build();
         ContestLike contestLike = ContestLike.builder()
                 .contest(contest)
+                .user(participant)
                 .build();
 
         given(contestRepository.searchContests(
@@ -91,7 +97,8 @@ class ContestServiceImplTest {
                 List.of("AI", "캠퍼스"),
                 submissionDueAt,
                 31L,
-                1L));
+                1L,
+                true));
     }
 
     @Test
@@ -141,8 +148,13 @@ class ContestServiceImplTest {
     @Test
     @DisplayName("공개 대회의 상세 응답을 조립한다")
     void getContestDetail_returnsContestDetail() {
-        givenParticipant(10L, 2L);
+        User participant = givenParticipant(10L, 2L);
         Contest contest = contest();
+        Contest viewedContest = contest(32L);
+        ContestLike contestLike = ContestLike.builder()
+                .contest(contest)
+                .user(participant)
+                .build();
         LocalDateTime applicationStartsAt = LocalDateTime.of(2026, 7, 1, 9, 0);
         LocalDateTime applicationEndsAt = LocalDateTime.of(2026, 7, 20, 18, 0);
         LocalDateTime submissionDueAt = LocalDateTime.of(2026, 8, 10, 23, 59);
@@ -167,11 +179,15 @@ class ContestServiceImplTest {
                 2L,
                 publicStatuses))
                 .willReturn(Optional.of(contest));
+        given(contestRepository.incrementViewCount(1L)).willReturn(1);
+        given(contestRepository.findById(1L)).willReturn(Optional.of(viewedContest));
         given(contestStageRepository.findAllByContestIdAndStageTypeInOrderBySequenceNoAsc(
                 1L,
                 Set.of(StageType.APPLICATION, StageType.SUBMISSION)))
                 .willReturn(List.of(applicationStage, submissionStage));
         given(contestLikeRepository.countByContestId(1L)).willReturn(7L);
+        given(contestLikeRepository.findByContestIdAndUserId(1L, 10L))
+                .willReturn(Optional.of(contestLike));
 
         ContestDetailRes result = contestService.getContestDetail(10L, contest.getPublicId());
 
@@ -192,8 +208,10 @@ class ContestServiceImplTest {
                 "온라인 신청서 제출",
                 "우수팀 시상",
                 "<p>대회 상세</p>",
-                31L,
-                7L));
+                32L,
+                7L,
+                true));
+        verify(contestRepository).incrementViewCount(1L);
     }
 
     @Test
@@ -216,6 +234,7 @@ class ContestServiceImplTest {
                 .extracting("baseResponseCode")
                 .isEqualTo(ContestErrorResponseCode.CONTEST_NOT_FOUND);
 
+        verify(contestRepository, never()).incrementViewCount(anyLong());
         verifyNoInteractions(contestStageRepository, contestLikeRepository);
     }
 
@@ -232,15 +251,98 @@ class ContestServiceImplTest {
         verifyNoInteractions(contestRepository, contestStageRepository, contestLikeRepository);
     }
 
-    private void givenParticipant(Long userId, Long organizationId) {
+    @Test
+    @DisplayName("좋아요가 없으면 추가하고 변경된 상태와 개수를 반환한다")
+    void toggleLike_addsLike() {
+        User participant = givenParticipant(10L, 2L);
+        Contest contest = contest();
+        Set<ContestStatus> publicStatuses = Set.of(
+                ContestStatus.APPLICATION_OPEN,
+                ContestStatus.REVIEWING,
+                ContestStatus.AWARDED);
+        given(contestRepository.findPublicContestForUpdate(
+                contest.getPublicId(),
+                2L,
+                publicStatuses))
+                .willReturn(Optional.of(contest));
+        given(contestLikeRepository.findByContestIdAndUserId(1L, 10L))
+                .willReturn(Optional.empty());
+        given(contestLikeRepository.countByContestId(1L)).willReturn(8L);
+
+        ContestLikeRes result = contestService.toggleLike(10L, contest.getPublicId());
+
+        assertThat(result).isEqualTo(new ContestLikeRes(8L, true));
+        ArgumentCaptor<ContestLike> contestLikeCaptor = ArgumentCaptor.forClass(ContestLike.class);
+        verify(contestLikeRepository).save(contestLikeCaptor.capture());
+        assertThat(contestLikeCaptor.getValue().getContest()).isSameAs(contest);
+        assertThat(contestLikeCaptor.getValue().getUser()).isSameAs(participant);
+    }
+
+    @Test
+    @DisplayName("이미 좋아요한 대회는 좋아요를 취소하고 변경된 상태와 개수를 반환한다")
+    void toggleLike_removesExistingLike() {
+        User participant = givenParticipant(10L, 2L);
+        Contest contest = contest();
+        ContestLike contestLike = ContestLike.builder()
+                .contest(contest)
+                .user(participant)
+                .build();
+        Set<ContestStatus> publicStatuses = Set.of(
+                ContestStatus.APPLICATION_OPEN,
+                ContestStatus.REVIEWING,
+                ContestStatus.AWARDED);
+        given(contestRepository.findPublicContestForUpdate(
+                contest.getPublicId(),
+                2L,
+                publicStatuses))
+                .willReturn(Optional.of(contest));
+        given(contestLikeRepository.findByContestIdAndUserId(1L, 10L))
+                .willReturn(Optional.of(contestLike));
+        given(contestLikeRepository.countByContestId(1L)).willReturn(6L);
+
+        ContestLikeRes result = contestService.toggleLike(10L, contest.getPublicId());
+
+        assertThat(result).isEqualTo(new ContestLikeRes(6L, false));
+        verify(contestLikeRepository).delete(contestLike);
+    }
+
+    @Test
+    @DisplayName("다른 학교이거나 공개되지 않은 대회에는 좋아요할 수 없다")
+    void toggleLike_throwsWhenPublicContestDoesNotExist() {
+        givenParticipant(10L, 2L);
+        String publicId = "unavailable-contest";
+        Set<ContestStatus> publicStatuses = Set.of(
+                ContestStatus.APPLICATION_OPEN,
+                ContestStatus.REVIEWING,
+                ContestStatus.AWARDED);
+        given(contestRepository.findPublicContestForUpdate(
+                publicId,
+                2L,
+                publicStatuses))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> contestService.toggleLike(10L, publicId))
+                .isInstanceOf(CustomException.class)
+                .extracting("baseResponseCode")
+                .isEqualTo(ContestErrorResponseCode.CONTEST_NOT_FOUND);
+
+        verifyNoInteractions(contestLikeRepository);
+    }
+
+    private User givenParticipant(Long userId, Long organizationId) {
         User user = mock(User.class);
         Organization organization = mock(Organization.class);
         given(userRepository.findById(userId)).willReturn(Optional.of(user));
         given(user.getOrganization()).willReturn(organization);
         given(organization.getId()).willReturn(organizationId);
+        return user;
     }
 
     private Contest contest() {
+        return contest(31L);
+    }
+
+    private Contest contest(long viewCount) {
         return Contest.builder()
                 .id(1L)
                 .publicId("f04739b5-bb66-4c3f-bf91-31b8712011be")
@@ -256,7 +358,7 @@ class ContestServiceImplTest {
                 .applicationMethod("온라인 신청서 제출")
                 .benefits("우수팀 시상")
                 .detailHtml("<p>대회 상세</p>")
-                .viewCount(31L)
+                .viewCount(viewCount)
                 .build();
     }
 }

@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.api.trekkey.domain.contest.publicapi.service.ContestService;
 import com.api.trekkey.domain.contest.publicapi.web.controller.ContestController;
+import com.api.trekkey.domain.contest.publicapi.web.dto.ContestLikeRes;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
 import com.api.trekkey.domain.review.publicapi.service.ReviewAccessService;
 import com.api.trekkey.domain.review.admin.service.ReviewAssignmentAdminService;
@@ -164,6 +165,43 @@ class SecurityConfigTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("PARTICIPANT")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isArray());
+    }
+
+    @Test
+    @DisplayName("대회 좋아요는 인증 없이 요청할 수 없다")
+    void contestLike_rejectsAnonymous() throws Exception {
+        mockMvc.perform(post("/api/contests/{publicId}/like", "public-id"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(contestService);
+    }
+
+    @Test
+    @DisplayName("참가자는 대회 좋아요를 토글할 수 있다")
+    void contestLike_permitsParticipant() throws Exception {
+        String publicId = "public-id";
+        given(contestService.toggleLike(10L, publicId))
+                .willReturn(new ContestLikeRes(1L, true));
+
+        mockMvc.perform(post("/api/contests/{publicId}/like", publicId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("PARTICIPANT")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.likeCount").value(1))
+                .andExpect(jsonPath("$.data.likedByMe").value(true));
+
+        verify(contestService).toggleLike(10L, publicId);
+    }
+
+    @Test
+    @DisplayName("관리자는 대회 좋아요를 토글할 수 없다")
+    void contestLike_rejectsAdmin() throws Exception {
+        mockMvc.perform(post("/api/contests/{publicId}/like", "public-id")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("ADMIN")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GLOBAL_403"));
+
+        verifyNoInteractions(contestService);
     }
 
     @Test

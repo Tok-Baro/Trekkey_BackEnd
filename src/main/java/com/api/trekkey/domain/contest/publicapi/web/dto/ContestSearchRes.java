@@ -15,12 +15,14 @@ public record ContestSearchRes(
         List<String> tags,
         LocalDateTime submissionDueAt,
         long viewCount,
-        long likeCount
+        long likeCount,
+        boolean likedByMe
 ) {
     public static ContestSearchRes from(
             Contest contest,
             LocalDateTime submissionDueAt,
-            long likeCount) {
+            long likeCount,
+            boolean likedByMe) {
         return new ContestSearchRes(
                 contest.getPublicId(),
                 contest.getTitle(),
@@ -30,7 +32,8 @@ public record ContestSearchRes(
                 toTags(contest.getTags()),
                 submissionDueAt,
                 contest.getViewCount(),
-                likeCount);
+                likeCount,
+                likedByMe);
     }
 
     private static List<String> toTags(String tags) {

@@ -27,12 +27,14 @@ public record ContestDetailRes(
         String benefits,
         String detailHtml,
         long viewCount,
-        long likeCount
+        long likeCount,
+        boolean likedByMe
 ) {
     public static ContestDetailRes from(
             Contest contest,
             List<ContestStage> stages,
-            long likeCount) {
+            long likeCount,
+            boolean likedByMe) {
         ContestStage applicationStage = findStage(stages, StageType.APPLICATION);
         ContestStage submissionStage = findStage(stages, StageType.SUBMISSION);
 
@@ -54,7 +56,8 @@ public record ContestDetailRes(
                 contest.getBenefits(),
                 contest.getDetailHtml(),
                 contest.getViewCount(),
-                likeCount);
+                likeCount,
+                likedByMe);
     }
 
     private static ContestStage findStage(List<ContestStage> stages, StageType stageType) {
