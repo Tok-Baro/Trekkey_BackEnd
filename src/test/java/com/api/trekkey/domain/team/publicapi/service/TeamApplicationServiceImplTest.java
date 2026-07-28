@@ -9,17 +9,32 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.api.trekkey.domain.award.entity.Award;
+import com.api.trekkey.domain.award.entity.AwardStatus;
+import com.api.trekkey.domain.award.repository.AwardRepository;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.organization.entity.Organization;
+import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
+import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
+import com.api.trekkey.domain.submission.entity.Submission;
+import com.api.trekkey.domain.submission.entity.SubmissionStatus;
+import com.api.trekkey.domain.submission.repository.SubmissionRepository;
 import com.api.trekkey.domain.team.entity.Team;
 import com.api.trekkey.domain.team.entity.TeamMember;
 import com.api.trekkey.domain.team.entity.TeamMemberRole;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes.Step;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes.StepStatus;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes.StepType;
 import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantSearchRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantTeamRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
@@ -65,6 +80,18 @@ class TeamApplicationServiceImplTest {
 
     @Mock
     private TeamMemberRepository teamMemberRepository;
+
+    @Mock
+    private SubmissionRepository submissionRepository;
+
+    @Mock
+    private ReviewRoundRepository reviewRoundRepository;
+
+    @Mock
+    private ReviewRoundEntryRepository reviewRoundEntryRepository;
+
+    @Mock
+    private AwardRepository awardRepository;
 
     @InjectMocks
     private TeamApplicationServiceImpl teamApplicationService;
@@ -160,6 +187,227 @@ class TeamApplicationServiceImplTest {
                 .isEqualTo(UserErrorResponseCode.USER_NOT_FOUND);
 
         verifyNoInteractions(teamRepository, teamMemberRepository);
+    }
+
+    @Test
+    @DisplayName("일반 팀원도 신청 접수부터 확정 수상까지 진행 현황을 조회한다")
+    void getApplicationProgress_returnsFiveProgressStepsForMember() {
+        LocalDateTime appliedAt = LocalDateTime.of(2026, 7, 20, 9, 0);
+        LocalDateTime submittedAt = LocalDateTime.of(2026, 7, 22, 18, 30);
+        LocalDateTime reviewedAt = LocalDateTime.of(2026, 7, 25, 14, 0);
+        LocalDateTime awardedAt = LocalDateTime.of(2026, 7, 27, 10, 0);
+        Contest contest = Contest.builder()
+                .id(20L)
+                .publicId("contest-public-id")
+                .status(ContestStatus.AWARDED)
+                .build();
+        Team team = Team.builder()
+                .id(30L)
+                .contest(contest)
+                .status(TeamStatus.APPROVED)
+                .build();
+        ReflectionTestUtils.setField(team, "createdAt", appliedAt);
+        TeamMember membership = teamMember(
+                team,
+                User.builder().id(10L).build(),
+                TeamMemberRole.MEMBER);
+        Submission submission = Submission.builder()
+                .id(40L)
+                .team(team)
+                .status(SubmissionStatus.SUBMITTED)
+                .submittedAt(submittedAt)
+                .build();
+        ReviewRound reviewRound = ReviewRound.builder()
+                .id(50L)
+                .name("2차 심사")
+                .roundNo(2)
+                .build();
+        ReviewRoundEntry entry = ReviewRoundEntry.builder()
+                .reviewRound(reviewRound)
+                .submission(submission)
+                .status(ReviewRoundEntryStatus.SELECTED)
+                .finalizedAt(reviewedAt)
+                .build();
+        Award award = Award.builder()
+                .team(team)
+                .awardRankNo(1)
+                .prize("대상")
+                .status(AwardStatus.CONFIRMED)
+                .confirmedAt(awardedAt)
+                .build();
+
+        given(teamMemberRepository.findWithTeamAndContestByUserIdAndContestPublicId(
+                10L, "contest-public-id"))
+                .willReturn(Optional.of(membership));
+        given(reviewRoundRepository
+                .findAllByContestIdOrderByRoundNoAsc(20L))
+                .willReturn(List.of(reviewRound));
+        given(submissionRepository.findByTeamId(30L)).willReturn(Optional.of(submission));
+        given(reviewRoundEntryRepository
+                .findAllWithRoundBySubmissionIdOrderByRoundNoAsc(40L))
+                .willReturn(List.of(entry));
+        given(awardRepository.findFirstByTeamIdAndStatusOrderByAwardRankNoAsc(
+                30L, AwardStatus.CONFIRMED))
+                .willReturn(Optional.of(award));
+
+        ApplicationProgressRes result =
+                teamApplicationService.getApplicationProgress(10L, "contest-public-id");
+
+        assertThat(result.contestPublicId()).isEqualTo("contest-public-id");
+        assertThat(result.steps()).containsExactly(
+                new Step(
+                        StepType.APPLICATION_RECEIVED,
+                        "신청 접수",
+                        StepStatus.COMPLETED,
+                        "접수 완료",
+                        appliedAt),
+                new Step(
+                        StepType.APPLICATION_REVIEW,
+                        "신청 검토",
+                        StepStatus.COMPLETED,
+                        "승인",
+                        null),
+                new Step(
+                        StepType.SUBMISSION,
+                        "제출물",
+                        StepStatus.COMPLETED,
+                        "제출 완료",
+                        submittedAt),
+                new Step(
+                        StepType.REVIEW,
+                        "심사",
+                        StepStatus.COMPLETED,
+                        "2차 심사 통과",
+                        reviewedAt),
+                new Step(
+                        StepType.RESULT,
+                        "결과",
+                        StepStatus.COMPLETED,
+                        "대상",
+                        awardedAt));
+    }
+
+    @Test
+    @DisplayName("이전 심사를 통과했어도 다음 심사가 남아 있으면 심사 진행 중으로 반환한다")
+    void getApplicationProgress_waitsForNextReviewStage() {
+        Contest contest = Contest.builder()
+                .id(20L)
+                .publicId("contest-public-id")
+                .status(ContestStatus.REVIEWING)
+                .build();
+        Team team = Team.builder()
+                .id(30L)
+                .contest(contest)
+                .status(TeamStatus.APPROVED)
+                .build();
+        TeamMember membership = teamMember(
+                team,
+                User.builder().id(10L).build(),
+                TeamMemberRole.MEMBER);
+        Submission submission = Submission.builder()
+                .id(40L)
+                .team(team)
+                .status(SubmissionStatus.SUBMITTED)
+                .submittedAt(LocalDateTime.of(2026, 7, 22, 18, 30))
+                .build();
+        ReviewRound firstReviewRound = ReviewRound.builder()
+                .id(50L)
+                .name("1차 심사")
+                .roundNo(1)
+                .build();
+        ReviewRound secondReviewRound = ReviewRound.builder()
+                .id(51L)
+                .name("2차 심사")
+                .roundNo(2)
+                .build();
+        ReviewRoundEntry firstEntry = ReviewRoundEntry.builder()
+                .reviewRound(firstReviewRound)
+                .submission(submission)
+                .status(ReviewRoundEntryStatus.SELECTED)
+                .finalizedAt(LocalDateTime.of(2026, 7, 25, 14, 0))
+                .build();
+
+        given(teamMemberRepository.findWithTeamAndContestByUserIdAndContestPublicId(
+                10L, "contest-public-id"))
+                .willReturn(Optional.of(membership));
+        given(reviewRoundRepository
+                .findAllByContestIdOrderByRoundNoAsc(20L))
+                .willReturn(List.of(firstReviewRound, secondReviewRound));
+        given(submissionRepository.findByTeamId(30L)).willReturn(Optional.of(submission));
+        given(reviewRoundEntryRepository
+                .findAllWithRoundBySubmissionIdOrderByRoundNoAsc(40L))
+                .willReturn(List.of(firstEntry));
+
+        Step reviewStep = teamApplicationService
+                .getApplicationProgress(10L, "contest-public-id")
+                .steps()
+                .get(3);
+
+        assertThat(reviewStep.status()).isEqualTo(StepStatus.IN_PROGRESS);
+        assertThat(reviewStep.description()).isEqualTo("2차 심사 대기");
+        assertThat(reviewStep.occurredAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("제출물과 후속 결과가 없으면 해당 단계를 대기 상태로 반환한다")
+    void getApplicationProgress_returnsWaitingStepsBeforeSubmission() {
+        LocalDateTime appliedAt = LocalDateTime.of(2026, 7, 20, 9, 0);
+        Contest contest = Contest.builder()
+                .id(20L)
+                .publicId("contest-public-id")
+                .status(ContestStatus.REVIEWING)
+                .build();
+        Team team = Team.builder()
+                .id(30L)
+                .contest(contest)
+                .status(TeamStatus.PENDING)
+                .build();
+        ReflectionTestUtils.setField(team, "createdAt", appliedAt);
+        TeamMember membership = teamMember(
+                team,
+                User.builder().id(10L).build(),
+                TeamMemberRole.LEADER);
+
+        given(teamMemberRepository.findWithTeamAndContestByUserIdAndContestPublicId(
+                10L, "contest-public-id"))
+                .willReturn(Optional.of(membership));
+        given(submissionRepository.findByTeamId(30L)).willReturn(Optional.empty());
+
+        ApplicationProgressRes result =
+                teamApplicationService.getApplicationProgress(10L, "contest-public-id");
+
+        assertThat(result.steps())
+                .extracting(Step::status)
+                .containsExactly(
+                        StepStatus.COMPLETED,
+                        StepStatus.IN_PROGRESS,
+                        StepStatus.WAITING,
+                        StepStatus.WAITING,
+                        StepStatus.WAITING);
+        assertThat(result.steps())
+                .extracting(Step::description)
+                .containsExactly("접수 완료", "검토 중", "제출 전", "심사 대기", "발표 전");
+        verifyNoInteractions(reviewRoundEntryRepository, awardRepository);
+    }
+
+    @Test
+    @DisplayName("해당 대회 팀에 속하지 않은 사용자는 진행 현황을 조회할 수 없다")
+    void getApplicationProgress_throwsWhenMembershipDoesNotExist() {
+        given(teamMemberRepository.findWithTeamAndContestByUserIdAndContestPublicId(
+                10L, "contest-public-id"))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() ->
+                teamApplicationService.getApplicationProgress(10L, "contest-public-id"))
+                .isInstanceOf(CustomException.class)
+                .extracting("baseResponseCode")
+                .isEqualTo(TeamErrorResponseCode.TEAM_NOT_FOUND);
+
+        verifyNoInteractions(
+                submissionRepository,
+                reviewRoundRepository,
+                reviewRoundEntryRepository,
+                awardRepository);
     }
 
     @Test

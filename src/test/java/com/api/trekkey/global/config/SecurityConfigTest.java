@@ -37,6 +37,7 @@ import com.api.trekkey.domain.team.admin.web.dto.TeamAdminListRes;
 import com.api.trekkey.domain.team.publicapi.service.TeamApplicationService;
 import com.api.trekkey.domain.team.publicapi.web.controller.ParticipantTeamController;
 import com.api.trekkey.domain.team.publicapi.web.controller.TeamApplicationController;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationUpdateReq;
 import com.api.trekkey.global.security.AuthPrincipal;
@@ -634,6 +635,48 @@ class SecurityConfigTest {
     @DisplayName("관리자는 참가자의 신청 목록을 조회할 수 없다")
     void myApplications_rejectsAdmin() throws Exception {
         mockMvc.perform(get("/api/me/applications")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("ADMIN")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GLOBAL_403"));
+
+        verifyNoInteractions(teamApplicationService);
+    }
+
+    @Test
+    @DisplayName("내 참가 신청 진행 현황은 인증 없이 조회할 수 없다")
+    void applicationProgress_rejectsAnonymous() throws Exception {
+        mockMvc.perform(get(
+                        "/api/me/applications/{contestPublicId}/progress",
+                        "contest-public-id"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(teamApplicationService);
+    }
+
+    @Test
+    @DisplayName("참가자는 본인이 속한 신청의 진행 현황을 조회할 수 있다")
+    void applicationProgress_permitsParticipant() throws Exception {
+        given(teamApplicationService.getApplicationProgress(10L, "contest-public-id"))
+                .willReturn(new ApplicationProgressRes("contest-public-id", List.of()));
+
+        mockMvc.perform(get(
+                                "/api/me/applications/{contestPublicId}/progress",
+                                "contest-public-id")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("PARTICIPANT")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.contestPublicId").value("contest-public-id"))
+                .andExpect(jsonPath("$.data.steps").isArray());
+
+        verify(teamApplicationService).getApplicationProgress(10L, "contest-public-id");
+    }
+
+    @Test
+    @DisplayName("관리자는 참가자의 신청 진행 현황을 조회할 수 없다")
+    void applicationProgress_rejectsAdmin() throws Exception {
+        mockMvc.perform(get(
+                                "/api/me/applications/{contestPublicId}/progress",
+                                "contest-public-id")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("ADMIN")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GLOBAL_403"));

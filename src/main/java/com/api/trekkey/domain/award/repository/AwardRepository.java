@@ -48,4 +48,7 @@ public interface AwardRepository extends JpaRepository<Award, Long> {
             """)
     List<Award> findAllVisibleToUserByStatusOrderByConfirmedAtDesc(
             @Param("userId") Long userId, @Param("status") AwardStatus status);
+
+    Optional<Award> findFirstByTeamIdAndStatusOrderByAwardRankNoAsc(
+            Long teamId, AwardStatus status);
 }

@@ -58,6 +58,17 @@ public interface ReviewRoundEntryRepository
     List<ReviewRoundEntry> findAllByReviewRoundIdOrderByCreatedAtAscIdAsc(
             @Param("reviewRoundId") Long reviewRoundId);
 
+    @Query("""
+            select entry
+            from ReviewRoundEntry entry
+            join fetch entry.reviewRound reviewRound
+            where entry.submission.id = :submissionId
+            order by reviewRound.roundNo, entry.id
+            """)
+    List<ReviewRoundEntry>
+            findAllWithRoundBySubmissionIdOrderByRoundNoAsc(
+                    @Param("submissionId") Long submissionId);
+
     List<ReviewRoundEntry> findAllByReviewRoundIdAndStatus(
             Long reviewRoundId,
             ReviewRoundEntryStatus status);

@@ -16,6 +16,7 @@ import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
 import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
 import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
+import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
 import com.api.trekkey.domain.team.entity.Team;
@@ -51,6 +52,9 @@ class AwardRepositoryTest {
 
     @Autowired
     private TeamMemberRepository teamMemberRepository;
+
+    @Autowired
+    private ReviewRoundEntryRepository reviewRoundEntryRepository;
 
     @Test
     void confirmedTeamAwardIsVisibleToLeaderAndMember() {
@@ -107,20 +111,46 @@ class AwardRepositoryTest {
                 .status(SubmissionStatus.SUBMITTED)
                 .submittedAt(NOW.minusDays(1))
                 .build());
-        ReviewRound round = entityManager.persist(ReviewRound.builder()
+        ReviewRound firstRound = entityManager.persist(
+                ReviewRound.builder()
+                        .contest(contest)
+                        .roundNo(1)
+                        .name("1차 심사")
+                        .status(ReviewRoundStatus.FINALIZED)
+                        .startsAt(NOW.minusDays(4))
+                        .endsAt(NOW.minusDays(3))
+                        .targetType(
+                                ReviewRoundTargetType.ALL_SUBMISSIONS)
+                        .decisionRule(
+                                ReviewRoundDecisionRule.TOP_N)
+                        .selectCount(1)
+                        .finalizedAt(NOW.minusHours(1))
+                        .build());
+        ReviewRoundEntry firstEntry = ReviewRoundEntry.builder()
+                .reviewRound(firstRound)
+                .submission(submission)
+                .status(ReviewRoundEntryStatus.SELECTED)
+                .finalScore(new BigDecimal("90.0"))
+                .rankNo(1)
+                .decisionType(ReviewDecisionType.RULE)
+                .finalizedAt(NOW.minusHours(1))
+                .build();
+        entityManager.persist(firstEntry);
+
+        ReviewRound finalRound = entityManager.persist(ReviewRound.builder()
                 .contest(contest)
-                .roundNo(1)
+                .roundNo(2)
                 .name("최종 심사")
                 .status(ReviewRoundStatus.FINALIZED)
                 .startsAt(NOW.minusDays(2))
                 .endsAt(NOW.minusDays(1))
-                .targetType(ReviewRoundTargetType.ALL_SUBMISSIONS)
+                .targetType(ReviewRoundTargetType.PREVIOUS_SELECTED)
                 .decisionRule(ReviewRoundDecisionRule.TOP_N)
                 .selectCount(1)
                 .finalizedAt(NOW)
                 .build());
         ReviewRoundEntry entry = ReviewRoundEntry.builder()
-                .reviewRound(round)
+                .reviewRound(finalRound)
                 .submission(submission)
                 .status(ReviewRoundEntryStatus.SELECTED)
                 .finalScore(new BigDecimal("95.0"))
@@ -153,6 +183,28 @@ class AwardRepositoryTest {
         assertThat(teamMemberRepository.findAllByTeamIdOrderByUserIdAsc(team.getId()))
                 .extracting(teamMember -> teamMember.getUser().getId())
                 .containsExactly(member.getId(), member2.getId());
+        assertThat(teamMemberRepository.findWithTeamAndContestByUserIdAndContestPublicId(
+                member.getId(), contest.getPublicId()))
+                .get()
+                .extracting(teamMember -> teamMember.getTeam().getId())
+                .isEqualTo(team.getId());
+        assertThat(teamMemberRepository.findWithTeamAndContestByUserIdAndContestPublicId(
+                outsider.getId(), contest.getPublicId()))
+                .isEmpty();
+        assertThat(reviewRoundEntryRepository
+                .findAllWithRoundBySubmissionIdOrderByRoundNoAsc(
+                        submission.getId()))
+                .extracting(stageEntry ->
+                        stageEntry.getReviewRound().getName())
+                .containsExactly("1차 심사", "최종 심사");
+        assertThat(awardRepository.findFirstByTeamIdAndStatusOrderByAwardRankNoAsc(
+                team.getId(), AwardStatus.CONFIRMED))
+                .get()
+                .extracting(Award::getPrize)
+                .isEqualTo("대상");
+        assertThat(awardRepository.findFirstByTeamIdAndStatusOrderByAwardRankNoAsc(
+                team.getId(), AwardStatus.CANDIDATE))
+                .isEmpty();
     }
 
     private Organization organization() {

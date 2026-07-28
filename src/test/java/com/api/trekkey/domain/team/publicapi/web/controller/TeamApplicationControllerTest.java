@@ -17,6 +17,10 @@ import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.publicapi.service.TeamApplicationService;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes.Step;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes.StepStatus;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes.StepType;
 import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantSearchRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationRes;
@@ -132,6 +136,84 @@ class TeamApplicationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isArray())
                 .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    @DisplayName("본인의 참가 신청 진행 현황을 5단계로 반환한다")
+    void getApplicationProgress_returnsSuccessResponse() throws Exception {
+        LocalDateTime appliedAt = LocalDateTime.of(2026, 7, 20, 9, 0);
+        given(teamApplicationService.getApplicationProgress(10L, "contest-public-id"))
+                .willReturn(new ApplicationProgressRes(
+                        "contest-public-id",
+                        List.of(
+                                new Step(
+                                        StepType.APPLICATION_RECEIVED,
+                                        "신청 접수",
+                                        StepStatus.COMPLETED,
+                                        "접수 완료",
+                                        appliedAt),
+                                new Step(
+                                        StepType.APPLICATION_REVIEW,
+                                        "신청 검토",
+                                        StepStatus.IN_PROGRESS,
+                                        "검토 중",
+                                        null),
+                                new Step(
+                                        StepType.SUBMISSION,
+                                        "제출물",
+                                        StepStatus.WAITING,
+                                        "제출 전",
+                                        null),
+                                new Step(
+                                        StepType.REVIEW,
+                                        "심사",
+                                        StepStatus.WAITING,
+                                        "심사 대기",
+                                        null),
+                                new Step(
+                                        StepType.RESULT,
+                                        "결과",
+                                        StepStatus.WAITING,
+                                        "발표 전",
+                                        null))));
+
+        mockMvc.perform(get(
+                        "/api/me/applications/{contestPublicId}/progress",
+                        "contest-public-id"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"))
+                .andExpect(jsonPath("$.data.contestPublicId").value("contest-public-id"))
+                .andExpect(jsonPath("$.data.steps.length()").value(5))
+                .andExpect(jsonPath("$.data.steps[0].type").value("APPLICATION_RECEIVED"))
+                .andExpect(jsonPath("$.data.steps[0].label").value("신청 접수"))
+                .andExpect(jsonPath("$.data.steps[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.steps[0].description").value("접수 완료"))
+                .andExpect(jsonPath("$.data.steps[0].occurredAt").exists())
+                .andExpect(jsonPath("$.data.steps[1].type").value("APPLICATION_REVIEW"))
+                .andExpect(jsonPath("$.data.steps[1].status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.steps[2].type").value("SUBMISSION"))
+                .andExpect(jsonPath("$.data.steps[2].status").value("WAITING"))
+                .andExpect(jsonPath("$.data.steps[3].type").value("REVIEW"))
+                .andExpect(jsonPath("$.data.steps[3].status").value("WAITING"))
+                .andExpect(jsonPath("$.data.steps[4].type").value("RESULT"))
+                .andExpect(jsonPath("$.data.steps[4].description").value("발표 전"));
+
+        verify(teamApplicationService).getApplicationProgress(10L, "contest-public-id");
+    }
+
+    @Test
+    @DisplayName("본인이 속한 신청이 아니면 진행 현황 조회 시 404를 반환한다")
+    void getApplicationProgress_returnsNotFound() throws Exception {
+        willThrow(new CustomException(TeamErrorResponseCode.TEAM_NOT_FOUND))
+                .given(teamApplicationService)
+                .getApplicationProgress(10L, "unknown-contest");
+
+        mockMvc.perform(get(
+                        "/api/me/applications/{contestPublicId}/progress",
+                        "unknown-contest"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TEAM_NOT_FOUND"));
     }
 
     @Test

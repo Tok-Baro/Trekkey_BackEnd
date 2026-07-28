@@ -1,15 +1,28 @@
 package com.api.trekkey.domain.team.publicapi.service;
 
+import com.api.trekkey.domain.award.entity.Award;
+import com.api.trekkey.domain.award.entity.AwardStatus;
+import com.api.trekkey.domain.award.repository.AwardRepository;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
+import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
+import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
+import com.api.trekkey.domain.submission.entity.Submission;
+import com.api.trekkey.domain.submission.repository.SubmissionRepository;
 import com.api.trekkey.domain.team.entity.Team;
 import com.api.trekkey.domain.team.entity.TeamMember;
 import com.api.trekkey.domain.team.entity.TeamMemberRole;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes.Step;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes.StepStatus;
+import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes.StepType;
 import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantSearchRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.ParticipantTeamRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
@@ -26,6 +39,7 @@ import com.api.trekkey.global.exception.CustomException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -41,6 +55,10 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
     private final ContestRepository contestRepository;
     private final TeamRepository teamRepository;
     private final TeamMemberRepository teamMemberRepository;
+    private final SubmissionRepository submissionRepository;
+    private final ReviewRoundRepository reviewRoundRepository;
+    private final ReviewRoundEntryRepository reviewRoundEntryRepository;
+    private final AwardRepository awardRepository;
 
     @Override
     @Transactional
@@ -124,6 +142,37 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
     }
 
     @Override
+    public ApplicationProgressRes getApplicationProgress(Long userId, String contestPublicId) {
+        Team team = teamMemberRepository
+                .findWithTeamAndContestByUserIdAndContestPublicId(userId, contestPublicId)
+                .map(TeamMember::getTeam)
+                .orElseThrow(() -> new CustomException(TeamErrorResponseCode.TEAM_NOT_FOUND));
+
+        List<ReviewRound> reviewRounds =
+                reviewRoundRepository.findAllByContestIdOrderByRoundNoAsc(
+                        team.getContest().getId());
+        Optional<Submission> submission = submissionRepository.findByTeamId(team.getId());
+        List<ReviewRoundEntry> entries = submission
+                .map(found -> reviewRoundEntryRepository
+                        .findAllWithRoundBySubmissionIdOrderByRoundNoAsc(
+                                found.getId()))
+                .orElseGet(List::of);
+        Optional<Award> award = team.getContest().getStatus() == ContestStatus.AWARDED
+                ? awardRepository.findFirstByTeamIdAndStatusOrderByAwardRankNoAsc(
+                        team.getId(), AwardStatus.CONFIRMED)
+                : Optional.empty();
+
+        return new ApplicationProgressRes(
+                team.getContest().getPublicId(),
+                List.of(
+                        applicationReceivedStep(team),
+                        applicationReviewStep(team),
+                        submissionStep(submission),
+                        reviewStep(entries, reviewRounds),
+                        resultStep(team.getContest().getStatus(), award)));
+    }
+
+    @Override
     public List<ParticipantSearchRes> searchParticipants(Long userId, String keyword) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(UserErrorResponseCode.USER_NOT_FOUND));
@@ -187,6 +236,154 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
                 request.contactEmail().trim(),
                 request.phone().trim(),
                 request.motivation().trim());
+    }
+
+    private Step applicationReceivedStep(Team team) {
+        return Step.of(
+                StepType.APPLICATION_RECEIVED,
+                StepStatus.COMPLETED,
+                "접수 완료",
+                team.getCreatedAt());
+    }
+
+    private Step applicationReviewStep(Team team) {
+        return switch (team.getStatus()) {
+            case PENDING -> Step.of(
+                    StepType.APPLICATION_REVIEW,
+                    StepStatus.IN_PROGRESS,
+                    "검토 중",
+                    null);
+            case APPROVED -> Step.of(
+                    StepType.APPLICATION_REVIEW,
+                    StepStatus.COMPLETED,
+                    "승인",
+                    null);
+            case REVISION_REQUESTED -> Step.of(
+                    StepType.APPLICATION_REVIEW,
+                    StepStatus.IN_PROGRESS,
+                    "보완 요청",
+                    null);
+            case REJECTED -> Step.of(
+                    StepType.APPLICATION_REVIEW,
+                    StepStatus.FAILED,
+                    "반려",
+                    null);
+        };
+    }
+
+    private Step submissionStep(Optional<Submission> submission) {
+        if (submission.isEmpty()) {
+            return Step.of(
+                    StepType.SUBMISSION,
+                    StepStatus.WAITING,
+                    "제출 전",
+                    null);
+        }
+
+        Submission found = submission.get();
+        return switch (found.getStatus()) {
+            case DRAFT -> Step.of(
+                    StepType.SUBMISSION,
+                    StepStatus.IN_PROGRESS,
+                    "작성 중",
+                    found.getSubmittedAt());
+            case SUBMITTED -> Step.of(
+                    StepType.SUBMISSION,
+                    StepStatus.COMPLETED,
+                    "제출 완료",
+                    found.getSubmittedAt());
+            case WITHDRAWN -> Step.of(
+                    StepType.SUBMISSION,
+                    StepStatus.FAILED,
+                    "제출 철회",
+                    found.getSubmittedAt());
+        };
+    }
+
+    private Step reviewStep(
+            List<ReviewRoundEntry> entries,
+            List<ReviewRound> reviewRounds) {
+        if (entries.isEmpty()) {
+            return Step.of(
+                    StepType.REVIEW,
+                    StepStatus.WAITING,
+                    "심사 대기",
+                    null);
+        }
+
+        ReviewRoundEntry latestEntry = entries.get(entries.size() - 1);
+        String roundName = latestEntry.getReviewRound().getName();
+        return switch (latestEntry.getStatus()) {
+            case ELIGIBLE -> Step.of(
+                    StepType.REVIEW,
+                    StepStatus.IN_PROGRESS,
+                    roundName + " 판정 대기",
+                    null);
+            case IN_REVIEW -> Step.of(
+                    StepType.REVIEW,
+                    StepStatus.IN_PROGRESS,
+                    roundName + " 진행 중",
+                    null);
+            case SELECTED -> selectedReviewStep(
+                    latestEntry,
+                    reviewRounds);
+            case NOT_SELECTED -> Step.of(
+                    StepType.REVIEW,
+                    StepStatus.FAILED,
+                    roundName + " 탈락",
+                    latestEntry.getFinalizedAt());
+            case WITHDRAWN -> Step.of(
+                    StepType.REVIEW,
+                    StepStatus.FAILED,
+                    roundName + " 철회",
+                    latestEntry.getFinalizedAt());
+            case DISQUALIFIED -> Step.of(
+                    StepType.REVIEW,
+                    StepStatus.FAILED,
+                    roundName + " 실격",
+                    latestEntry.getFinalizedAt());
+        };
+    }
+
+    private Step selectedReviewStep(
+            ReviewRoundEntry latestEntry,
+            List<ReviewRound> reviewRounds) {
+        return reviewRounds.stream()
+                .filter(round -> round.getRoundNo()
+                        > latestEntry.getReviewRound().getRoundNo())
+                .findFirst()
+                .map(nextRound -> Step.of(
+                        StepType.REVIEW,
+                        StepStatus.IN_PROGRESS,
+                        nextRound.getName() + " 대기",
+                        null))
+                .orElseGet(() -> Step.of(
+                        StepType.REVIEW,
+                        StepStatus.COMPLETED,
+                        latestEntry.getReviewRound().getName() + " 통과",
+                        latestEntry.getFinalizedAt()));
+    }
+
+    private Step resultStep(ContestStatus contestStatus, Optional<Award> award) {
+        if (contestStatus != ContestStatus.AWARDED) {
+            return Step.of(
+                    StepType.RESULT,
+                    StepStatus.WAITING,
+                    "발표 전",
+                    null);
+        }
+
+        return award
+                .map(found -> Step.of(
+                        StepType.RESULT,
+                        StepStatus.COMPLETED,
+                        found.getPrize(),
+                        found.getConfirmedAt()))
+                .orElseGet(() -> Step.of(
+                        StepType.RESULT,
+                        StepStatus.COMPLETED,
+                        "수상 내역 없음",
+                        null));
     }
 
     private void validateMemberCount(Contest contest, List<Long> memberUserIds) {
