@@ -1,7 +1,7 @@
 # Trekkey Credential 및 Kaia 앵커링 설계
 
 - 기준일: 2026-07-28
-- 상태: 블록체인 기반 구현 및 업무 도메인 연결 완료, Kairos Registry 배포·초기 설정 완료
+- 상태: 블록체인 기반 구현·업무 연결·Kairos Credential E2E 완료, 운영 준비 진행 중
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 기준 ERD: [Trekkey 공모전·Credential 최종 ERD](./erd.md)
 - 대상 네트워크: Kaia Kairos 우선, EVM 체인 교체 가능 구조
@@ -52,10 +52,10 @@ Trekkey는 대회 원문과 개인정보를 SQL 및 객체 저장소에 보관�
 
 - 구현 완료: canonical JSON, source fingerprint, file manifest, Merkle batch/proof, EIP-712, Solidity registry, web3j adapter, Transactional Outbox, 공개 검증, revoke/supersede, Portable Package
 - 연결 완료: `TEAM`, `SUBMISSION`, `AWARD` 확정 서비스에서 내부 `CredentialIssuanceService` 호출
-- 배포 완료: Kairos `chainId=1001`, Registry `0x4ca738CC22Af5aE40EA8A23E001FA93e1e044117`, relayer·test issuer key 등록
-- 매핑 대기: test issuer public ID와 실제 테스트 `ORGANIZATION.publicId` 일치 확정
-- 통합 시험 대기: 실제 Credential 발급, batch 승인, anchor, 공개 검증, revoke/supersede
-- 후속 구현: QR UI, KMS/HSM adapter, 복수 chain registry/router, mainnet 운영
+- 배포 완료: Kairos `chainId=1001`, Registry `0x4ca738CC22Af5aE40EA8A23E001FA93e1e044117`, issuer key v2·backend relayer 등록
+- 연결 검증 완료: 실제 Spring/JPA `Organization.publicId` 경로의 `READ_ONLY` issuer readback
+- 통합 시험 완료: Credential 3건, Merkle anchor, 공개 QR 대상 API, revoke·supersede 및 replacement 검증
+- 운영 준비: 공용 MySQL public ID migration, QR UI, AWS KMS adapter, 복수 chain registry/router, mainnet 운영
 
 ## 3. 시스템 경계
 
@@ -128,6 +128,21 @@ root 하나는 원문의 백업이 아니다. 원문과 proof를 잃으면 root�
 - 표시용 인증서 PDF
 - 선택적 장기 보관용 Portable Credential Package
 - 선택적 장기 보존 원본
+
+### 키 저장소
+
+- Kairos 로컬 통합 시험: issuer와 relayer를 분리해 macOS Keychain에 저장
+- 운영: AWS KMS `ECC_SECG_P256K1`, `SIGN_VERIFY`, `ECDSA_SHA_256`
+- EIP-712·EVM Keccak-256 digest는 `kms:Sign`에 `MessageType=DIGEST`로 전달해 이중 해시를 방지
+- DB에는 KMS key ARN/alias 같은 `signerRef`와 공개 주소만 저장
+- Secrets Manager, Git, Notion, SQL에는 평문 issuer·relayer private key를 저장하지 않음
+- 운영 worker IAM 역할은 필요한 KMS key의 `GetPublicKey`와 `Sign`만 허용
+- KMS 트랜잭션 signer adapter와 장애 전환 시험 완료 전에는 mainnet write mode 금지
+
+현재 Keychain 방식은 Kairos E2E 전용이고, 환경변수 private key를 읽는
+`LOCAL_RELAYER`도 코드에서 `chainId=1001`로 제한한다. 운영은
+[AWS KMS secp256k1 지원 사양](https://docs.aws.amazon.com/kms/latest/developerguide/symm-asymm-choose-key-spec.html)에
+맞춘 비반출 signer adapter로 교체한다.
 
 ### Kaia
 
@@ -814,8 +829,10 @@ Kaia는 BFT 기반 immediate finality를 제공하므로 임의의 Ethereum conf
 - 완료: 관리자 batch API, anchor worker, 외부 서명 제출 경계, relayer, JSON-RPC adapter
 - 완료: 공개 verify API, outbox 재시도, raw transaction/receipt 원장
 - 완료: Kairos contract 배포와 relayer·issuer 초기 설정
-- 대기: Kaiascan source verification 및 실제 Credential end-to-end 통합 시험
-- 후속: QR 화면과 운영 모니터링
+- 완료: Spring/JPA `READ_ONLY` 조회와 Credential 3건 anchor·revoke·supersede 실체인 통합 시험
+- 완료: 성공 receipt 직후 RPC readback 지연을 `UNKNOWN` 재조회로 수렴시키는 장애 처리 검증
+- 대기: 외부 소스 공개 승인 후 Kaiascan source verification
+- 후속: QR 화면, AWS KMS signer, 공용 MySQL migration과 운영 모니터링
 
 ### Phase 5. 운영 확장
 
@@ -832,6 +849,11 @@ Trekkey는 개인정보와 인증서 원문을 퍼블릭 체인에 저장하지 
 여러 인증서를 하나의 root로 묶어 트랜잭션 수를 줄였고, 개별 인증서는 OpenZeppelin 호환 proof로 검증한다. 학교 issuer가 EIP-712 approval에 서명하고 Trekkey relayer가 가스비를 부담하므로 학생은 지갑이나 코인을 사용할 필요가 없다.
 
 업무 DB와 체인 처리는 transactional outbox로 분리했으며, source fingerprint, batch ID, chain operation별 멱등 키로 중복 발급과 중복 전송을 방지한다. 폐기와 정정은 기존 원문 수정이 아니라 revoke와 supersede로 처리한다.
+
+Kairos에서 실제 Credential 3건을 하나의 Merkle root로 앵커링하고, 공개 API의
+`VALID → REVOKED`, `VALID → SUPERSEDED` 상태 전이를 독립 온체인 readback과 함께 검증했다.
+public RPC의 일시적인 read-after-write 지연은 성공 receipt를 보존한 채 `UNKNOWN` 상태에서
+같은 tx hash의 증거를 재조회하도록 보강했다.
 
 블록체인 root만으로 원문을 복구할 수 없다는 한계도 설계에 반영했다. SQL과 객체 저장소
 백업에 더해 Portable Credential Package를 제공해 학생이 canonical 원문과 proof를 직접

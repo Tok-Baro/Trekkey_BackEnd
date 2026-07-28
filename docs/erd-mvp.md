@@ -505,7 +505,7 @@ stateDiagram-v2
     SUBMITTED --> CONFIRMED: receipt·event·readback 확인
     SUBMITTED --> UNKNOWN: RPC timeout 또는 응답 불명
     UNKNOWN --> CONFIRMED: 온체인 readback에서 성공 확인
-    UNKNOWN --> PENDING: 미반영 확인 후 재전송
+    UNKNOWN --> UNKNOWN: 동일 raw tx 재방송 또는 온체인 증거 재조회
     PENDING --> FAILED: 재시도 불가 오류
     SUBMITTED --> FAILED: 명시적 revert
     CONFIRMED --> [*]
@@ -539,19 +539,25 @@ PDF는 사람이 읽는 표시물이고 cryptographic source of truth가 아니�
 ## 13. API 경계
 
 ```
-GET /api/v1/credentials/{publicId}
-GET /api/v1/credentials/{publicId}/verify
-GET /api/v1/credentials/{publicId}/package
+GET /api/public/credentials/{publicId}
+GET /api/public/credentials/{publicId}/package
 
-GET /api/v1/organizations/{organizationId}/students/{studentId}/credentials
-GET /api/v1/contests/{contestPublicId}/credentials
-GET /api/v1/teams/{teamPublicId}/credentials
+GET /api/me/credentials
+GET /api/admin/students/{studentId}/credentials
+GET /api/admin/contests/{contestPublicId}/credentials
+GET /api/admin/teams/{teamPublicId}/credentials
 
-POST /internal/v1/credentials/issue
-POST /internal/v1/batches/{batchPublicId}/seal
-POST /internal/v1/batches/{batchPublicId}/submit
-POST /internal/v1/credentials/{publicId}/revoke
-POST /internal/v1/credentials/{publicId}/supersede
+POST /api/admin/blockchain/issuer-keys/{keyVersion}/sync
+POST /api/admin/blockchain/batches
+GET  /api/admin/blockchain/batches/{batchPublicId}/approval
+POST /api/admin/blockchain/batches/{batchPublicId}/approval
+POST /api/admin/blockchain/batches/{batchPublicId}/approval/renew
+POST /api/admin/blockchain/batches/{batchPublicId}/reconcile
+POST /api/admin/blockchain/credentials/{publicId}/status-events
+GET  /api/admin/blockchain/status-events/{statusEventId}/approval
+POST /api/admin/blockchain/status-events/{statusEventId}/approval
+POST /api/admin/blockchain/status-events/{statusEventId}/approval/renew
+POST /api/admin/blockchain/status-events/{statusEventId}/reconcile
 ```
 
 공개 검증 API와 관리자 검색 API를 분리한다. 학번 기반 전체 이력 조회는 본인 또는 학교 관리자 인증과 organization scope가 필요하다.

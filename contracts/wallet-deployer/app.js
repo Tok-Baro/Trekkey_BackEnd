@@ -9,16 +9,19 @@ import {
   getAddress,
   isAddress,
   keccak256,
+  parseEther,
   toUtf8Bytes,
   verifyTypedData
 } from "/ethers.js";
 import {
   deploymentStorageKey,
   isUuidV4,
+  isIssuerKeyActive,
   issuerProofStorageKey,
   normalizeRuntimeCode,
   parseDeploymentState,
-  parseIssuerProof
+  parseIssuerProof,
+  parseRelayerTargetBalanceKaia
 } from "/core.mjs";
 
 const ISSUER_ID_DOMAIN = keccak256(toUtf8Bytes("TREKKEY_ISSUER_ID_V1"));
@@ -35,6 +38,7 @@ const ISSUER_PROOF_TYPES = {
   ]
 };
 const KAIROS_CHAIN_ID = 1001n;
+const MAX_RELAYER_BOOTSTRAP_WEI = parseEther("5");
 
 const elements = {
   account: requiredElement("account-value"),
@@ -54,6 +58,9 @@ const elements = {
   registryAddress: requiredElement("registry-address"),
   registryStatus: requiredElement("registry-status-value"),
   relayerAddress: requiredElement("relayer-address"),
+  relayerBalance: requiredElement("relayer-balance-value"),
+  relayerTargetBalance: requiredElement("relayer-target-balance"),
+  bootstrapRelayer: requiredElement("bootstrap-relayer-button"),
   verify: requiredElement("verify-button")
 };
 
@@ -129,6 +136,7 @@ function clearConnectionDisplay() {
   elements.account.textContent = "-";
   elements.account.removeAttribute("title");
   elements.balance.textContent = "-";
+  elements.relayerBalance.textContent = "-";
 }
 
 function setBusy(nextBusy) {
@@ -141,6 +149,18 @@ function normalizedAddress(value, label) {
     throw new Error(`${label} 주소가 유효하지 않습니다.`);
   }
   return getAddress(value);
+}
+
+function nonZeroAddress(value, label) {
+  const address = normalizedAddress(value, label);
+  if (address === ZeroAddress) {
+    throw new Error(`${label} 주소는 zero address일 수 없습니다.`);
+  }
+  return address;
+}
+
+function relayerTargetBalanceWei() {
+  return parseRelayerTargetBalanceKaia(config.relayerTargetBalanceKaia);
 }
 
 function registryAddressOrNull() {
@@ -165,9 +185,25 @@ function refreshActions() {
     connectedRole !== "deployer" ||
     !hasRegistry ||
     !issuerProofIsValid();
+  elements.bootstrapRelayer.disabled =
+    busy || !connected || connectedRole !== "deployer" || !hasRegistry;
   elements.verify.disabled =
     busy || !connected || connectedRole !== "deployer" || !hasRegistry;
   elements.copyRegistry.disabled = !hasRegistry;
+}
+
+async function refreshRelayerBalance() {
+  if (provider === undefined || config === undefined) {
+    elements.relayerBalance.textContent = "-";
+    return;
+  }
+  try {
+    const relayer = nonZeroAddress(config.relayerAddress, "Relayer");
+    const balance = await provider.getBalance(relayer);
+    elements.relayerBalance.textContent = `${Number.parseFloat(formatEther(balance)).toFixed(4)} KAIA`;
+  } catch {
+    elements.relayerBalance.textContent = "확인 실패";
+  }
 }
 
 function computeIssuerId(publicId) {
@@ -318,6 +354,25 @@ function saveIssuerProof(registryAddress, issuerSigner, signature) {
   );
 }
 
+function loadConfiguredIssuerProof() {
+  const signature = config.issuerProofSignature?.trim() ?? "";
+  if (signature === "") {
+    return false;
+  }
+  const registryAddress = registryAddressOrNull();
+  if (registryAddress === null) {
+    throw new Error("설정된 issuer proof에는 Registry address가 필요합니다.");
+  }
+  const issuerSigner = normalizedAddress(config.issuerSignerAddress, "Issuer signer");
+  saveIssuerProof(registryAddress, issuerSigner, signature);
+  if (!issuerProofIsValid()) {
+    issuerProof = null;
+    localStorage.removeItem(issuerProofStorageKey(registryAddress, issuerSigner));
+    throw new Error("설정된 issuer proof가 현재 Registry·기관·키 버전과 일치하지 않습니다.");
+  }
+  return true;
+}
+
 async function assertRegistryRuntime(registryAddress) {
   const code = await provider.getCode(registryAddress);
   if (code === "0x") {
@@ -463,6 +518,7 @@ async function connectWallet() {
     if (nextRole === "deployer") {
       await recoverDeployment();
     }
+    await refreshRelayerBalance();
 
     if (typeof wallet.on === "function" && !listenersAttached) {
       wallet.on("accountsChanged", () => resetConnection("Kaia Wallet 계정이 변경됐습니다."));
@@ -536,6 +592,135 @@ async function waitForTransaction(transaction, label) {
   addLog(`${label} 완료`, "success");
 }
 
+async function assertDeployerFunds(value, estimatedGas, label) {
+  const feeData = await provider.getFeeData();
+  const gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas;
+  if (gasPrice === null || gasPrice === undefined || gasPrice <= 0n) {
+    throw new Error(`${label} 전송에 사용할 gas price를 확인하지 못했습니다.`);
+  }
+  const deployerBalance = await provider.getBalance(connectedAddress);
+  const gasCost = estimatedGas * gasPrice;
+  const requiredBalance = value + gasCost;
+  if (deployerBalance < requiredBalance) {
+    throw new Error(
+      `${label} 전 잔액 부족: 필요 약 ${formatEther(requiredBalance)} KAIA, 현재 ${formatEther(deployerBalance)} KAIA`
+    );
+  }
+  return { deployerBalance, gasCost, gasPrice, requiredBalance };
+}
+
+async function bootstrapRelayer() {
+  if (navigator.locks?.request === undefined) {
+    await bootstrapRelayerWithLock();
+    return;
+  }
+  await navigator.locks.request(
+    "trekkey-kairos-relayer-bootstrap",
+    { mode: "exclusive", ifAvailable: true },
+    async (lock) => {
+      if (lock === null) {
+        addLog("다른 탭에서 Relayer bootstrap을 처리 중입니다.", "error");
+        return;
+      }
+      await bootstrapRelayerWithLock();
+    }
+  );
+}
+
+async function bootstrapRelayerWithLock() {
+  setBusy(true);
+  try {
+    const { currentAddress, network } = await requireCurrentConnection("deployer");
+    if (network.chainId !== KAIROS_CHAIN_ID) {
+      throw new Error("Kairos chainId 1001에서만 relayer bootstrap을 실행할 수 있습니다.");
+    }
+    const expectedDeployer = nonZeroAddress(config.expectedDeployerAddress, "예상 deployer");
+    if (currentAddress !== expectedDeployer) {
+      throw new Error("연결된 계정이 설정된 deployer와 다릅니다.");
+    }
+    const relayer = nonZeroAddress(config.relayerAddress, "Relayer");
+    if (relayer === currentAddress) {
+      throw new Error("Relayer는 deployer와 다른 nonzero 주소여야 합니다.");
+    }
+    const registryAddress = registryAddressOrNull();
+    if (registryAddress === null) {
+      throw new Error("Registry address가 유효하지 않습니다.");
+    }
+    await assertRegistryRuntime(registryAddress);
+    const contract = new Contract(registryAddress, artifact.abi, signer);
+    const adminRole = await contract.DEFAULT_ADMIN_ROLE();
+    if (!(await contract.hasRole(adminRole, currentAddress))) {
+      throw new Error("연결 계정에 DEFAULT_ADMIN_ROLE이 없습니다.");
+    }
+
+    const relayerRole = await contract.RELAYER_ROLE();
+    if (!(await contract.hasRole(relayerRole, relayer))) {
+      const estimatedGas = await contract.grantRole.estimateGas(relayerRole, relayer);
+      await assertDeployerFunds(0n, estimatedGas, "Relayer 역할 부여");
+      addLog("Relayer 역할 부여 승인을 요청했습니다.");
+      await waitForTransaction(
+        await contract.grantRole(relayerRole, relayer),
+        "Relayer 역할 부여"
+      );
+    } else {
+      addLog("Relayer 역할이 이미 설정돼 있습니다.", "success");
+    }
+
+    const targetBalance = relayerTargetBalanceWei();
+    if (targetBalance > MAX_RELAYER_BOOTSTRAP_WEI) {
+      throw new Error("Relayer 목표 잔액은 5 KAIA를 초과할 수 없습니다.");
+    }
+    const currentBalance = await provider.getBalance(relayer);
+    elements.relayerBalance.textContent = `${Number.parseFloat(formatEther(currentBalance)).toFixed(4)} KAIA`;
+    if (currentBalance >= targetBalance) {
+      addLog(
+        `Relayer 잔액이 목표 이상입니다: ${formatEther(currentBalance)} / ${formatEther(targetBalance)} KAIA`,
+        "success"
+      );
+      return;
+    }
+
+    const latestBalance = await provider.getBalance(relayer);
+    if (latestBalance >= targetBalance) {
+      elements.relayerBalance.textContent = `${Number.parseFloat(formatEther(latestBalance)).toFixed(4)} KAIA`;
+      addLog("다른 작업에서 Relayer 목표 잔액을 이미 충전했습니다.", "success");
+      return;
+    }
+    const shortfall = targetBalance - latestBalance;
+    if (shortfall <= 0n || shortfall > MAX_RELAYER_BOOTSTRAP_WEI) {
+      throw new Error("Relayer 부족분이 허용된 5 KAIA 상한을 벗어났습니다.");
+    }
+    const estimatedGas = await provider.estimateGas({
+      from: currentAddress,
+      to: relayer,
+      value: shortfall
+    });
+    await assertDeployerFunds(shortfall, estimatedGas, "Relayer KAIA 충전");
+    addLog(
+      `Relayer 부족분 ${formatEther(shortfall)} KAIA 전송 승인을 요청했습니다. Wallet에서 직접 확인하세요.`
+    );
+    const transaction = await signer.sendTransaction({ to: relayer, value: shortfall });
+    await waitForTransaction(transaction, "Relayer KAIA 충전");
+    const finalBalance = await provider.getBalance(relayer);
+    elements.relayerBalance.textContent = `${Number.parseFloat(formatEther(finalBalance)).toFixed(4)} KAIA`;
+    if (finalBalance < targetBalance) {
+      throw new Error("충전 receipt 이후 Relayer 잔액이 목표보다 작습니다.");
+    }
+    if (finalBalance > targetBalance) {
+      addLog(
+        `외부 동시 충전으로 Relayer 잔액이 목표를 초과했습니다: ${formatEther(finalBalance)} KAIA`,
+        "error"
+      );
+      return;
+    }
+    addLog(`Relayer 목표 잔액 충전 완료: ${formatEther(finalBalance)} KAIA`, "success");
+  } catch (error) {
+    addLog(errorMessage(error), "error");
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function proveIssuerSigner() {
   setBusy(true);
   try {
@@ -582,7 +767,6 @@ async function configureRegistry() {
       throw new Error("Registry address가 유효하지 않습니다.");
     }
     const issuerSigner = normalizedAddress(config.issuerSignerAddress, "Issuer signer");
-    const relayer = normalizedAddress(config.relayerAddress, "Relayer");
     const keyVersion = issuerKeyVersion();
     const issuerId = computeIssuerId(config.issuerPublicId);
     await assertRegistryRuntime(registryAddress);
@@ -598,14 +782,6 @@ async function configureRegistry() {
     }
     if (!(await contract.hasRole(issuerAdminRole, currentAddress))) {
       throw new Error("연결 계정에 ISSUER_KEY_ADMIN_ROLE이 없습니다.");
-    }
-
-    const relayerRole = await contract.RELAYER_ROLE();
-    if (!(await contract.hasRole(relayerRole, relayer))) {
-      addLog("Relayer 역할 부여 승인을 요청했습니다.");
-      await waitForTransaction(await contract.grantRole(relayerRole, relayer), "Relayer 역할 부여");
-    } else {
-      addLog("Relayer 역할이 이미 설정돼 있습니다.", "success");
     }
 
     const currentKey = await contract.getIssuerKey(issuerId, keyVersion);
@@ -640,8 +816,8 @@ async function verifyRegistry() {
     if (registryAddress === null) {
       throw new Error("Registry address가 유효하지 않습니다.");
     }
-    const issuerSigner = normalizedAddress(config.issuerSignerAddress, "Issuer signer");
-    const relayer = normalizedAddress(config.relayerAddress, "Relayer");
+    const issuerSigner = nonZeroAddress(config.issuerSignerAddress, "Issuer signer");
+    const relayer = nonZeroAddress(config.relayerAddress, "Relayer");
     const issuerId = computeIssuerId(config.issuerPublicId);
     const keyVersion = issuerKeyVersion();
     const contract = new Contract(registryAddress, artifact.abi, provider);
@@ -651,12 +827,18 @@ async function verifyRegistry() {
     const issuerAdminRole = await contract.ISSUER_KEY_ADMIN_ROLE();
     const relayerRole = await contract.RELAYER_ROLE();
     const currentKey = await contract.getIssuerKey(issuerId, keyVersion);
+    const latestBlock = await provider.getBlock("latest");
+    if (latestBlock === null) {
+      throw new Error("Kairos 최신 블록을 조회하지 못했습니다.");
+    }
+    const currentTimestamp = BigInt(latestBlock.timestamp);
     const checks = [
       ["Issuer signer proof", issuerProofIsValid()],
       ["초기 관리자", await contract.hasRole(adminRole, currentAddress)],
       ["Issuer 관리자", await contract.hasRole(issuerAdminRole, currentAddress)],
       ["Relayer 역할", await contract.hasRole(relayerRole, relayer)],
       ["Issuer signer", getAddress(currentKey.signer) === issuerSigner],
+      ["Issuer key 활성 상태", isIssuerKeyActive(currentKey, currentTimestamp)],
       ["Leaf domain", (await contract.LEAF_DOMAIN()) === EXPECTED_LEAF_DOMAIN],
       ["DEFAULT_ADMIN_ROLE", adminRole === ZeroHash]
     ];
@@ -713,10 +895,12 @@ async function initialize() {
     elements.issuerPublicId.value = config.issuerPublicId;
     elements.issuerSigner.value = config.issuerSignerAddress;
     elements.relayerAddress.value = config.relayerAddress;
+    elements.relayerTargetBalance.value = config.relayerTargetBalanceKaia;
 
-    normalizedAddress(config.expectedDeployerAddress, "예상 deployer");
+    nonZeroAddress(config.expectedDeployerAddress, "예상 deployer");
     normalizedAddress(config.issuerSignerAddress, "Issuer signer");
-    normalizedAddress(config.relayerAddress, "Relayer");
+    nonZeroAddress(config.relayerAddress, "Relayer");
+    parseRelayerTargetBalanceKaia(config.relayerTargetBalanceKaia);
     if (BigInt(config.expectedChainId) !== KAIROS_CHAIN_ID) {
       throw new Error("배포 설정의 chainId가 Kairos 1001이 아닙니다.");
     }
@@ -740,6 +924,9 @@ async function initialize() {
       }
     }
     loadIssuerProof();
+    if (loadConfiguredIssuerProof()) {
+      addLog("Keychain issuer signer 소유 증명을 검증했습니다.", "success");
+    }
 
     initialized = true;
     addLog("로컬 배포 설정을 불러왔습니다.", "success");
@@ -754,6 +941,7 @@ elements.connect.addEventListener("click", connectWallet);
 elements.deploy.addEventListener("click", deployRegistry);
 elements.proveIssuer.addEventListener("click", proveIssuerSigner);
 elements.configure.addEventListener("click", configureRegistry);
+elements.bootstrapRelayer.addEventListener("click", bootstrapRelayer);
 elements.verify.addEventListener("click", verifyRegistry);
 elements.copyRegistry.addEventListener("click", () => {
   copyRegistryAddress().catch((error) => addLog(errorMessage(error), "error"));

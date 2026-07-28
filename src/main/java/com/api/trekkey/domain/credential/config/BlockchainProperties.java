@@ -16,6 +16,7 @@ public class BlockchainProperties {
     private long chainId = 1001L;
     private String rpcUrl = "https://public-en-kairos.node.kaia.io";
     private String contractAddress;
+    private String runtimeCodeHash;
     private String contractVersion = "1";
     private int treeVersion = 1;
     private int batchSize = 100;
@@ -58,6 +59,10 @@ public class BlockchainProperties {
                         && contractAddress.matches("0x[0-9a-fA-F]{40}")
                         && !contractAddress.equalsIgnoreCase("0x0000000000000000000000000000000000000000"),
                 "contractAddress must be a non-zero 20-byte hex address");
+        require(runtimeCodeHash != null
+                        && runtimeCodeHash.matches("0x[0-9a-fA-F]{64}")
+                        && !runtimeCodeHash.equalsIgnoreCase("0x" + "0".repeat(64)),
+                "runtimeCodeHash must be a non-zero 32-byte hex hash");
         if (isWriteEnabled()) {
             require(chainId == 1001L, "LOCAL_RELAYER is restricted to Kaia Kairos");
             String key = relayerPrivateKey == null ? "" : relayerPrivateKey.replaceFirst("^0x", "");

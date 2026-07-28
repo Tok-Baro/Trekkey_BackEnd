@@ -3,9 +3,48 @@ const HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const SIGNATURE_PATTERN = /^0x[0-9a-fA-F]{130}$/;
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const KAIA_AMOUNT_PATTERN = /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,18})?$/;
+const WEI_PER_KAIA = 1_000_000_000_000_000_000n;
+const MAX_RELAYER_BOOTSTRAP_WEI = 5n * WEI_PER_KAIA;
 
 export function isUuidV4(value) {
   return typeof value === "string" && UUID_V4_PATTERN.test(value);
+}
+
+export function parseRelayerTargetBalanceKaia(value) {
+  if (typeof value !== "string" || !KAIA_AMOUNT_PATTERN.test(value.trim())) {
+    throw new Error("Relayer 목표 잔액은 18자리 이하의 양수 KAIA 수량이어야 합니다.");
+  }
+  const [whole, fraction = ""] = value.trim().split(".");
+  const wei = BigInt(whole) * WEI_PER_KAIA + BigInt(fraction.padEnd(18, "0") || "0");
+  if (wei <= 0n || wei > MAX_RELAYER_BOOTSTRAP_WEI) {
+    throw new Error("Relayer 목표 잔액은 0보다 크고 5 KAIA 이하여야 합니다.");
+  }
+  return wei;
+}
+
+export function isIssuerKeyActive(key, currentTimestamp) {
+  try {
+    if (
+      key === null ||
+      typeof key !== "object" ||
+      !ADDRESS_PATTERN.test(key.signer) ||
+      /^0x0{40}$/i.test(key.signer)
+    ) {
+      return false;
+    }
+    const now = BigInt(currentTimestamp);
+    const validFrom = BigInt(key.validFrom);
+    const validUntil = BigInt(key.validUntil);
+    const compromisedAt = BigInt(key.compromisedAt);
+    return now >= 0n
+      && validFrom > 0n
+      && validFrom <= now
+      && validUntil === 0n
+      && compromisedAt === 0n;
+  } catch {
+    return false;
+  }
 }
 
 export function normalizeRuntimeCode(code, immutableReferences) {

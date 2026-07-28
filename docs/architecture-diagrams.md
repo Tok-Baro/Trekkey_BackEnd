@@ -488,17 +488,21 @@ stateDiagram-v2
     SUBMITTED --> CONFIRMED: receipt·event·readback 확인
     SUBMITTED --> UNKNOWN: receipt timeout
     UNKNOWN --> CONFIRMED: receipt 확인 후 readback 일치
-    UNKNOWN --> UNKNOWN: 같은 raw transaction 제한 재방송
+    UNKNOWN --> UNKNOWN: 같은 raw transaction 제한 재방송 또는 성공 receipt의 readback 재조회
     PREPARED --> PREPARED: 같은 raw transaction 재방송
     PENDING --> FAILED: 재시도 불가 오류
     PREPARED --> FAILED: 확정적 broadcast 거부
     SUBMITTED --> FAILED: 명시적 revert
-    UNKNOWN --> FAILED: 명시적 revert 또는 증거 불일치
+    UNKNOWN --> FAILED: 명시적 revert 또는 영구 RPC 오류
     FAILED --> PENDING: 새 승인 검증 후 원장 reset
     CONFIRMED --> [*]
 ```
 
-`UNKNOWN`에서는 새 nonce나 raw transaction을 만들지 않는다. 저장된 tx hash의 receipt를 조회하고, 미확정 상태가 지속되면 저장된 동일 raw transaction만 간격을 두고 재방송한다. `FAILED` 승인 갱신은 batch ID hash 또는 Credential status가 온체인에 없는지 확인한 뒤에만 허용한다.
+`UNKNOWN`에서는 새 nonce나 raw transaction을 만들지 않는다. receipt가 아직 없으면 저장된 동일
+raw transaction만 간격을 두고 재방송한다. 성공 receipt와 예상 event를 확인했지만 public RPC
+readback이 늦는 경우에는 `FAILED`로 내리지 않고 같은 tx hash의 증거를 계속 조회한다. 장기 체류는
+운영 알림 대상으로 처리한다. `FAILED` 승인 갱신은 batch ID hash 또는 Credential status가
+온체인에 없는지 확인한 뒤에만 허용한다.
 
 ## 16. 폐기와 대체 발급
 
@@ -544,7 +548,8 @@ flowchart LR
     unknown --> receipt["저장된 txHash receipt 조회"]
     receipt -->|"receipt·event·readback 일치"| confirmed["Tx CONFIRMED"]
     receipt -->|"아직 없음"| unknown
-    receipt -->|"revert·증거 불일치"| dead["Tx FAILED·Outbox DEAD"]
+    receipt -->|"성공 receipt·readback 지연"| unknown
+    receipt -->|"명시적 revert·영구 RPC 오류"| dead["Tx FAILED·Outbox DEAD"]
     dead --> onchain{"온체인 값 존재?"}
     onchain -->|"없음"| operator["승인 갱신"]
     onchain -->|"전체 일치"| reconciled["Aggregate 상태 수렴·실패 원장 보존"]
@@ -606,7 +611,7 @@ flowchart LR
     phase3 --> p3b["RegistryV1과 EIP-712"]
     phase4 --> p4a["Batch·Anchor Worker"]
     phase4 --> p4b["Kairos Registry 배포·초기 설정 완료"]
-    phase4 --> p4c["Credential E2E 통합 시험 대기"]
+    phase4 --> p4c["Credential E2E·상태 전이 검증 완료"]
     phase5 --> p5a["Mainnet Multisig·KMS·복수 RPC"]
     phase5 --> p5b["학교별 Adapter와 졸업 Credential"]
 ```

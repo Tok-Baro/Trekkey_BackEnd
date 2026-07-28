@@ -140,7 +140,7 @@ main {
 
 .status-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   background: #ffffff;
   border: 1px solid #cbd2ce;
   border-radius: 6px;
@@ -349,11 +349,11 @@ main {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .status-item:nth-child(2) {
+  .status-item:nth-child(2n) {
     border-right: 0;
   }
 
-  .status-item:nth-child(-n + 2) {
+  .status-item:nth-child(-n + 4) {
     border-bottom: 1px solid #e0e5e2;
   }
 

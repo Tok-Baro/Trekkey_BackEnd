@@ -12,12 +12,37 @@
   "deployedAt": "2026-07-28T05:45:01Z",
   "configuration": {
     "issuerPublicId": "725050e0-2a2f-48a8-a8b8-2e51e12524b7",
-    "issuerPublicIdStatus": "test-identifier-db-mapping-pending",
+    "issuerPublicIdStatus": "validated-in-spring-jpa-live-e2e",
     "issuerId": "0x21240e02415b5fef8fdada2d39b44494fe28d292dab8ecb1f62645fd44298184",
+    "issuerKeyVersion": 2,
+    "issuerSigner": "0x235a99Eb7Acb6f181740B246acfc9885692BD79d",
+    "issuerRegistrationTransactionHash": "0xe4a093e31ed1c79b41d6b5c0b0f0668a00a77f7fc2b07da97f2de0642511d574",
+    "relayer": "0xB87670C4171e913368F688B660e143366E0ca6ea",
+    "relayerGrantTransactionHash": "0xd8ad1100c951337e56f029461c891765fca1fb0c776e797e9f508ecbccfc40cb",
+    "relayerFundingTransactionHash": "0x69244c4456deee9c4b37e85da408382ba5015f2208115a7c1e2fa0d476a964a9",
+    "relayerFundingAmountKaia": "1.0"
+  },
+  "liveE2e": {
+    "completedAt": "2026-07-28T14:32:25Z",
+    "batchPublicId": "8c740025-e0c7-4299-abb0-da19cb11ecae",
+    "batchIdHash": "0x359d7bded0ae41c1f12388aabd0385de5e5ac6c8654c87db7175251827575c44",
+    "merkleRoot": "0x5a606d5e04245f906f00de8d63cf42edc4ce3dae89758f08ba5b34610dcf053f",
+    "schemaVersionHash": "0xc777f42e5ef4378b63c35a4fba020c26f8c26f23d7069bc924b924c86449da0c",
+    "leafCount": 3,
+    "anchorTransactionHash": "0xb2a2bc95949b8f8450d2f1a3d010b9626cb51c27aa0a2c1b2cc96d62bebec322",
+    "revokeTransactionHash": "0x954d86e63269c9b74ec3c4a0f84bf6725013621cee43c578ed662cfe8497aeb3",
+    "supersedeTransactionHash": "0xee4715ee4ea971eae2e48b791c9f36f9cc94dad65902c289fd63c45da745f72d",
+    "credentialPublicIds": {
+      "revoked": "4287612f-e3ed-4384-8b55-bbdf8581c4ed",
+      "superseded": "70c148f3-0b17-4382-a7bb-16eead191a86",
+      "replacement": "295cec86-4928-4c27-b2ac-b0d2391dd852"
+    }
+  },
+  "legacy": {
     "issuerKeyVersion": 1,
     "issuerSigner": "0x16912745426d9A108A91e303dd865B1045B75aE1",
     "issuerRegistrationTransactionHash": "0x35f4844b8932ac2b5a3d9361b0bb1ee7f2ac64063e5b425f12e2c40e8241cb10",
-    "relayer": "0xFf3BFF4FfF5d0699E82Fd5b045F034AB01FF8Ed6",
-    "relayerGrantTransactionHash": "0xda3e39525679ec2029c2bdc705a647298c824d1d53b6a42dfc2da8ecd9560230"
+    "browserRelayer": "0xFf3BFF4FfF5d0699E82Fd5b045F034AB01FF8Ed6",
+    "browserRelayerGrantTransactionHash": "0xda3e39525679ec2029c2bdc705a647298c824d1d53b6a42dfc2da8ecd9560230"
   }
 }

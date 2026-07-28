@@ -60,7 +60,11 @@ ISSUER_PUBLIC_ID=<organization.publicId>
 ISSUER_KEY_VERSION=1
 ISSUER_SIGNER_ADDRESS=0x...
 RELAYER_ADDRESS=0x...
+RELAYER_TARGET_BALANCE_KAIA=1
 ```
+
+`ISSUER_KEY_VERSION=1` is the fresh-issuer default. When operating the committed Kairos
+deployment, use the active version from `deployments/kairos-1001.json`, currently version `2`.
 
 3. Start the loopback-only deployment console:
 
@@ -70,13 +74,25 @@ npm run deploy:kairos:wallet
 
 4. Open `http://127.0.0.1:4173` in the Chrome profile that has Kaia Wallet installed.
 5. Connect the expected deployer on Kairos and approve the registry deployment transaction.
-6. Switch Kaia Wallet to the configured issuer signer, reconnect, and sign the EIP-712 ownership proof. This signature does not spend gas.
-7. Switch back to the deployer, reconnect, and approve the relayer-role and issuer-key registration transactions.
-8. Run the on-chain verification, then copy the resulting registry address to `REGISTRY_ADDRESS` in `contracts/.env` and to the backend's `BLOCKCHAIN_CONTRACT_ADDRESS`.
+6. Prove ownership of the configured issuer signer. When the signer is in Kaia Wallet, switch to it, reconnect, and sign the EIP-712 ownership proof. This signature does not spend gas.
+   When the test signer is held in the macOS Keychain helper instead, start the console with the proof injected as a public, contract-bound value:
+
+```bash
+ISSUER_PROOF_SIGNATURE="$(./scripts/kairos-e2e-keychain.sh issuer-proof)" \
+  npm run deploy:kairos:wallet
+```
+
+   The helper passes the private key to a short-lived Node process over standard input. Only the EIP-712 signature reaches the loopback page, and the page independently recovers and checks the configured signer before enabling registration.
+7. Switch back to the deployer, reconnect, and run `Relayer bootstrap`. The console checks `RELAYER_ROLE`, grants it only when missing, then reads the relayer's native KAIA balance.
+8. If the relayer is below `RELAYER_TARGET_BALANCE_KAIA`, the console computes only the shortfall and checks chain ID `1001`, the expected deployer, a nonzero relayer, the 5 KAIA hard cap, and the deployer's balance plus estimated gas before opening the Wallet approval for the native transfer. If the target is already met, no funding transaction is created.
+9. Run `Issuer signer 등록` to approve the issuer-key registration transaction, then run the on-chain verification. Every role, registration, and funding transaction is separately approved by the connected deployer in Kaia Wallet.
+10. Copy the resulting registry address to `REGISTRY_ADDRESS` in `contracts/.env` and to the backend's `BLOCKCHAIN_CONTRACT_ADDRESS`.
 
 The console accepts only the configured deployer and issuer signer accounts. It persists the deployment transaction hash and predicted contract address in browser storage as soon as the transaction is broadcast, then recovers the result after refresh instead of allowing an accidental duplicate deployment.
 
 The local server has an explicit asset allowlist. It serves the UI, compiled contract artifact, local ethers bundle, and public deployment configuration only. It cannot serve `.env`, private keys, arbitrary `node_modules`, or parent paths.
+
+`RELAYER_TARGET_BALANCE_KAIA` is intentionally public UI configuration, not a credential. An explicitly supplied `ISSUER_PROOF_SIGNATURE` is also public: it is bound to chain ID, Registry, issuer ID, signer, and key version and is revalidated in the browser. The server never exposes `DEPLOYER_PRIVATE_KEY`, `RELAYER_PRIVATE_KEY`, `ISSUER_PRIVATE_KEY`, or seed phrases. The target defaults to `1` KAIA and the browser rejects values outside `(0, 5]` KAIA or with more than 18 decimal places.
 
 For non-interactive Kairos CI or isolated development environments, the private-key Hardhat path remains available:
 
@@ -92,6 +108,37 @@ npm run configure:kairos
 ```
 
 For Kairos-only integration tests, `npm run sign:approval` signs the typed-data file named by `TYPED_DATA_FILE` with `ISSUER_PRIVATE_KEY`. Production issuer keys must remain in an external wallet, KMS, or HSM.
+
+After registering a Keychain-held Kairos issuer, run the read path separately before enabling writes:
+
+```bash
+./scripts/run-kairos-read-only.sh
+```
+
+This starts Spring in `READ_ONLY`, persists the configured UUID as a real `Organization.publicId`,
+derives the issuer ID through the production service, and checks the signer returned by Kairos.
+It deliberately unsets the relayer key. The write E2E is a separate opt-in command:
+
+```bash
+KAIROS_LIVE_E2E_CONFIRM=I_UNDERSTAND_KAIROS_WRITES \
+  ./scripts/run-kairos-live-e2e.sh
+```
+
+That test uses the production issuance, Merkle, outbox, Web3j, receipt reconciliation, public
+verification, revoke, and supersede services against Kairos. Both scripts read disposable test keys
+from macOS Keychain and never print them. The write wrapper first checks the committed Registry
+address, runtime hash, roles, active issuer key, relayer, and balance. It then passes keys only to
+the short-lived no-daemon JVM process.
+
+Public Registry state can be checked without any wallet or private key:
+
+```bash
+npm run read:kairos
+```
+
+The command fails unless the runtime code exists and the configured deployer roles, relayer role,
+and issuer signer version all match. Its JSON output contains only public addresses, role results,
+and the relayer balance.
 
 Kairos is configured with chain ID `1001`. Source verification uses the Kaiascan Hardhat custom chain configuration:
 

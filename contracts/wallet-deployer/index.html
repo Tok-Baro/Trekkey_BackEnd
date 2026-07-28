@@ -33,6 +33,10 @@
           <strong id="balance-value">-</strong>
         </div>
         <div class="status-item">
+          <span>Relayer 잔액</span>
+          <strong id="relayer-balance-value">-</strong>
+        </div>
+        <div class="status-item">
           <span>Registry</span>
           <strong id="registry-status-value">미배포</strong>
         </div>
@@ -64,6 +68,10 @@
             <label class="field">
               <span>Relayer</span>
               <input id="relayer-address" type="text" readonly>
+            </label>
+            <label class="field">
+              <span>Relayer 목표 잔액</span>
+              <input id="relayer-target-balance" type="text" readonly>
             </label>
             <label class="field registry-field">
               <span>Registry address</span>
@@ -102,14 +110,21 @@
             </div>
             <div class="action-row">
               <div>
-                <strong>3. 권한 및 issuer 등록</strong>
-                <span>Relayer 역할과 issuer key version 1 설정</span>
+                <strong>3. Relayer 초기화</strong>
+                <span>Relayer 역할을 부여하고 목표 미달분만 KAIA 충전</span>
               </div>
-              <button id="configure-button" class="primary-button" type="button" disabled>설정</button>
+              <button id="bootstrap-relayer-button" class="primary-button" type="button" disabled>실행</button>
             </div>
             <div class="action-row">
               <div>
-                <strong>4. 온체인 검증</strong>
+                <strong>4. Issuer signer 등록</strong>
+                <span>검증된 서명과 설정된 issuer key version을 등록</span>
+              </div>
+              <button id="configure-button" class="primary-button" type="button" disabled>등록</button>
+            </div>
+            <div class="action-row">
+              <div>
+                <strong>5. 온체인 검증</strong>
                 <span>코드·관리자·relayer·issuer signer 조회</span>
               </div>
               <button id="verify-button" class="secondary-button" type="button" disabled>검증</button>

@@ -5,6 +5,7 @@ import com.api.trekkey.domain.credential.entity.ChainOperationType;
 import com.api.trekkey.domain.credential.service.port.BlockchainAnchorPort;
 import com.api.trekkey.domain.credential.service.port.BlockchainGatewayException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,8 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class BlockchainWorkers {
+
+    private static final Duration MAX_EVIDENCE_RETRY_DELAY = Duration.ofSeconds(2);
 
     private final BlockchainWorkTransactions transactions;
     private final BlockchainAnchorPort blockchainAnchorPort;
@@ -190,10 +193,34 @@ public class BlockchainWorkers {
         BlockchainWorkTransactions.EvidenceExpectation expectation =
                 transactions.evidenceExpectation(receiptTask.transactionId());
         if (!matchesReadback(expectation)) {
-            transactions.failReceipt(receiptTask.transactionId(), "ANCHOR_EVIDENCE_MISMATCH");
+            handleEvidencePending(receiptTask);
             return;
         }
         transactions.confirm(receiptTask.transactionId(), receipt, credentialClock.instant());
+    }
+
+    private void handleEvidencePending(BlockchainWorkTransactions.ReceiptTask task) {
+        Instant now = credentialClock.instant();
+        Instant nextCheckAt = now.plus(evidenceRetryDelay());
+        if (task.status() == com.api.trekkey.domain.credential.entity.ChainTransactionStatus.SUBMITTED) {
+            transactions.markReceiptUnknown(
+                    task.transactionId(),
+                    "CHAIN_EVIDENCE_PENDING",
+                    now,
+                    nextCheckAt);
+            return;
+        }
+        transactions.rescheduleUnknownReceipt(
+                task.transactionId(),
+                "CHAIN_EVIDENCE_PENDING",
+                nextCheckAt);
+    }
+
+    private Duration evidenceRetryDelay() {
+        Duration configured = properties.getReceiptPollingInterval();
+        return configured.compareTo(MAX_EVIDENCE_RETRY_DELAY) > 0
+                ? MAX_EVIDENCE_RETRY_DELAY
+                : configured;
     }
 
     private boolean matchesReadback(BlockchainWorkTransactions.EvidenceExpectation expected) {

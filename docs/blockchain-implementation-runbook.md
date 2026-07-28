@@ -5,7 +5,9 @@
 - 네트워크: Kaia Kairos `chainId=1001`
 - 컨트랙트: `TrekkeyCredentialRegistryV1`
 - 현재 Registry: `0x4ca738CC22Af5aE40EA8A23E001FA93e1e044117`
-- 현재 Kairos test issuer public ID: `725050e0-2a2f-48a8-a8b8-2e51e12524b7` (DB 학교 매핑 대기)
+- 현재 Kairos test issuer public ID: `725050e0-2a2f-48a8-a8b8-2e51e12524b7`
+- 현재 issuer key: version `2`, signer `0x235a99Eb7Acb6f181740B246acfc9885692BD79d`
+- 현재 backend relayer: `0xB87670C4171e913368F688B660e143366E0ca6ea`
 - 실제 배포 증적: [Kairos Registry 배포 기록과 재현 절차](./blockchain-kairos-deployment.md)
 
 ## 1. 현재 구현된 범위
@@ -29,9 +31,10 @@
 아직 남은 부분:
 
 - QR 및 공개 검증 프론트 화면
-- 운영 KMS/HSM signer
+- 운영 AWS KMS issuer·relayer signer adapter
+- 공용 MySQL `ORGANIZATION.publicId` backfill 및 `NOT NULL + UNIQUE` migration
+- 백업·복구와 운영 모니터링
 - Kaia mainnet 배포
-- Kairos 실제 Credential end-to-end 통합 시험
 - Kaiascan source-code verification
 
 임의 발급 HTTP API는 열지 않는다. 최종 업무 원장을 확정하는 서비스만 내부
@@ -39,13 +42,14 @@
 
 ## 지금 담당자가 할 일
 
-1. 기존 `ORGANIZATION` 데이터에 `publicId`를 backfill하고 운영 migration에서 `NOT NULL + UNIQUE`로 고정한다.
-2. Kairos용 deployer, 학교 issuer, Trekkey relayer 계정을 서로 다르게 만들고 테스트 KAIA는 deployer와 relayer에만 넣는다.
-3. 완료된 Kairos Registry 주소와 issuer·relayer 설정을 배포 증적 문서에서 확인한다.
-4. 백엔드를 먼저 `READ_ONLY`로 연결해 조회를 확인한 뒤, 자동 서명 가능한 relayer secret 또는 KMS를 준비한다.
-5. 트랜잭션을 보내는 worker 인스턴스 하나만 `LOCAL_RELAYER`로 전환한다.
-6. 테스트 Credential 1건을 발급하고 배치 서명, 앵커링, 공개 검증, package 다운로드, 폐기까지 한 번 완주한다.
-7. Kairos 운영 결과와 장애 복구 절차가 확인되기 전에는 mainnet으로 전환하지 않는다.
+1. 공용 MySQL의 기존 `ORGANIZATION` 데이터에 `publicId`를 backfill하고 운영 migration에서 `NOT NULL + UNIQUE`로 고정한다.
+2. 현재 Kairos Registry, issuer v2, backend relayer와 E2E 증적을 배포 기록에서 확인한다.
+3. 운영용 issuer·relayer를 서로 다른 AWS KMS 키와 IAM 정책으로 만들고 signer adapter를 구현한다.
+4. QR 화면을 공개 검증 API에 연결하고 사용자 관점의 스캔 시험을 추가한다.
+5. Outbox backlog, `UNKNOWN`, `DEAD`, relayer 잔액과 가스 예산 알림을 구성한다.
+6. MySQL, 객체 저장소, Portable Package의 백업·복구 훈련을 수행한다.
+7. Kaiascan 소스 공개 승인과 운영 보안 검토 후 source verification을 수행한다.
+8. 위 운영 항목과 장애 복구 절차가 확인되기 전에는 mainnet으로 전환하지 않는다.
 
 ## 2. 키와 역할
 
@@ -107,6 +111,36 @@ Kaia에는 중앙식 회원가입 절차가 없다. 지갑에서 secp256k1 EOA�
 
 학생이 트랜잭션을 보내지 않는 현재 구조에서는 Kaia native fee delegation이 필요하지 않다. Trekkey relayer 자체가 트랜잭션 발신자이자 가스비 납부자다. native fee delegation은 향후 학교나 학생 지갑이 직접 호출해야 할 때만 별도 adapter로 추가한다.
 
+### 키 보관 결정
+
+Kairos 통합 시험과 운영 mainnet의 키 보관 방식을 분리한다.
+
+| 환경 | Issuer signer | Relayer | 평문 키 허용 |
+| --- | --- | --- | --- |
+| Kairos 로컬 E2E | macOS Keychain `io.trekkey.kairos-e2e.issuer` | macOS Keychain `io.trekkey.kairos-e2e.relayer` | Git·문서·파일 금지, opt-in 테스트 프로세스 환경에만 일시 주입 |
+| 운영 | 학교별 AWS KMS 비반출 키 | Trekkey 전용 AWS KMS 비반출 키 | 금지 |
+
+운영 KMS 기준은 다음으로 고정한다.
+
+- Key spec: `ECC_SECG_P256K1`
+- Key usage: `SIGN_VERIFY`
+- Signing algorithm: `ECDSA_SHA_256`
+- `kms:Sign` 호출은 EIP-712와 EVM 트랜잭션의 Keccak-256 digest를 그대로 전달하고 `MessageType=DIGEST`를 사용
+- worker IAM 역할에는 대상 key의 `kms:GetPublicKey`, `kms:Sign`만 허용
+- issuer와 relayer는 서로 다른 KMS key와 IAM policy 사용
+- DB `signerRef`에는 개인키가 아니라 KMS key ARN 또는 alias만 저장
+- Secrets Manager에는 평문 EVM 개인키를 저장하지 않음
+- KMS adapter는 digest를 다시 SHA-256으로 해시하지 않고, DER ECDSA 결과를 `(r,s)`로 변환한 뒤 low-s 정규화와 recovery ID 계산 후 EIP-155 트랜잭션을 조립
+- KMS adapter와 장애 전환 시험이 끝나기 전에는 mainnet write mode를 열지 않음
+
+AWS KMS가 secp256k1 서명 키와 `ECDSA_SHA_256`을 지원하는 근거는
+[AWS KMS Key spec reference](https://docs.aws.amazon.com/kms/latest/developerguide/symm-asymm-choose-key-spec.html)에 고정한다.
+Kaia relayer 주소는 해당 KMS public key에서 계산한 EVM 주소를 사용하고 `AccountKeyLegacy` 상태를 유지한다.
+
+현재 Keychain helper는 테스트 키를 생성·조회하고 공개 주소 또는 contract-bound EIP-712
+소유 증명만 출력한다. 실제 private key를 사용하는 하위 명령은 E2E wrapper 내부 용도이며,
+wrapper는 Gradle daemon을 비활성화해 키를 받은 프로세스가 시험 종료 후 남지 않게 한다.
+
 ## 3. 최초 한 번 준비할 것
 
 ### 개발 도구
@@ -152,7 +186,7 @@ KAIROS_RPC_URL=https://public-en-kairos.node.kaia.io
 DEPLOYER_ADDRESS=0x...
 REGISTRY_ADDRESS=
 ISSUER_PUBLIC_ID=<organization.publicId>
-ISSUER_KEY_VERSION=1
+ISSUER_KEY_VERSION=2
 ISSUER_SIGNER_ADDRESS=0x...
 RELAYER_ADDRESS=0x...
 KAIASCAN_API_KEY=
@@ -211,7 +245,7 @@ CLI 설정 스크립트를 사용할 경우 `contracts/.env`:
 ```dotenv
 REGISTRY_ADDRESS=0x...
 ISSUER_PUBLIC_ID=<organization.publicId>
-ISSUER_KEY_VERSION=1
+ISSUER_KEY_VERSION=2
 ISSUER_SIGNER_ADDRESS=0x...
 RELAYER_ADDRESS=0x...
 ```
@@ -243,6 +277,7 @@ BLOCKCHAIN_ANCHORING_MODE=LOCAL_RELAYER
 BLOCKCHAIN_CHAIN_ID=1001
 BLOCKCHAIN_RPC_URL=https://public-en-kairos.node.kaia.io
 BLOCKCHAIN_CONTRACT_ADDRESS=0x...
+BLOCKCHAIN_RUNTIME_CODE_HASH=0x...
 BLOCKCHAIN_CONTRACT_VERSION=1
 BLOCKCHAIN_TREE_VERSION=1
 BLOCKCHAIN_BATCH_SIZE=100
@@ -265,6 +300,44 @@ BLOCKCHAIN_RELAYER_PRIVATE_KEY=0x...
 | `LOCAL_RELAYER` | Kairos(`1001`)에서만 조회와 개발용 로컬 relayer 전송 허용 |
 
 `BLOCKCHAIN_WORKER_ENABLED=true`는 실제 트랜잭션을 보낼 인스턴스에만 설정한다. 백엔드 수평 확장 시 모든 API 인스턴스에 무조건 켜지 않는다.
+
+Kairos에서는 실제 Spring bean과 Registry readback만 먼저 검증한다.
+
+```bash
+./contracts/scripts/run-kairos-read-only.sh
+```
+
+이 명령은 relayer private key 환경변수를 제거한 상태에서 테스트 DB에
+`ORGANIZATION.publicId`를 고정하고 온체인 issuer signer를 동기화한다.
+
+그 다음에만 실제 발급·Merkle·앵커·폐기·대체 시험을 실행한다.
+
+```bash
+KAIROS_LIVE_E2E_CONFIRM=I_UNDERSTAND_KAIROS_WRITES \
+  ./contracts/scripts/run-kairos-live-e2e.sh
+```
+
+쓰기 시험은 동일한 `Organization.publicId`를 사용하는 Credential 세 건을 발급하고,
+production 서비스와 Outbox worker로 batch root를 앵커링한 뒤 공개 QR 대상 API에서
+`VALID → REVOKED`, `VALID → SUPERSEDED` 상태 전이를 검증한다.
+wrapper는 실제 쓰기 전에 manifest의 Registry 주소·runtime hash, 역할, 활성 issuer key와
+relayer 잔액을 읽는다. 확인 문자열이 없으면 트랜잭션을 만들지 않는다.
+
+### 2026-07-28 Kairos 연결 결과
+
+| 검증 | 결과 |
+| --- | --- |
+| `READ_ONLY` | 실제 Spring/JPA `Organization.publicId`에서 issuer ID를 계산해 key version `2` signer readback 일치 |
+| Credential | 테스트 Credential `3`건 발급 |
+| Merkle batch | leaf `3`건, root `0x5a606d5e04245f906f00de8d63cf42edc4ce3dae89758f08ba5b34610dcf053f` |
+| Anchor | tx `0xb2a2bc95949b8f8450d2f1a3d010b9626cb51c27aa0a2c1b2cc96d62bebec322`, block `223605940` |
+| Revoke | tx `0x954d86e63269c9b74ec3c4a0f84bf6725013621cee43c578ed662cfe8497aeb3`, block `223605941` |
+| Supersede | tx `0xee4715ee4ea971eae2e48b791c9f36f9cc94dad65902c289fd63c45da745f72d`, block `223605942` |
+| 공개 QR 대상 API | `VALID → REVOKED`, `VALID → SUPERSEDED`, replacement `VALID` 검증 |
+
+이 시험은 격리된 H2에 실제 `Organization` 엔터티를 저장해 production issuer 동기화 경로를
+검증했다. 팀 공용 MySQL 기존 데이터의 backfill과 `NOT NULL + UNIQUE` migration 완료를
+의미하지는 않는다.
 
 ## 7. 학교 issuer key 동기화
 
@@ -450,7 +523,7 @@ curl -X POST \
   -H "Content-Type: application/json" \
   -d '{
     "action":"REVOKE",
-    "issuerKeyVersion":1,
+    "issuerKeyVersion":2,
     "reasonCode":"ISSUED_IN_ERROR",
     "reasonDetail":"학교 확인 후 오발급 폐기"
   }' \
@@ -463,7 +536,7 @@ curl -X POST \
 {
   "action": "SUPERSEDE",
   "replacementCredentialPublicId": "new-credential-public-id",
-  "issuerKeyVersion": 1,
+  "issuerKeyVersion": 2,
   "reasonCode": "CORRECTED",
   "reasonDetail": "수상명 정정"
 }
@@ -499,10 +572,12 @@ action, effective time, issuer key version, replacement hash가 모두 일치해
 - [ ] `ORGANIZATION.publicId` 기존 데이터 backfill 및 `NOT NULL + UNIQUE` migration
 - [ ] 대회·팀·제출·수상 FK와 tenant 소속 검증 연결
 - [x] Kairos Registry 배포, relayer 역할, issuer key 등록, 온체인 readback
+- [x] Spring/JPA `READ_ONLY` issuer 조회 검증
+- [x] Credential 3건 발급, Merkle anchor, 공개 검증, revoke·supersede E2E
 - [ ] Kaiascan contract source 검증
-- [ ] Java와 OpenZeppelin Merkle fixture 교차 테스트
-- [ ] 학교 issuer와 relayer 키 분리
-- [ ] 승인 nonce·deadline·chain ID·contract address 확인
+- [x] Java와 OpenZeppelin Merkle fixture 교차 테스트
+- [x] Kairos 학교 issuer와 backend relayer 키 분리
+- [x] 승인 nonce·deadline·chain ID·contract address 확인
 - [ ] relayer 잔액 및 가스 예산 알림
 - [ ] Outbox backlog, `UNKNOWN`, `DEAD` 알림
 - [ ] `FAILED + DEAD` 승인 갱신 및 온체인 readback 운영 절차
@@ -510,7 +585,8 @@ action, effective time, issuer key version, replacement hash가 모두 일치해
 - [ ] 객체 저장소 versioning과 파일 hash 재검증
 - [ ] KMS/HSM adapter 및 운영 multisig/timelock
 - [ ] Mainnet 전 Hardhat 3 이전 및 `npm audit` 고위험 항목 0건 또는 보안 승인된 예외 목록
-- [ ] Kairos 통합 시험 후에만 mainnet `chainId=8217` 검토
+- [x] Kairos Credential 통합 시험
+- [ ] 운영 KMS, multisig, 복구 훈련 후에만 mainnet `chainId=8217` 검토
 
 ## 13. 포트폴리오 설명
 
@@ -519,5 +595,10 @@ Trekkey는 인증서 원문과 개인정보를 퍼블릭 블록체인에 저장�
 학교 issuer가 EIP-712로 root와 nonce, deadline, chain, contract를 승인하고 Trekkey relayer가 가스비를 부담한다. 따라서 학생은 지갑이나 코인 없이도 QR 링크만으로 증빙을 검증할 수 있다.
 
 백엔드는 업무 트랜잭션과 RPC를 직접 묶지 않고 Outbox로 분리한다. signed raw transaction과 tx hash를 broadcast 전에 저장해 응답 유실과 프로세스 장애에도 같은 트랜잭션을 추적한다. 공개 검증은 DB의 표시용 컬럼이 아니라 온체인 root에 포함된 canonical Credential에서 claims를 읽고, hash·proof·issuer key·폐기 상태를 단계별로 비교한다.
+
+Kairos 실체인 시험에서는 성공 receipt 직후 public RPC의 read-after-write가 잠시 이전 상태를
+반환하는 상황도 확인했다. worker는 이를 즉시 영구 실패로 오판하지 않고 같은 tx hash를
+`UNKNOWN`으로 추적하며 온체인 증거를 다시 읽어 수렴한다. 성공 receipt와 예상 event가 있는
+트랜잭션은 readback이 오래 지연돼도 자동으로 `FAILED` 처리하지 않고 운영 경보 대상으로 남긴다.
 
 블록체인은 학교가 앵커링 전에 허위 결과를 입력했는지 판정하지 않는다. 대신 학교가 승인한 증빙이 앵커링 뒤에 바뀌었는지, 폐기됐는지, 더 최신 증빙으로 대체됐는지를 외부에서 독립적으로 확인하게 한다.

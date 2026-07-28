@@ -48,6 +48,14 @@ function value(env, name) {
   return env[name]?.trim() ?? "";
 }
 
+function issuerProofSignature(env) {
+  const signature = value(env, "ISSUER_PROOF_SIGNATURE");
+  if (signature !== "" && !/^0x[0-9a-fA-F]{130}$/.test(signature)) {
+    throw new Error("ISSUER_PROOF_SIGNATURE must be an EIP-712 65-byte hex signature.");
+  }
+  return signature;
+}
+
 export function publicConfig(env) {
   return {
     expectedChainId: 1001,
@@ -56,7 +64,9 @@ export function publicConfig(env) {
     issuerPublicId: value(env, "ISSUER_PUBLIC_ID"),
     issuerKeyVersion: value(env, "ISSUER_KEY_VERSION") || "1",
     issuerSignerAddress: value(env, "ISSUER_SIGNER_ADDRESS"),
+    issuerProofSignature: issuerProofSignature(env),
     relayerAddress: value(env, "RELAYER_ADDRESS"),
+    relayerTargetBalanceKaia: value(env, "RELAYER_TARGET_BALANCE_KAIA") || "1",
     explorerUrl: "https://kairos.kaiascan.io"
   };
 }

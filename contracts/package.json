@@ -14,6 +14,7 @@
     "deploy:kairos": "hardhat run scripts/deploy-kairos.ts --network kairos",
     "deploy:kairos:wallet": "hardhat compile && node scripts/serve-wallet-deployer.mjs",
     "configure:kairos": "hardhat run scripts/configure-kairos.ts --network kairos",
+    "read:kairos": "node scripts/read-kairos-state.mjs",
     "sign:approval": "hardhat run scripts/sign-approval.ts",
     "verify:kairos": "hardhat verify --network kairos"
   },

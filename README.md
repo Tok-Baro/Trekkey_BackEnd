@@ -101,6 +101,7 @@ src/main/java/com/api/trekkey
 | `BLOCKCHAIN_CHAIN_ID` | Kaia chain ID | `1001` |
 | `BLOCKCHAIN_RPC_URL` | EVM JSON-RPC URL | Kairos public RPC |
 | `BLOCKCHAIN_CONTRACT_ADDRESS` | 배포한 registry 주소 | 없음 |
+| `BLOCKCHAIN_RUNTIME_CODE_HASH` | 승인한 registry runtime Keccak-256 | 없음 |
 | `BLOCKCHAIN_WORKER_ENABLED` | Outbox/receipt worker 실행 | `false` |
 | `BLOCKCHAIN_OUTBOX_LEASE_TIMEOUT` | 중단된 worker 작업 회수 시간 | `1m` |
 | `BLOCKCHAIN_RELAYER_PRIVATE_KEY` | Kairos 개발용 relayer key | 없음 |
