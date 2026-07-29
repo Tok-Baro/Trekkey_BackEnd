@@ -36,6 +36,9 @@ dependencies {
     implementation 'com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer:20240325.1'
     implementation 'io.github.erdtman:java-json-canonicalization:1.1'
     implementation 'org.web3j:core:4.14.0'
+    implementation 'com.github.librepdf:openpdf:2.0.3'
+    implementation 'com.google.zxing:core:3.5.3'
+    implementation 'com.google.zxing:javase:3.5.3'
 
     implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
