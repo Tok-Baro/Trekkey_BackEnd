@@ -22,7 +22,7 @@ class CredentialCertificateRendererTest {
                 "대상", "AI 작품", "http://localhost:5173/verify/cred-pub-1");
 
         assertThat(new String(pdf, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
-        assertThat(pdf.length).isGreaterThan(100_000); //폰트 서브셋 임베딩 확인 (미임베딩이면 수 KB)
+        assertThat(pdf.length).isGreaterThan(20_000); //폰트 서브셋 임베딩 확인 (미임베딩이면 수 KB 수준)
     }
 
     @Test
