@@ -41,6 +41,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -74,7 +75,17 @@ class ReviewSubmissionServiceImplTest {
     private static final Long COMPLETENESS_ID = 702L;
     private static final ZoneId ZONE_ID = ZoneId.of("Asia/Seoul");
     private static final LocalDateTime NOW =
-            LocalDateTime.of(2026, 7, 27, 12, 0);
+            LocalDateTime.of(
+                    2026,
+                    7,
+                    27,
+                    12,
+                    0,
+                    0,
+                    123_456_789
+            );
+    private static final LocalDateTime PERSISTED_NOW =
+            NOW.truncatedTo(ChronoUnit.MICROS);
 
     @Mock
     private ReviewLinkAuthenticator reviewLinkAuthenticator;
@@ -184,7 +195,7 @@ class ReviewSubmissionServiceImplTest {
         assertThat(response.totalScore())
                 .isEqualByComparingTo("89.75");
         assertThat(response.comment()).isEqualTo("좋은 작품입니다.");
-        assertThat(response.submittedAt()).isEqualTo(NOW);
+        assertThat(response.submittedAt()).isEqualTo(PERSISTED_NOW);
         assertThat(response.scores())
                 .extracting(item -> item.criterionId())
                 .containsExactly(CREATIVITY_ID, COMPLETENESS_ID);
@@ -196,7 +207,7 @@ class ReviewSubmissionServiceImplTest {
         assertThat(reviewCaptor.getValue().getTotalScore())
                 .isEqualByComparingTo("89.75");
         assertThat(reviewCaptor.getValue().getSubmittedAt())
-                .isEqualTo(NOW);
+                .isEqualTo(PERSISTED_NOW);
 
         ArgumentCaptor<List<ReviewScoreItem>> itemsCaptor =
                 ArgumentCaptor.forClass(List.class);
@@ -218,7 +229,8 @@ class ReviewSubmissionServiceImplTest {
                 );
         assertThat(assignment.getStatus())
                 .isEqualTo(ReviewAssignmentStatus.COMPLETED);
-        assertThat(assignment.getCompletedAt()).isEqualTo(NOW);
+        assertThat(assignment.getCompletedAt())
+                .isEqualTo(PERSISTED_NOW);
 
         InOrder lockOrder = inOrder(
                 reviewLinkAuthenticator,

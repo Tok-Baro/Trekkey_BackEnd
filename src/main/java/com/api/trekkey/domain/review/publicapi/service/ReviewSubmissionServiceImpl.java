@@ -26,6 +26,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,6 +61,7 @@ public class ReviewSubmissionServiceImpl
             ReviewSubmitReq req
     ) {
         LocalDateTime now = LocalDateTime.now(clock);
+        LocalDateTime persistedAt = now.truncatedTo(ChronoUnit.MICROS);
         String rawToken = req == null ? null : req.token();
         ContestJudge judge =
                 reviewLinkAuthenticator.authenticate(rawToken, now);
@@ -132,7 +134,7 @@ public class ReviewSubmissionServiceImpl
                 .assignment(assignment)
                 .totalScore(totalScore)
                 .comment(req.comment())
-                .submittedAt(now)
+                .submittedAt(persistedAt)
                 .build();
         List<ReviewScoreItem> scoreItems;
         try {
@@ -155,7 +157,7 @@ public class ReviewSubmissionServiceImpl
                             .REVIEW_SUBMISSION_DUPLICATED);
         }
 
-        if (!assignment.complete(now)) {
+        if (!assignment.complete(persistedAt)) {
             throw new CustomException(
                     ReviewErrorResponseCode
                             .REVIEW_SUBMISSION_STATE_INVALID);
