@@ -1,22 +1,16 @@
 # Trekkey 공모전·Credential 최종 ERD
 
-- 기준일: 2026-07-27
-- 상태: 목표 ERD 확정. 리뷰 도메인은 `REVIEW_ROUND`를 공식 심사 라운드 원장으로 사용한다.
+- 기준일: 2026-07-21
+- 상태: MVP 구현 기준
 - 통합 보기: [업무·블록체인 전체 ERD](./unified-erd.md)
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 상세 설계: [블록체인 앵커링 설계](./blockchain-anchoring-architecture.md)
-
-> 기존 `CONTEST_STAGE` 기반 리뷰 데이터가 있는 DB는 배포 전에
-> [Review Round DB 이전 안내](./review-domain-final-erd-alignment.md)에 따라
-> 명시적으로 이전해야 한다. Hibernate `ddl-auto=update`만으로는 기존 FK와
-> 데이터를 안전하게 전환할 수 없다.
 
 ## 1. 범위
 
 현재 ERD는 다음 기능을 구현 범위로 고정한다.
 
 - 학교/기관별 사용자와 대회 관리
-- 관리자 초대, 로그인 세션, 관리자 감사 로그
 - 팀 및 확정 팀원 명단 관리
 - 팀당 최종 제출물 한 건 관리
 - 0..N개의 Review Round와 라운드별 공식 결과 관리
@@ -79,18 +73,16 @@ erDiagram
     USER {
         bigint id PK "사용자 PK"
         bigint organizationId FK "현재 소속 학교"
-        string role "ROOT_ADMIN/ADMIN/PARTICIPANT"
+        string role "ADMIN/PARTICIPANT"
         string memberType "STUDENT/STAFF/FACULTY"
-        string memberStatus "PENDING_APPROVAL/ACTIVE/GRADUATED/WITHDRAWN/TRANSFERRED/INACTIVE"
+        string memberStatus "ACTIVE/GRADUATED/WITHDRAWN/TRANSFERRED/INACTIVE"
         string name "사용자 이름"
         string email UK "로그인 이메일"
         string passwordHash "비밀번호 해시"
-        string studentId "학교 내 학번, 조직 내 유일"
+        string studentId "학교 내 학번"
         string major "학과/전공"
         string department "교직원 부서"
         string position "교직원 직책"
-        int failedLoginCount "로그인 연속 실패 횟수"
-        datetime lockedUntil "로그인 잠금 해제 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -102,7 +94,7 @@ erDiagram
         bigint ownerUserId FK "담당 관리자"
         string title "대회명"
         string department "주관 부서 스냅샷"
-        string status "PREPARING/APPLICATION_OPEN/REVIEWING/AWARDED"
+        string status "DRAFT/PUBLISHED/COMPLETED/CANCELED"
         string participationType "TEAM/INDIVIDUAL/MIXED"
         int awardCount "예정 시상 수"
         datetime applicationStartsAt "신청 시작"
@@ -164,8 +156,9 @@ erDiagram
     TEAM_MEMBER {
         bigint id PK "팀 구성원 PK"
         bigint teamId FK "소속 팀"
-        bigint userId FK "구성 사용자, 가입 후 삭제 금지"
+        bigint userId FK "구성 사용자"
         string roleCode "LEADER/MEMBER"
+        datetime joinedAt "팀 참가 시각"
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
@@ -200,7 +193,7 @@ erDiagram
         bigint reviewRoundId FK "평가 라운드"
         bigint submissionId FK "대상 제출물"
         string status "ELIGIBLE/IN_REVIEW/SELECTED/NOT_SELECTED/WITHDRAWN/DISQUALIFIED"
-        decimal finalScore "확정 평균 점수, 무채점 수동은 null"
+        decimal finalScore "확정 합산 점수"
         int rankNo "라운드 확정 순위"
         string decisionType "RULE/MANUAL"
         bigint decidedByUserId FK "수동 판정 관리자"
@@ -277,65 +270,7 @@ erDiagram
     }
 ```
 
-## 3. 인증 및 관리 SQL ERD
-
-`ADMIN_INVITATION`과 `REFRESH_TOKEN`은 실제 인증 흐름에 참여하는 원장이다. `ADMIN_AUDIT_LOG`는 사용자나 조직이 삭제돼도 감사 증거를 남기기 위해 의도적으로 FK를 사용하지 않는다.
-
-```mermaid
-erDiagram
-    ORGANIZATION ||--o{ ADMIN_INVITATION : issues_invite
-    USER ||--o{ ADMIN_INVITATION : invited_by
-    USER ||--o{ REFRESH_TOKEN : holds
-
-    ORGANIZATION {
-        bigint id PK "학교/기관 PK"
-    }
-
-    USER {
-        bigint id PK "사용자 PK"
-    }
-
-    ADMIN_INVITATION {
-        bigint id PK "관리자 초대 PK"
-        bigint organizationId FK "초대 발급 학교"
-        bigint invitedByUserId FK "발급한 ROOT_ADMIN"
-        string email "초대 대상 이메일"
-        string tokenHash UK "초대 토큰 SHA-256"
-        string status "ISSUED/USED/EXPIRED/REVOKED"
-        datetime expiresAt "초대 만료"
-        datetime usedAt "가입 사용 시각"
-        datetime createdAt "생성 시각"
-        datetime updatedAt "수정 시각"
-    }
-
-    ADMIN_AUDIT_LOG {
-        bigint id PK "관리자 감사 로그 PK"
-        bigint userId "행위자 ID, FK 미사용"
-        bigint organizationId "행위 조직 ID, FK 미사용"
-        string action "카테고리.행위"
-        string targetType "대상 유형"
-        bigint targetId "대상 PK"
-        string detail "비민감 변경 요약"
-        string clientIp "요청 IP"
-        datetime createdAt "생성 시각"
-        datetime updatedAt "수정 시각"
-    }
-
-    REFRESH_TOKEN {
-        bigint id PK "리프레시 토큰 PK"
-        bigint userId FK "토큰 소유 사용자"
-        string tokenHash UK "토큰 SHA-256"
-        string familyId "로그인 세션 계보"
-        bool revoked "폐기 여부"
-        datetime expiresAt "토큰 만료"
-        datetime createdAt "생성 시각"
-        datetime updatedAt "수정 시각"
-    }
-```
-
-상세 인증·관리 정책은 [`ADMIN_SECURITY.md`](./ADMIN_SECURITY.md)를 따른다.
-
-## 4. Credential 및 앵커링 SQL ERD
+## 3. Credential 및 앵커링 SQL ERD
 
 온체인 mapping은 SQL 테이블이 아니다. 아래 `ANC_*` 테이블은 Credential 스냅샷, Merkle proof, 학교 승인 서명, Kaia 트랜잭션 영수증을 저장하는 off-chain 원장이다.
 
@@ -352,7 +287,7 @@ erDiagram
     ANC_CREDENTIAL ||--|{ ANC_CREDENTIAL_SUBJECT : snapshots
     USER o|--o{ ANC_CREDENTIAL_SUBJECT : identifies
     TEAM o|--o{ ANC_CREDENTIAL_SUBJECT : represents
-    ANC_CREDENTIAL ||--o| ANC_CREDENTIAL_STATUS_EVENT : changes
+    ANC_CREDENTIAL ||--o{ ANC_CREDENTIAL_STATUS_EVENT : changes
     ANC_CREDENTIAL o|--o{ ANC_CREDENTIAL_STATUS_EVENT : supersedes_with
     USER o|--o{ ANC_CREDENTIAL_STATUS_EVENT : acts
     ANC_ISSUER_KEY ||--o{ ANC_CREDENTIAL_STATUS_EVENT : approves
@@ -512,13 +447,10 @@ erDiagram
         string contractVersion "계약 버전"
         binary txHash "트랜잭션 해시 BINARY(32)"
         bigint txNonce "relayer nonce"
-        binary relayerAddress "relayer 주소 BINARY(20)"
-        blob signedRawTransaction "재방송할 서명 raw transaction"
-        datetime preparedAt "raw transaction 선저장 시각"
         bigint blockNumber "확정 블록 번호"
         binary blockHash "확정 블록 해시 BINARY(32)"
         int eventLogIndex "계약 이벤트 log index"
-        string status "PENDING/PREPARED/SUBMITTED/CONFIRMED/UNKNOWN/FAILED"
+        string status "PENDING/SUBMITTED/CONFIRMED/UNKNOWN/FAILED"
         string lastErrorCode "마지막 오류 코드"
         datetime submittedAt "전송 시각"
         datetime confirmedAt "확정 시각"
@@ -546,7 +478,7 @@ erDiagram
     }
 ```
 
-## 5. 업무 원장 규칙
+## 4. 업무 원장 규칙
 
 ### 사용자 조회
 
@@ -556,11 +488,8 @@ erDiagram
 
 ### 대회 일정과 상태
 
-- `CONTEST.status`는
-  `PREPARING/APPLICATION_OPEN/REVIEWING/AWARDED` 운영 상태를 저장한다.
-- 일반 대회 생성·수정 API는 `AWARDED`로 직접 진입하거나
-  `AWARDED`에서 다른 상태로 되돌릴 수 없다. 최신 수상 후보 검증을
-  통과한 수상 확정 트랜잭션만 `AWARDED`로 전환한다.
+- `CONTEST.status`는 `DRAFT/PUBLISHED/COMPLETED/CANCELED` 관리 상태만 저장한다.
+- 신청 전, 신청 중, 제출 중, 심사 중, 수상 완료 같은 화면 단계는 일정, 열린 Review Round, 확정 AWARD로 계산하며 별도 상태로 중복 저장하지 않는다.
 - `applicationStartsAt < applicationEndsAt <= submissionDueAt`을 검사한다.
 - 승인된 팀은 `submissionDueAt`까지 같은 제출물을 등록하고 수정할 수 있다.
 - 신청, 제출, 시상을 표현하는 별도 Stage row는 만들지 않는다.
@@ -571,9 +500,6 @@ erDiagram
 - `TEAM.leaderUserId`는 현재 팀원이며 `roleCode = LEADER`여야 한다.
 - 팀에 가입한 `TEAM_MEMBER`는 이탈하거나 삭제하지 않는다.
 - 팀원 추가는 `participationFinalizedAt` 전까지만 허용하고, 확정 이후에는 추가와 역할 변경도 거부한다.
-- 명단 확정 뒤에는 신청 상태도 바꿀 수 없다. 심사 탈락 처리가 필요하면
-  TEAM을 다시 반려하지 않고 REVIEW_ROUND_ENTRY의
-  `DISQUALIFIED` 판정과 Credential 상태 변경 흐름을 사용한다.
 - 구성원을 잘못 등록한 신청은 팀 자체를 반려하고 다시 신청한다.
 - `TEAM.memberCount`는 조회용 캐시이고 원장은 `TEAM_MEMBER`다.
 - 상장은 팀 단위 `AWARD` 및 Credential 한 건으로 발급하고, 모든 구성원은 같은 수상을 참조한다.
@@ -593,23 +519,14 @@ erDiagram
 
 - `UNIQUE REVIEW_ROUND (contestId, roundNo)`이고 `roundNo >= 1`이어야 한다.
 - `roundNo`는 1부터 빈 번호 없이 이어지도록 대회 설정 트랜잭션에서 검사한다.
-- 라운드를 열 때 낮은 번호의 모든 라운드가 `FINALIZED`인지 확인하고,
-  같은 대회의 다른 `OPEN` 라운드가 있으면 거부한다.
 - `UNIQUE REVIEW_ROUND_ENTRY (reviewRoundId, submissionId)`.
 - `startsAt < endsAt`이어야 한다.
 - 첫 Review Round의 `startsAt`은 `CONTEST.submissionDueAt`보다 빠를 수 없다.
 - `decisionRule = TOP_N`이면 `selectCount > 0`만, `MIN_SCORE`이면 `minScore >= 0`만 사용하고 `MANUAL`이면 둘 다 null이어야 한다.
 - `PREVIOUS_SELECTED`는 2라운드부터 가능하며 직전 `roundNo`가 `FINALIZED`이고 동일 제출물이 `SELECTED`인지 검사한다.
-- 심사위원 배정에 ENTRY 식별자가 필요하므로 `PREPARING`에서 `ELIGIBLE` ENTRY를 초안으로 준비할 수 있다. `OPEN` 트랜잭션은 현재 대상 집합을 다시 검증하고 대상 `SUBMISSION.finalizedAt`을 확정한 뒤 ENTRY를 `IN_REVIEW`로 전환한다.
-- `OPEN` 전에 모든 대상 TEAM의 `participationFinalizedAt`이 있어야
-  한다.
-- 종료 시각이 지난 `OPEN` 라운드는 일반 설정 수정이 아니라 전용
-  연장 API로만 현재와 기존 종료 시각보다 뒤의 시각까지 연장한다.
-- `ALL_SUBMISSIONS` 초안과 현재 승인·제출 완료 작품 집합이 다르면 `OPEN`을 거부한다. 관리자는 대상을 다시 동기화하거나, 채점 이력이 없는 준비 단계에서 미완료 배정과 ENTRY를 초기화한 뒤 다시 준비한다.
+- 라운드를 `OPEN`으로 전환할 때 대상 ENTRY를 생성하고 대상 `SUBMISSION.finalizedAt`을 확정해 이후 수정을 거부한다.
 - `SELECTED`, `NOT_SELECTED`, `WITHDRAWN`, `DISQUALIFIED`는 `finalizedAt`이 필수다.
 - `decisionType = MANUAL`이면 `decidedByUserId`와 `decisionReason`이 필수다.
-- 무채점 수동 라운드의 `finalScore`는 null이며 모든 ENTRY에 중복 없는
-  연속 순위 `1..N`이 필요하다.
 - `FINALIZED` 라운드의 ENTRY, 평가 기준, 심사 배정, 제출된 심사 결과는 수정 및 삭제할 수 없다.
 - `UNIQUE REVIEW_ASSIGNMENT (contestJudgeId, reviewRoundEntryId)`.
 - 심사 배정 생성 시 judge의 대회와 ENTRY 라운드의 대회가 같은지 트랜잭션 안에서 검사한다.
@@ -622,15 +539,13 @@ erDiagram
 
 - `UNIQUE AWARD (reviewRoundEntryId)`.
 - 대회에 설정된 가장 높은 `roundNo`의 Review Round가 `FINALIZED`일 때, 그 라운드의 `SELECTED REVIEW_ROUND_ENTRY`만 수상의 공식 원천이 된다.
-- 심사 없이 수동 선정하는 대회도 `targetType = MANUAL`, `decisionRule = MANUAL`인 Review Round 한 건을 생성한다. 이 조합은 평가 기준과 심사 배정을 만들지 않으며, 관리자는 모든 ENTRY의 판정 사유와 중복 없는 1..N 수동 순위를 함께 확정한다.
+- 심사 없이 수동 선정하는 대회도 `targetType = MANUAL`, `decisionRule = MANUAL`인 Review Round 한 건을 생성한다.
 - `AWARD.teamId`는 조회용 비정규화 FK이며 `ENTRY -> SUBMISSION -> TEAM`과 항상 같아야 한다.
 - `AWARD.awardRankNo`는 라운드 순위가 아니라 상장에 표시할 수상 순위다.
-- 후보 산출 후 `awardCount` 또는 마지막 라운드의 선정 결과가 바뀌면
-  확정을 거부하고 후보 재산출을 요구한다.
 - AWARD가 하나라도 `CONFIRMED`된 뒤에는 Review Round를 추가, 삭제, 재정렬할 수 없다.
 - `NOT_SELECTED`, `WITHDRAWN`, `DISQUALIFIED` ENTRY에는 수상을 확정할 수 없다.
 
-## 6. Credential 및 앵커 원장 규칙
+## 5. Credential 및 앵커 원장 규칙
 
 ### 다형성 FK
 
@@ -645,12 +560,9 @@ erDiagram
 - `UNIQUE ANC_CREDENTIAL (issuerOrganizationId, credentialNo)`.
 - `UNIQUE ANC_CREDENTIAL_SOURCE (sourceFingerprint)`.
 - `UNIQUE ANC_CREDENTIAL_SUBJECT (credentialId, subjectOrder)`.
-- `UNIQUE ANC_CREDENTIAL_SUBJECT (credentialId, subjectRef, roleCode)`.
-- `UNIQUE ANC_CREDENTIAL_STATUS_EVENT (credentialId)`. V1 상태 변경은 Credential당 한 번만 허용한다.
 - `UNIQUE ANC_BATCH_ITEM (credentialId)`. 한 Credential은 하나의 sealed batch에만 들어간다.
 - `UNIQUE ANC_BATCH_ITEM (batchId, leafIndex)`.
 - `UNIQUE ANC_CHAIN_TRANSACTION (chainId, txHash)`는 `txHash IS NOT NULL`일 때 적용한다.
-- `UNIQUE ANC_CHAIN_TRANSACTION (chainId, relayerAddress, txNonce)`는 nonce가 준비된 경우 적용한다.
 - `UNIQUE ANC_CHAIN_TRANSACTION (chainId, txHash, eventLogIndex)`는 event가 확인된 경우 적용한다.
 
 ### 중복 발급 방지
@@ -665,25 +577,22 @@ erDiagram
 
 - Credential 발급 트랜잭션은 source, subject, canonical bytes를 모두 저장한 뒤 바로 `READY`로 생성한다. 별도 `DRAFT` 상태는 사용하지 않는다.
 - `READY` 이후 payload, canonical bytes, hash, source, subject는 수정하지 않는다.
-- sealed batch의 item, 순서, root는 수정하지 않는다. 만료·실패 승인만 전용 갱신 API에서 nonce, deadline, typed data, digest, signature를 교체한다.
-- raw transaction, relayer 주소, nonce, tx hash는 broadcast 전에 `PREPARED`로 선저장한다.
-- broadcast 응답 유실과 receipt timeout은 `FAILED`가 아니라 `UNKNOWN`이다. 새 nonce를 만들지 않고 저장된 tx hash를 조회하며, 미확정 상태가 지속되면 저장된 동일 raw transaction만 간격을 두고 재방송한다.
-- receipt revert 또는 readback 불일치는 transaction `FAILED`, outbox `DEAD`로 남긴다.
-- 온체인에는 성공했지만 로컬 처리가 실패한 경우, 별도 reconciliation API가 온체인 값 전체 일치를 확인한 뒤 업무 상태만 수렴시킨다. 실패 transaction/outbox 원장은 보존한다.
+- sealed batch의 item, 순서, root, 서명 payload는 수정하지 않는다.
+- RPC timeout은 `FAILED`가 아니라 `UNKNOWN`이다. 재전송 전 온체인 batch/status를 조회한다.
 - V1은 batch 전체 revoke를 지원하지 않고 개별 Credential `REVOKED`와 `SUPERSEDED`만 지원한다.
 - 대체 발급은 새 Credential 앵커 확인 후 기존 Credential을 `SUPERSEDED` 처리한다.
 
-## 7. JPA 및 구현 기준
+## 6. JPA 및 구현 기준
 
-- 업무 도메인은 단방향 `ManyToOne(fetch = FetchType.LAZY)`를 우선한다. 앵커링 모듈은 장기 증거의 불변성과 모듈 경계를 위해 FK ID를 scalar로 보관한다.
+- 자식 엔티티의 단방향 `ManyToOne(fetch = FetchType.LAZY)`를 우선한다.
 - 초기 구현에서는 `@ManyToMany`와 부모 컬렉션 양방향 매핑을 사용하지 않는다.
 - 목록 조회는 DTO projection, fetch join, `@EntityGraph`, batch size를 목적에 맞게 사용한다.
 - FK와 위 UNIQUE 선두 컬럼에는 인덱스를 둔다.
-- 업무 원천 확정과 내부 `CredentialIssuanceService.issue()` 호출은 같은 DB 트랜잭션에 참여시킨다.
-- 학교 승인 서명 저장과 chain transaction·anchor outbox 생성은 한 DB 트랜잭션으로 처리한다.
-- 학교 issuer private key는 백엔드에 저장하지 않는다. Kairos 개발용 relayer만 환경변수를 사용하고 운영 relayer는 KMS/HSM adapter로 교체한다.
+- 업무 상태 변경과 domain outbox 저장은 한 DB 트랜잭션으로 처리한다.
+- batch seal과 anchor outbox 저장도 한 DB 트랜잭션으로 처리한다.
+- private key는 DB, 소스, 일반 환경변수에 저장하지 않고 KMS/HSM 또는 격리 signer를 사용한다.
 
-## 8. 후속 확장
+## 7. 후속 확장
 
 | 요구사항 | 확장 시 추가할 모델 |
 | --- | --- |
