@@ -1,6 +1,6 @@
 # Trekkey 통합 ERD
 
-- 기준일: 2026-07-27
+- 기준일: 2026-07-28
 - 상태: 합의된 목표 ERD. 현재 `develop` 구현과의 차이는 아래 전환 경계를 따른다.
 - 범위: 업무 SQL 16개 + 인증·관리 SQL 3개 + Credential·앵커링 SQL 9개 = 총 28개
 - [확대용 SVG 열기](./assets/trekkey-unified-erd.svg)
@@ -9,7 +9,11 @@
 
 팀 회의에서 업무 SQL과 앵커링 SQL을 한 캔버스로 보기 위한 통합 뷰다. `ANC_*`도 MySQL 테이블이며, Kaia에는 이 테이블이 생성되지 않는다. Kaia는 issuer key, Merkle root, Credential 폐기·대체 상태만 보관한다. 실제 컬럼과 제약을 수정할 때는 분리 원장인 `erd.md`를 먼저 갱신하고 이 뷰를 동기화한다.
 
-> 이 문서는 합의된 **목표 스키마**다. 2026-07-27 PR #9가 `develop`에 병합됐지만 실행 코드는 아직 `CONTEST_STAGE`/`CONTEST_STAGE_ENTRY`를 사용한다. `REVIEW_ROUND`/`REVIEW_ROUND_ENTRY`는 후속 심사 모델 전환 PR이 병합되기 전까지 현재 DB 스키마가 아니다. 현재 코드 검증에는 `develop`을, 다음 모델 구현에는 이 문서를 사용한다.
+> 이 문서는 합의된 **목표 스키마**이며 현재 리뷰 실행 코드는
+> `REVIEW_ROUND`/`REVIEW_ROUND_ENTRY`를 사용한다. 신청·제출 같은
+> 비리뷰 일정만 기존 `CONTEST_STAGE`에 남아 있다.
+> `origin/develop`의 `CONTEST_STAGE_ENTRY` 구조는 기존 공유 DB를
+> 전환하는 마이그레이션 기준으로만 사용한다.
 
 ```mermaid
 erDiagram
@@ -98,7 +102,7 @@ erDiagram
         bigint ownerUserId FK "담당 관리자"
         string title "대회명"
         string department "주관 부서 스냅샷"
-        string status "DRAFT/PUBLISHED/COMPLETED/CANCELED"
+        string status "PREPARING/APPLICATION_OPEN/REVIEWING/AWARDED"
         string participationType "TEAM/INDIVIDUAL/MIXED"
         int awardCount "예정 시상 수"
         datetime applicationStartsAt "신청 시작"
@@ -196,7 +200,7 @@ erDiagram
         bigint reviewRoundId FK "평가 라운드"
         bigint submissionId FK "대상 제출물"
         string status "ELIGIBLE/IN_REVIEW/SELECTED/NOT_SELECTED/WITHDRAWN/DISQUALIFIED"
-        decimal finalScore "확정 합산 점수"
+        decimal finalScore "확정 평균 점수, 무채점 수동은 null"
         int rankNo "라운드 확정 순위"
         string decisionType "RULE/MANUAL"
         bigint decidedByUserId FK "수동 판정 관리자"

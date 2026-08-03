@@ -25,12 +25,13 @@ public class AwardAdminController {
     private final AwardAdminService awardAdminService;
 
     @ApiErrorCodeExamples(value = AwardErrorResponseCode.class, codes = {
-            "AWARD_ROUND_NOT_FINALIZED", "AWARD_NO_PASSED_ENTRY", "AWARD_ALREADY_CONFIRMED"})
-    @PostMapping("/api/admin/stages/{stageId}/awards")
+            "AWARD_FINAL_ROUND_REQUIRED", "AWARD_ROUND_NOT_FINALIZED",
+            "AWARD_NO_PASSED_ENTRY", "AWARD_ALREADY_CONFIRMED"})
+    @PostMapping("/api/admin/review-rounds/{roundId}/awards")
     public ResponseEntity<SuccessResponse<List<AwardRes>>> calculateAwards(
             @AuthenticationPrincipal AuthPrincipal authPrincipal,
-            @PathVariable Long stageId) {
-        List<AwardRes> response = awardAdminService.calculateAwards(authPrincipal.getId(), stageId);
+            @PathVariable Long roundId) {
+        List<AwardRes> response = awardAdminService.calculateAwards(authPrincipal.getId(), roundId);
 
         return ResponseEntity.ok(SuccessResponse.okCustom(response,
                 response.size() + "건의 수상 후보를 확정 순위 기준으로 산출했습니다."));
@@ -45,7 +46,12 @@ public class AwardAdminController {
                 awardAdminService.getAwards(authPrincipal.getId(), contestPublicId)));
     }
 
-    @ApiErrorCodeExamples(value = AwardErrorResponseCode.class, codes = {"AWARD_NO_CANDIDATE"})
+    @ApiErrorCodeExamples(value = AwardErrorResponseCode.class, codes = {
+            "AWARD_FINAL_ROUND_REQUIRED",
+            "AWARD_ROUND_NOT_FINALIZED",
+            "AWARD_NO_CANDIDATE",
+            "AWARD_CANDIDATES_STALE"
+    })
     @PostMapping("/api/admin/contests/{contestPublicId}/awards/confirm")
     public ResponseEntity<SuccessResponse<List<AwardRes>>> confirmAwards(
             @AuthenticationPrincipal AuthPrincipal authPrincipal,

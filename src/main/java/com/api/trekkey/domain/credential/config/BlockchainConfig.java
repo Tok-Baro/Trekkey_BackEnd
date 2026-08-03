@@ -1,6 +1,5 @@
 package com.api.trekkey.domain.credential.config;
 
-import java.time.Clock;
 import java.security.SecureRandom;
 import org.springframework.context.annotation.Bean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -11,11 +10,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 @EnableConfigurationProperties(BlockchainProperties.class)
 public class BlockchainConfig {
-
-    @Bean
-    public Clock credentialClock() {
-        return Clock.systemUTC();
-    }
 
     @Bean
     public SecureRandom approvalSecureRandom() {

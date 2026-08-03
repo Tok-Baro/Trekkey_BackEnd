@@ -84,7 +84,7 @@ erDiagram
         bigint ownerUserId FK "담당 관리자"
         string title "대회명"
         string department "주관 부서 스냅샷"
-        string status "DRAFT/PUBLISHED/COMPLETED/CANCELED"
+        string status "PREPARING/APPLICATION_OPEN/REVIEWING/AWARDED"
         string participationType "TEAM/INDIVIDUAL/MIXED"
         int awardCount "예정 시상 수"
         datetime applicationStartsAt "신청 시작"
@@ -182,7 +182,7 @@ erDiagram
         bigint reviewRoundId FK "평가 라운드"
         bigint submissionId FK "대상 제출물"
         string status "ELIGIBLE/IN_REVIEW/SELECTED/NOT_SELECTED/WITHDRAWN/DISQUALIFIED"
-        decimal finalScore "확정 합산 점수"
+        decimal finalScore "확정 평균 점수, 무채점 수동은 null"
         int rankNo "라운드 확정 순위"
         string decisionType "RULE/MANUAL"
         bigint decidedByUserId FK "수동 판정 관리자"
@@ -450,6 +450,3 @@ erDiagram
         datetime createdAt "생성 시각"
         datetime updatedAt "수정 시각"
     }
-
-
-

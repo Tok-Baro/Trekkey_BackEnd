@@ -26,42 +26,120 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Table(
+        name = "review_assignment",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_assignment_judge_entry",
-                columnNames = {"contest_judge_id", "contest_stage_entry_id"}))
+                name = "uk_review_assignment_judge_entry",
+                columnNames = {
+                        "contest_judge_id",
+                        "review_round_entry_id"
+                }))
 public class ReviewAssignment extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    // 심사 배정 PK
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "contest_judge_id", nullable = false)
-    // 배정 심사위원
     private ContestJudge contestJudge;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "contest_stage_entry_id", nullable = false)
-    // 라운드별 심사 대상 (공식 판정 원장 기준 — erd-mvp)
-    private ContestStageEntry contestStageEntry;
+    @JoinColumn(name = "review_round_entry_id", nullable = false)
+    private ReviewRoundEntry reviewRoundEntry;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    // 배정 상태
-    private AssignmentStatus status;
+    @Column(nullable = false, length = 30)
+    private ReviewAssignmentStatus status;
 
     @Column(name = "assigned_at", nullable = false)
-    // 배정 시각
     private LocalDateTime assignedAt;
 
+    @Column(name = "due_at")
+    private LocalDateTime dueAt;
+
     @Column(name = "completed_at")
-    // 심사 완료 시각
     private LocalDateTime completedAt;
 
-    // 심사 제출 완료 — 이후 이 배정의 REVIEW는 불변이다
-    public void complete(LocalDateTime now) {
-        this.status = AssignmentStatus.COMPLETED;
-        this.completedAt = now;
+    public boolean complete(LocalDateTime completedAt) {
+        if (completedAt == null
+                || status != ReviewAssignmentStatus.ASSIGNED) {
+            return false;
+        }
+        this.status = ReviewAssignmentStatus.COMPLETED;
+        this.completedAt = completedAt;
+        return true;
+    }
+
+    public boolean cancel() {
+        if (status != ReviewAssignmentStatus.ASSIGNED) {
+            return false;
+        }
+        this.status = ReviewAssignmentStatus.CANCELED;
+        return true;
+    }
+
+    public boolean reassign(
+            LocalDateTime assignedAt,
+            LocalDateTime dueAt
+    ) {
+        if (assignedAt == null
+                || status != ReviewAssignmentStatus.CANCELED) {
+            return false;
+        }
+        this.status = ReviewAssignmentStatus.ASSIGNED;
+        this.assignedAt = assignedAt;
+        this.dueAt = dueAt;
+        this.completedAt = null;
+        return true;
+    }
+
+    public boolean updateDueAt(LocalDateTime dueAt) {
+        if (dueAt == null
+                || status != ReviewAssignmentStatus.ASSIGNED) {
+            return false;
+        }
+        this.dueAt = dueAt;
+        return true;
+    }
+
+    public boolean isAvailableAt(LocalDateTime now) {
+        return status == ReviewAssignmentStatus.ASSIGNED
+                && (dueAt == null || now.isBefore(dueAt));
+    }
+
+    public boolean isVisibleToJudgeAt(LocalDateTime now) {
+        if (now == null
+                || !hasConsistentContestScope()
+                || reviewRoundEntry == null
+                || reviewRoundEntry.getReviewRound() == null
+                || !reviewRoundEntry.getReviewRound().isOpenAt(now)) {
+            return false;
+        }
+        return status == ReviewAssignmentStatus.COMPLETED
+                || isAvailableAt(now);
+    }
+
+    private boolean hasConsistentContestScope() {
+        if (contestJudge == null
+                || contestJudge.getContest() == null
+                || contestJudge.getContest().getId() == null
+                || reviewRoundEntry == null
+                || reviewRoundEntry.getReviewRound() == null
+                || reviewRoundEntry.getReviewRound().getContest() == null
+                || reviewRoundEntry.getSubmission() == null
+                || reviewRoundEntry.getSubmission().getTeam() == null
+                || reviewRoundEntry.getSubmission()
+                .getTeam()
+                .getContest() == null) {
+            return false;
+        }
+        Long contestId = contestJudge.getContest().getId();
+        return contestId.equals(
+                reviewRoundEntry.getReviewRound().getContest().getId())
+                && contestId.equals(
+                reviewRoundEntry.getSubmission()
+                        .getTeam()
+                        .getContest()
+                        .getId());
     }
 }

@@ -13,17 +13,16 @@ import com.api.trekkey.domain.award.entity.Award;
 import com.api.trekkey.domain.award.entity.AwardStatus;
 import com.api.trekkey.domain.award.repository.AwardRepository;
 import com.api.trekkey.domain.contest.entity.Contest;
-import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
-import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
-import com.api.trekkey.domain.contest.repository.ContestStageRepository;
 import com.api.trekkey.domain.organization.entity.Organization;
-import com.api.trekkey.domain.review.entity.ContestStageEntry;
-import com.api.trekkey.domain.review.entity.EntryStatus;
-import com.api.trekkey.domain.review.repository.ContestStageEntryRepository;
+import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
+import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
 import com.api.trekkey.domain.submission.repository.SubmissionRepository;
@@ -86,10 +85,10 @@ class TeamApplicationServiceImplTest {
     private SubmissionRepository submissionRepository;
 
     @Mock
-    private ContestStageRepository contestStageRepository;
+    private ReviewRoundRepository reviewRoundRepository;
 
     @Mock
-    private ContestStageEntryRepository contestStageEntryRepository;
+    private ReviewRoundEntryRepository reviewRoundEntryRepository;
 
     @Mock
     private AwardRepository awardRepository;
@@ -218,15 +217,15 @@ class TeamApplicationServiceImplTest {
                 .status(SubmissionStatus.SUBMITTED)
                 .submittedAt(submittedAt)
                 .build();
-        ContestStage reviewStage = ContestStage.builder()
+        ReviewRound reviewRound = ReviewRound.builder()
                 .id(50L)
                 .name("2차 심사")
-                .sequenceNo(4)
+                .roundNo(2)
                 .build();
-        ContestStageEntry entry = ContestStageEntry.builder()
-                .contestStage(reviewStage)
+        ReviewRoundEntry entry = ReviewRoundEntry.builder()
+                .reviewRound(reviewRound)
                 .submission(submission)
-                .status(EntryStatus.PASSED)
+                .status(ReviewRoundEntryStatus.SELECTED)
                 .finalizedAt(reviewedAt)
                 .build();
         Award award = Award.builder()
@@ -240,15 +239,12 @@ class TeamApplicationServiceImplTest {
         given(teamMemberRepository.findWithTeamAndContestByUserIdAndContestPublicId(
                 10L, "contest-public-id"))
                 .willReturn(Optional.of(membership));
-        given(contestStageRepository.findAllByContestIdAndStageTypeInOrderBySequenceNoAsc(
-                20L,
-                Set.of(
-                        StageType.REVIEW,
-                        StageType.PRESENTATION)))
-                .willReturn(List.of(reviewStage));
+        given(reviewRoundRepository
+                .findAllByContestIdOrderByRoundNoAsc(20L))
+                .willReturn(List.of(reviewRound));
         given(submissionRepository.findByTeamId(30L)).willReturn(Optional.of(submission));
-        given(contestStageEntryRepository
-                .findAllWithStageBySubmissionIdOrderBySequenceNoAsc(40L))
+        given(reviewRoundEntryRepository
+                .findAllWithRoundBySubmissionIdOrderByRoundNoAsc(40L))
                 .willReturn(List.of(entry));
         given(awardRepository.findFirstByTeamIdAndStatusOrderByAwardRankNoAsc(
                 30L, AwardStatus.CONFIRMED))
@@ -314,35 +310,32 @@ class TeamApplicationServiceImplTest {
                 .status(SubmissionStatus.SUBMITTED)
                 .submittedAt(LocalDateTime.of(2026, 7, 22, 18, 30))
                 .build();
-        ContestStage firstReviewStage = ContestStage.builder()
+        ReviewRound firstReviewRound = ReviewRound.builder()
                 .id(50L)
                 .name("1차 심사")
-                .sequenceNo(3)
+                .roundNo(1)
                 .build();
-        ContestStage secondReviewStage = ContestStage.builder()
+        ReviewRound secondReviewRound = ReviewRound.builder()
                 .id(51L)
                 .name("2차 심사")
-                .sequenceNo(4)
+                .roundNo(2)
                 .build();
-        ContestStageEntry firstEntry = ContestStageEntry.builder()
-                .contestStage(firstReviewStage)
+        ReviewRoundEntry firstEntry = ReviewRoundEntry.builder()
+                .reviewRound(firstReviewRound)
                 .submission(submission)
-                .status(EntryStatus.PASSED)
+                .status(ReviewRoundEntryStatus.SELECTED)
                 .finalizedAt(LocalDateTime.of(2026, 7, 25, 14, 0))
                 .build();
 
         given(teamMemberRepository.findWithTeamAndContestByUserIdAndContestPublicId(
                 10L, "contest-public-id"))
                 .willReturn(Optional.of(membership));
-        given(contestStageRepository.findAllByContestIdAndStageTypeInOrderBySequenceNoAsc(
-                20L,
-                Set.of(
-                        StageType.REVIEW,
-                        StageType.PRESENTATION)))
-                .willReturn(List.of(firstReviewStage, secondReviewStage));
+        given(reviewRoundRepository
+                .findAllByContestIdOrderByRoundNoAsc(20L))
+                .willReturn(List.of(firstReviewRound, secondReviewRound));
         given(submissionRepository.findByTeamId(30L)).willReturn(Optional.of(submission));
-        given(contestStageEntryRepository
-                .findAllWithStageBySubmissionIdOrderBySequenceNoAsc(40L))
+        given(reviewRoundEntryRepository
+                .findAllWithRoundBySubmissionIdOrderByRoundNoAsc(40L))
                 .willReturn(List.of(firstEntry));
 
         Step reviewStep = teamApplicationService
@@ -394,7 +387,7 @@ class TeamApplicationServiceImplTest {
         assertThat(result.steps())
                 .extracting(Step::description)
                 .containsExactly("접수 완료", "검토 중", "제출 전", "심사 대기", "발표 전");
-        verifyNoInteractions(contestStageEntryRepository, awardRepository);
+        verifyNoInteractions(reviewRoundEntryRepository, awardRepository);
     }
 
     @Test
@@ -412,8 +405,8 @@ class TeamApplicationServiceImplTest {
 
         verifyNoInteractions(
                 submissionRepository,
-                contestStageRepository,
-                contestStageEntryRepository,
+                reviewRoundRepository,
+                reviewRoundEntryRepository,
                 awardRepository);
     }
 

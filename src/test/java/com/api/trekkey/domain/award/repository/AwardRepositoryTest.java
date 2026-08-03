@@ -5,16 +5,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.api.trekkey.domain.award.entity.Award;
 import com.api.trekkey.domain.award.entity.AwardStatus;
 import com.api.trekkey.domain.contest.entity.Contest;
-import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
-import com.api.trekkey.domain.contest.entity.StageStatus;
-import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.organization.entity.OrganizationStatus;
-import com.api.trekkey.domain.review.entity.ContestStageEntry;
-import com.api.trekkey.domain.review.entity.EntryStatus;
-import com.api.trekkey.domain.review.repository.ContestStageEntryRepository;
+import com.api.trekkey.domain.review.entity.ReviewDecisionType;
+import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundDecisionRule;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
+import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionStatus;
 import com.api.trekkey.domain.team.entity.Team;
@@ -52,7 +54,7 @@ class AwardRepositoryTest {
     private TeamMemberRepository teamMemberRepository;
 
     @Autowired
-    private ContestStageEntryRepository contestStageEntryRepository;
+    private ReviewRoundEntryRepository reviewRoundEntryRepository;
 
     @Test
     void confirmedTeamAwardIsVisibleToLeaderAndMember() {
@@ -109,38 +111,57 @@ class AwardRepositoryTest {
                 .status(SubmissionStatus.SUBMITTED)
                 .submittedAt(NOW.minusDays(1))
                 .build());
-        ContestStage firstStage = entityManager.persist(ContestStage.builder()
-                .contest(contest)
-                .name("1차 심사")
-                .stageType(StageType.REVIEW)
-                .sequenceNo(1)
-                .status(StageStatus.COMPLETED)
-                .build());
-        ContestStageEntry firstEntry = ContestStageEntry.builder()
-                .contestStage(firstStage)
+        ReviewRound firstRound = entityManager.persist(
+                ReviewRound.builder()
+                        .contest(contest)
+                        .roundNo(1)
+                        .name("1차 심사")
+                        .status(ReviewRoundStatus.FINALIZED)
+                        .startsAt(NOW.minusDays(4))
+                        .endsAt(NOW.minusDays(3))
+                        .targetType(
+                                ReviewRoundTargetType.ALL_SUBMISSIONS)
+                        .decisionRule(
+                                ReviewRoundDecisionRule.TOP_N)
+                        .selectCount(1)
+                        .finalizedAt(NOW.minusHours(1))
+                        .build());
+        ReviewRoundEntry firstEntry = ReviewRoundEntry.builder()
+                .reviewRound(firstRound)
                 .submission(submission)
-                .status(EntryStatus.IN_REVIEW)
+                .status(ReviewRoundEntryStatus.SELECTED)
+                .finalScore(new BigDecimal("90.0"))
+                .rankNo(1)
+                .decisionType(ReviewDecisionType.RULE)
+                .finalizedAt(NOW.minusHours(1))
                 .build();
-        firstEntry.finalizeByRule(new BigDecimal("90.0"), 1, EntryStatus.PASSED, NOW.minusHours(1));
         entityManager.persist(firstEntry);
 
-        ContestStage finalStage = entityManager.persist(ContestStage.builder()
+        ReviewRound finalRound = entityManager.persist(ReviewRound.builder()
                 .contest(contest)
+                .roundNo(2)
                 .name("최종 심사")
-                .stageType(StageType.REVIEW)
-                .sequenceNo(2)
-                .status(StageStatus.COMPLETED)
+                .status(ReviewRoundStatus.FINALIZED)
+                .startsAt(NOW.minusDays(2))
+                .endsAt(NOW.minusDays(1))
+                .targetType(ReviewRoundTargetType.PREVIOUS_SELECTED)
+                .decisionRule(ReviewRoundDecisionRule.TOP_N)
+                .selectCount(1)
+                .finalizedAt(NOW)
                 .build());
-        ContestStageEntry entry = ContestStageEntry.builder()
-                .contestStage(finalStage)
+        ReviewRoundEntry entry = ReviewRoundEntry.builder()
+                .reviewRound(finalRound)
                 .submission(submission)
-                .status(EntryStatus.IN_REVIEW)
+                .status(ReviewRoundEntryStatus.SELECTED)
+                .finalScore(new BigDecimal("95.0"))
+                .rankNo(1)
+                .decisionType(ReviewDecisionType.RULE)
+                .finalizedAt(NOW)
                 .build();
-        entry.finalizeByRule(new BigDecimal("95.0"), 1, EntryStatus.PASSED, NOW);
         entityManager.persist(entry);
 
         Award award = Award.builder()
-                .contestStageEntry(entry)
+                .reviewRoundEntry(entry)
                 .team(team)
                 .awardRankNo(1)
                 .prize("대상")
@@ -170,9 +191,11 @@ class AwardRepositoryTest {
         assertThat(teamMemberRepository.findWithTeamAndContestByUserIdAndContestPublicId(
                 outsider.getId(), contest.getPublicId()))
                 .isEmpty();
-        assertThat(contestStageEntryRepository
-                .findAllWithStageBySubmissionIdOrderBySequenceNoAsc(submission.getId()))
-                .extracting(stageEntry -> stageEntry.getContestStage().getName())
+        assertThat(reviewRoundEntryRepository
+                .findAllWithRoundBySubmissionIdOrderByRoundNoAsc(
+                        submission.getId()))
+                .extracting(stageEntry ->
+                        stageEntry.getReviewRound().getName())
                 .containsExactly("1차 심사", "최종 심사");
         assertThat(awardRepository.findFirstByTeamIdAndStatusOrderByAwardRankNoAsc(
                 team.getId(), AwardStatus.CONFIRMED))

@@ -4,15 +4,14 @@ import com.api.trekkey.domain.award.entity.Award;
 import com.api.trekkey.domain.award.entity.AwardStatus;
 import com.api.trekkey.domain.award.repository.AwardRepository;
 import com.api.trekkey.domain.contest.entity.Contest;
-import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
-import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
-import com.api.trekkey.domain.contest.repository.ContestStageRepository;
-import com.api.trekkey.domain.review.entity.ContestStageEntry;
-import com.api.trekkey.domain.review.repository.ContestStageEntryRepository;
+import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
+import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.repository.SubmissionRepository;
 import com.api.trekkey.domain.team.entity.Team;
@@ -57,8 +56,8 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
     private final TeamRepository teamRepository;
     private final TeamMemberRepository teamMemberRepository;
     private final SubmissionRepository submissionRepository;
-    private final ContestStageRepository contestStageRepository;
-    private final ContestStageEntryRepository contestStageEntryRepository;
+    private final ReviewRoundRepository reviewRoundRepository;
+    private final ReviewRoundEntryRepository reviewRoundEntryRepository;
     private final AwardRepository awardRepository;
 
     @Override
@@ -149,14 +148,14 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
                 .map(TeamMember::getTeam)
                 .orElseThrow(() -> new CustomException(TeamErrorResponseCode.TEAM_NOT_FOUND));
 
-        List<ContestStage> reviewStages =
-                contestStageRepository.findAllByContestIdAndStageTypeInOrderBySequenceNoAsc(
-                        team.getContest().getId(),
-                        Set.of(StageType.REVIEW, StageType.PRESENTATION));
+        List<ReviewRound> reviewRounds =
+                reviewRoundRepository.findAllByContestIdOrderByRoundNoAsc(
+                        team.getContest().getId());
         Optional<Submission> submission = submissionRepository.findByTeamId(team.getId());
-        List<ContestStageEntry> entries = submission
-                .map(found -> contestStageEntryRepository
-                        .findAllWithStageBySubmissionIdOrderBySequenceNoAsc(found.getId()))
+        List<ReviewRoundEntry> entries = submission
+                .map(found -> reviewRoundEntryRepository
+                        .findAllWithRoundBySubmissionIdOrderByRoundNoAsc(
+                                found.getId()))
                 .orElseGet(List::of);
         Optional<Award> award = team.getContest().getStatus() == ContestStatus.AWARDED
                 ? awardRepository.findFirstByTeamIdAndStatusOrderByAwardRankNoAsc(
@@ -169,7 +168,7 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
                         applicationReceivedStep(team),
                         applicationReviewStep(team),
                         submissionStep(submission),
-                        reviewStep(entries, reviewStages),
+                        reviewStep(entries, reviewRounds),
                         resultStep(team.getContest().getStatus(), award)));
     }
 
@@ -206,7 +205,10 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
     @Override
     @Transactional
     public void updateApplication(Long userId, String contestPublicId, TeamApplicationUpdateReq request) {
-        Team team = teamRepository.findByContestPublicIdAndLeaderUserId(contestPublicId, userId)
+        Team team = teamRepository
+                .findByContestPublicIdAndLeaderUserIdForUpdate(
+                        contestPublicId,
+                        userId)
                 .orElseThrow(() -> new CustomException(TeamErrorResponseCode.TEAM_NOT_FOUND));
 
         if (team.isFinalized()) {
@@ -299,8 +301,8 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
     }
 
     private Step reviewStep(
-            List<ContestStageEntry> entries,
-            List<ContestStage> reviewStages) {
+            List<ReviewRoundEntry> entries,
+            List<ReviewRound> reviewRounds) {
         if (entries.isEmpty()) {
             return Step.of(
                     StepType.REVIEW,
@@ -309,54 +311,56 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
                     null);
         }
 
-        ContestStageEntry latestEntry = entries.get(entries.size() - 1);
-        String stageName = latestEntry.getContestStage().getName();
+        ReviewRoundEntry latestEntry = entries.get(entries.size() - 1);
+        String roundName = latestEntry.getReviewRound().getName();
         return switch (latestEntry.getStatus()) {
             case ELIGIBLE -> Step.of(
                     StepType.REVIEW,
                     StepStatus.IN_PROGRESS,
-                    stageName + " 판정 대기",
+                    roundName + " 판정 대기",
                     null);
             case IN_REVIEW -> Step.of(
                     StepType.REVIEW,
                     StepStatus.IN_PROGRESS,
-                    stageName + " 진행 중",
+                    roundName + " 진행 중",
                     null);
-            case PASSED -> passedReviewStep(latestEntry, reviewStages);
-            case FAILED -> Step.of(
+            case SELECTED -> selectedReviewStep(
+                    latestEntry,
+                    reviewRounds);
+            case NOT_SELECTED -> Step.of(
                     StepType.REVIEW,
                     StepStatus.FAILED,
-                    stageName + " 탈락",
+                    roundName + " 탈락",
                     latestEntry.getFinalizedAt());
             case WITHDRAWN -> Step.of(
                     StepType.REVIEW,
                     StepStatus.FAILED,
-                    stageName + " 철회",
+                    roundName + " 철회",
                     latestEntry.getFinalizedAt());
             case DISQUALIFIED -> Step.of(
                     StepType.REVIEW,
                     StepStatus.FAILED,
-                    stageName + " 실격",
+                    roundName + " 실격",
                     latestEntry.getFinalizedAt());
         };
     }
 
-    private Step passedReviewStep(
-            ContestStageEntry latestEntry,
-            List<ContestStage> reviewStages) {
-        return reviewStages.stream()
-                .filter(stage -> stage.getSequenceNo()
-                        > latestEntry.getContestStage().getSequenceNo())
+    private Step selectedReviewStep(
+            ReviewRoundEntry latestEntry,
+            List<ReviewRound> reviewRounds) {
+        return reviewRounds.stream()
+                .filter(round -> round.getRoundNo()
+                        > latestEntry.getReviewRound().getRoundNo())
                 .findFirst()
-                .map(nextStage -> Step.of(
+                .map(nextRound -> Step.of(
                         StepType.REVIEW,
                         StepStatus.IN_PROGRESS,
-                        nextStage.getName() + " 대기",
+                        nextRound.getName() + " 대기",
                         null))
                 .orElseGet(() -> Step.of(
                         StepType.REVIEW,
                         StepStatus.COMPLETED,
-                        latestEntry.getContestStage().getName() + " 통과",
+                        latestEntry.getReviewRound().getName() + " 통과",
                         latestEntry.getFinalizedAt()));
     }
 

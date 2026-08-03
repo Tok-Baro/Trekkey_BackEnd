@@ -4,30 +4,33 @@ import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
-import com.api.trekkey.domain.contest.entity.ReviewCriterion;
+import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.StageStatus;
+import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
-import com.api.trekkey.domain.contest.repository.ReviewCriterionRepository;
 import com.api.trekkey.domain.contest.support.ContestHtmlSanitizer;
 import com.api.trekkey.domain.contest.admin.web.dto.ContestCreateReq;
-import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
-import com.api.trekkey.domain.contest.admin.web.dto.CriterionReq;
-import com.api.trekkey.domain.contest.web.dto.CriterionRes;
 import com.api.trekkey.domain.contest.admin.web.dto.StageReq;
-import com.api.trekkey.domain.contest.web.dto.StageRes;
 import com.api.trekkey.domain.contest.admin.web.dto.StageStatusUpdateReq;
+import com.api.trekkey.domain.contest.web.dto.ContestDetailRes;
+import com.api.trekkey.domain.contest.web.dto.StageRes;
+import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.user.entity.User;
+import com.api.trekkey.domain.user.entity.UserRole;
+import com.api.trekkey.domain.user.entity.UserStatus;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,13 +46,19 @@ public class ContestCommandServiceImpl implements ContestCommandService {
     private final UserRepository userRepository;
     private final ContestRepository contestRepository;
     private final ContestStageRepository contestStageRepository;
-    private final ReviewCriterionRepository reviewCriterionRepository;
     private final ContestHtmlSanitizer contestHtmlSanitizer;
     private final AdminAuditLogger adminAuditLogger;
 
     @Override
-    public ContestDetailRes createContest(Long userId, ContestCreateReq req) {
+    public ContestDetailRes createContest(
+            Long userId,
+            ContestCreateReq req
+    ) {
         User user = findUser(userId);
+        rejectDirectAwardedStatus(null, req.status());
+        List<StageReq> orderedStages = sortBySequenceNo(req.stages());
+        validateSubmissionStageCount(orderedStages);
+        orderedStages.forEach(this::validateNewStage);
 
         Contest contest = contestRepository.save(Contest.builder()
                 .organization(user.getOrganization())
@@ -68,22 +77,81 @@ public class ContestCommandServiceImpl implements ContestCommandService {
                 .detailHtml(contestHtmlSanitizer.sanitize(req.detailHtml()))
                 .build());
 
-        List<StageRes> stageResList = saveStages(contest, sortBySequenceNo(req.stages()));
+        List<StageRes> stageResponses = new ArrayList<>();
+        for (int index = 0; index < orderedStages.size(); index++) {
+            ContestStage stage = contestStageRepository.save(buildStage(
+                    contest,
+                    orderedStages.get(index),
+                    index + 1
+            ));
+            stageResponses.add(StageRes.from(stage, List.of()));
+        }
 
-        adminAuditLogger.log(user.getId(), user.getOrganization().getId(), AuditAction.CONTEST_CREATE,
-                TARGET_TYPE_CONTEST, contest.getId(), contest.getTitle());
-
-        return ContestDetailRes.of(contest, stageResList);
+        adminAuditLogger.log(
+                user.getId(),
+                user.getOrganization().getId(),
+                AuditAction.CONTEST_CREATE,
+                TARGET_TYPE_CONTEST,
+                contest.getId(),
+                contest.getTitle()
+        );
+        return ContestDetailRes.of(contest, stageResponses);
     }
 
     @Override
-    public ContestDetailRes updateContest(Long userId, String publicId, ContestCreateReq req) {
+    public ContestDetailRes updateContest(
+            Long userId,
+            String publicId,
+            ContestCreateReq req
+    ) {
         User user = findUser(userId);
-
-        Contest contest = contestRepository.findByPublicId(publicId)
-                .orElseThrow(() -> new CustomException(ContestErrorResponseCode.CONTEST_NOT_FOUND));
-
+        Contest contest = contestRepository.findByPublicIdForUpdate(publicId)
+                .orElseThrow(() -> new CustomException(
+                        ContestErrorResponseCode.CONTEST_NOT_FOUND));
         validateSameOrganization(contest, user);
+        rejectDirectAwardedStatus(contest.getStatus(), req.status());
+
+        List<ContestStage> allExistingStages = contestStageRepository
+                .findAllForUpdateByContestIdOrderBySequenceNoAsc(
+                        contest.getId());
+        List<ContestStage> existingStages = allExistingStages.stream()
+                .filter(stage ->
+                        !stage.getStageType().supportsReviewCriteria())
+                .toList();
+        Set<Integer> legacyReviewStageSequences =
+                allExistingStages.stream()
+                        .filter(stage ->
+                                stage.getStageType()
+                                        .supportsReviewCriteria())
+                        .map(ContestStage::getSequenceNo)
+                        .collect(java.util.stream.Collectors.toSet());
+        Map<Long, ContestStage> existingById = new HashMap<>();
+        existingStages.forEach(stage ->
+                existingById.put(stage.getId(), stage));
+
+        List<StageReq> orderedStages = sortBySequenceNo(req.stages());
+        validateSubmissionStageCount(orderedStages);
+        List<StagePlan> plans = planStageUpdate(
+                orderedStages,
+                existingStages,
+                existingById,
+                legacyReviewStageSequences
+        );
+        Set<Long> requestedIds = new HashSet<>();
+        plans.stream()
+                .map(StagePlan::stage)
+                .filter(Objects::nonNull)
+                .map(ContestStage::getId)
+                .forEach(requestedIds::add);
+
+        List<ContestStage> stagesToDelete = existingStages.stream()
+                .filter(stage -> !requestedIds.contains(stage.getId()))
+                .toList();
+        if (stagesToDelete.stream()
+                .anyMatch(stage -> !stage.isConfigurationEditable())) {
+            throw new CustomException(
+                    ContestErrorResponseCode.STAGE_CONFIGURATION_LOCKED);
+        }
 
         contest.update(
                 req.title(),
@@ -100,50 +168,29 @@ public class ContestCommandServiceImpl implements ContestCommandService {
                 contestHtmlSanitizer.sanitize(req.detailHtml())
         );
 
-        List<ContestStage> existingStages =
-                contestStageRepository.findAllByContestIdOrderBySequenceNoAsc(contest.getId());
-        Map<Long, ContestStage> existingById = new HashMap<>();
-        existingStages.forEach(stage -> existingById.put(stage.getId(), stage));
-
-        // criteria는 전량 교체(유지되는 단계 포함 전체 삭제 후 재삽입 — 단순성 우선)
-        // TODO: REVIEW 도메인 구현 후 심사 기록 있는 단계 삭제 시 STAGE_HAS_REVIEWS 가드 추가
-        if (!existingStages.isEmpty()) {
-            reviewCriterionRepository.deleteByContestStageIdIn(
-                    existingStages.stream().map(ContestStage::getId).toList());
-            reviewCriterionRepository.flush();
-        }
-
-        List<StageReq> orderedStages = sortBySequenceNo(req.stages());
-        List<Long> requestedStageIds = orderedStages.stream()
-                .map(StageReq::id)
-                .filter(Objects::nonNull)
-                .toList();
-
-        // 요청에 없는 기존 단계는 삭제 (criteria는 위에서 이미 전량 삭제됨)
-        List<ContestStage> stagesToDelete = existingStages.stream()
-                .filter(stage -> !requestedStageIds.contains(stage.getId()))
-                .toList();
         if (!stagesToDelete.isEmpty()) {
             contestStageRepository.deleteAll(stagesToDelete);
             contestStageRepository.flush();
         }
+        moveChangedStagesToTemporarySequences(
+                plans,
+                allExistingStages);
 
-        List<StageRes> stageResList = new ArrayList<>();
-        for (int i = 0; i < orderedStages.size(); i++) {
-            StageReq stageReq = orderedStages.get(i);
-            int sequenceNo = i + 1;
-
-            ContestStage stage;
-            if (stageReq.id() != null) {
-                stage = existingById.get(stageReq.id());
-                if (stage == null) {
-                    throw new CustomException(ContestErrorResponseCode.STAGE_NOT_FOUND);
-                }
-                stage.update(
+        List<StageRes> stageResponses = new ArrayList<>();
+        for (StagePlan plan : plans) {
+            ContestStage stage = plan.stage();
+            if (stage == null) {
+                stage = contestStageRepository.save(buildStage(
+                        contest,
+                        plan.request(),
+                        plan.sequenceNo()
+                ));
+            } else if (stage.isConfigurationEditable()) {
+                StageReq stageReq = plan.request();
+                stage.updateConfiguration(
                         stageReq.name(),
                         stageReq.stageType(),
-                        sequenceNo,
-                        stageReq.status(),
+                        plan.sequenceNo(),
                         stageReq.startsAt(),
                         stageReq.endsAt(),
                         stageReq.targetType(),
@@ -151,51 +198,107 @@ public class ContestCommandServiceImpl implements ContestCommandService {
                         stageReq.passCount(),
                         stageReq.minScore()
                 );
-            } else {
-                stage = contestStageRepository.save(buildStage(contest, stageReq, sequenceNo));
             }
-
-            List<ReviewCriterion> criteria = saveCriteria(stage, stageReq.criteria());
-            stageResList.add(StageRes.from(stage, toCriterionResList(criteria)));
+            stageResponses.add(StageRes.from(stage, List.of()));
         }
 
-        adminAuditLogger.log(user.getId(), user.getOrganization().getId(), AuditAction.CONTEST_UPDATE,
-                TARGET_TYPE_CONTEST, contest.getId(), contest.getTitle());
-
-        return ContestDetailRes.of(contest, stageResList);
+        adminAuditLogger.log(
+                user.getId(),
+                user.getOrganization().getId(),
+                AuditAction.CONTEST_UPDATE,
+                TARGET_TYPE_CONTEST,
+                contest.getId(),
+                contest.getTitle()
+        );
+        return ContestDetailRes.of(contest, stageResponses);
     }
 
     @Override
-    public StageRes updateStageStatus(Long userId, Long stageId, StageStatusUpdateReq req) {
+    public StageRes updateStageStatus(
+            Long userId,
+            Long stageId,
+            StageStatusUpdateReq req
+    ) {
         User user = findUser(userId);
+        validateStageOrganization(stageId, user);
+        ContestStage stage = contestStageRepository
+                .findByIdForUpdate(stageId)
+                .orElseThrow(() -> new CustomException(
+                        ContestErrorResponseCode.STAGE_NOT_FOUND));
 
-        ContestStage stage = contestStageRepository.findById(stageId)
-                .orElseThrow(() -> new CustomException(ContestErrorResponseCode.STAGE_NOT_FOUND));
-
-        validateSameOrganization(stage.getContest(), user);
+        if (stage.getStageType().supportsReviewCriteria()) {
+            throw new CustomException(
+                    ReviewErrorResponseCode.REVIEW_ROUND_REQUIRED);
+        }
 
         StageStatus previousStatus = stage.getStatus();
-        stage.changeStatus(req.status());
+        StageStatus nextStatus = req.status();
+        if (!previousStatus.canTransitionTo(nextStatus)) {
+            throw new CustomException(
+                    ContestErrorResponseCode
+                            .INVALID_STAGE_STATUS_TRANSITION);
+        }
+        if (previousStatus == StageStatus.PREPARING
+                && nextStatus == StageStatus.OPEN
+                && !stage.hasValidConfigurationForOpening()) {
+            throw new CustomException(
+                    ContestErrorResponseCode.STAGE_CONFIGURATION_INVALID);
+        }
 
-        adminAuditLogger.log(user.getId(), user.getOrganization().getId(), AuditAction.STAGE_STATUS_CHANGE,
-                TARGET_TYPE_STAGE, stageId, "status: " + previousStatus + "→" + req.status());
-
-        List<ReviewCriterion> criteria =
-                reviewCriterionRepository.findAllByContestStageIdInOrderBySortOrderAsc(List.of(stageId));
-
-        return StageRes.from(stage, toCriterionResList(criteria));
+        if (previousStatus != nextStatus) {
+            stage.changeStatus(nextStatus);
+            adminAuditLogger.log(
+                    user.getId(),
+                    user.getOrganization().getId(),
+                    AuditAction.STAGE_STATUS_CHANGE,
+                    TARGET_TYPE_STAGE,
+                    stageId,
+                    "status: " + previousStatus + "→" + nextStatus
+            );
+        }
+        return StageRes.from(stage, List.of());
     }
 
-    //======= 헬퍼 메서드 ==========
-
     private User findUser(Long userId) {
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new CustomException(UserErrorResponseCode.USER_NOT_FOUND));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(
+                        UserErrorResponseCode.USER_NOT_FOUND));
+        if ((user.getRole() != UserRole.ADMIN
+                && user.getRole() != UserRole.ROOT_ADMIN)
+                || user.getStatus() != UserStatus.ACTIVE) {
+            throw new CustomException(
+                    UserErrorResponseCode.USER_INVALID_TOKEN);
+        }
+        return user;
+    }
+
+    private void rejectDirectAwardedStatus(
+            ContestStatus currentStatus,
+            ContestStatus requestedStatus
+    ) {
+        if ((currentStatus == ContestStatus.AWARDED)
+                != (requestedStatus == ContestStatus.AWARDED)) {
+            throw new CustomException(
+                    ContestErrorResponseCode.CONTEST_STATUS_LOCKED);
+        }
     }
 
     private void validateSameOrganization(Contest contest, User user) {
-        if (!contest.getOrganization().getId().equals(user.getOrganization().getId())) {
-            throw new CustomException(ContestErrorResponseCode.CONTEST_FORBIDDEN);
+        if (!contest.getOrganization().getId()
+                .equals(user.getOrganization().getId())) {
+            throw new CustomException(
+                    ContestErrorResponseCode.CONTEST_FORBIDDEN);
+        }
+    }
+
+    private void validateStageOrganization(Long stageId, User user) {
+        Long organizationId = contestStageRepository
+                .findOrganizationIdById(stageId)
+                .orElseThrow(() -> new CustomException(
+                        ContestErrorResponseCode.STAGE_NOT_FOUND));
+        if (!organizationId.equals(user.getOrganization().getId())) {
+            throw new CustomException(
+                    ContestErrorResponseCode.CONTEST_FORBIDDEN);
         }
     }
 
@@ -205,18 +308,108 @@ public class ContestCommandServiceImpl implements ContestCommandService {
                 .toList();
     }
 
-    private List<StageRes> saveStages(Contest contest, List<StageReq> orderedStages) {
-        List<StageRes> stageResList = new ArrayList<>();
-        for (int i = 0; i < orderedStages.size(); i++) {
-            StageReq stageReq = orderedStages.get(i);
-            ContestStage stage = contestStageRepository.save(buildStage(contest, stageReq, i + 1));
-            List<ReviewCriterion> criteria = saveCriteria(stage, stageReq.criteria());
-            stageResList.add(StageRes.from(stage, toCriterionResList(criteria)));
+    private void validateSubmissionStageCount(List<StageReq> stages) {
+        long submissionStageCount = stages.stream()
+                .filter(stage -> stage.stageType()
+                        == StageType.SUBMISSION)
+                .count();
+        if (submissionStageCount > 1) {
+            throw new CustomException(
+                    ContestErrorResponseCode
+                            .SUBMISSION_STAGE_DUPLICATED);
         }
-        return stageResList;
     }
 
-    private ContestStage buildStage(Contest contest, StageReq stageReq, int sequenceNo) {
+    private void validateNewStage(StageReq stageReq) {
+        validateStageRequest(stageReq);
+        if (stageReq.id() != null) {
+            throw new CustomException(
+                    ContestErrorResponseCode.STAGE_NOT_FOUND);
+        }
+        if (stageReq.status() != StageStatus.PREPARING) {
+            throw new CustomException(
+                    ContestErrorResponseCode
+                            .INVALID_STAGE_STATUS_TRANSITION);
+        }
+    }
+
+    private void validateStageRequest(StageReq stageReq) {
+        if (stageReq.stageType().supportsReviewCriteria()
+                || (stageReq.criteria() != null
+                && !stageReq.criteria().isEmpty())) {
+            throw new CustomException(
+                    ReviewErrorResponseCode.REVIEW_ROUND_REQUIRED);
+        }
+    }
+
+    private List<StagePlan> planStageUpdate(
+            List<StageReq> orderedStages,
+            List<ContestStage> existingStages,
+            Map<Long, ContestStage> existingById,
+            Set<Integer> reservedSequences
+    ) {
+        List<StagePlan> plans = new ArrayList<>();
+        Set<Long> requestedIds = new HashSet<>();
+        int sequenceNo = 1;
+        for (StageReq request : orderedStages) {
+            while (reservedSequences.contains(sequenceNo)) {
+                sequenceNo++;
+            }
+            validateStageRequest(request);
+            if (request.id() == null) {
+                validateNewStage(request);
+                plans.add(new StagePlan(request, null, sequenceNo));
+                sequenceNo++;
+                continue;
+            }
+            if (!requestedIds.add(request.id())) {
+                throw new CustomException(
+                        ContestErrorResponseCode.STAGE_DUPLICATED);
+            }
+            ContestStage stage = existingById.get(request.id());
+            if (stage == null) {
+                throw new CustomException(
+                        ContestErrorResponseCode.STAGE_NOT_FOUND);
+            }
+            if (stage.getStatus() != request.status()) {
+                throw new CustomException(
+                        ContestErrorResponseCode
+                                .INVALID_STAGE_STATUS_TRANSITION);
+            }
+            if (!stage.isConfigurationEditable()
+                    && !stage.hasSameConfiguration(
+                    request.name(),
+                    request.stageType(),
+                    sequenceNo,
+                    request.startsAt(),
+                    request.endsAt(),
+                    request.targetType(),
+                    request.passRule(),
+                    request.passCount(),
+                    request.minScore())) {
+                throw new CustomException(
+                        ContestErrorResponseCode
+                                .STAGE_CONFIGURATION_LOCKED);
+            }
+            plans.add(new StagePlan(request, stage, sequenceNo));
+            sequenceNo++;
+        }
+
+        boolean removesLockedStage = existingStages.stream()
+                .filter(stage -> !requestedIds.contains(stage.getId()))
+                .anyMatch(stage -> !stage.isConfigurationEditable());
+        if (removesLockedStage) {
+            throw new CustomException(
+                    ContestErrorResponseCode.STAGE_CONFIGURATION_LOCKED);
+        }
+        return plans;
+    }
+
+    private ContestStage buildStage(
+            Contest contest,
+            StageReq stageReq,
+            int sequenceNo
+    ) {
         return ContestStage.builder()
                 .contest(contest)
                 .name(stageReq.name())
@@ -232,36 +425,39 @@ public class ContestCommandServiceImpl implements ContestCommandService {
                 .build();
     }
 
-    private List<ReviewCriterion> saveCriteria(ContestStage stage, List<CriterionReq> criterionReqs) {
-        if (criterionReqs == null || criterionReqs.isEmpty()) {
-            return List.of();
+    private void moveChangedStagesToTemporarySequences(
+            List<StagePlan> stagePlans,
+            List<ContestStage> existingStages
+    ) {
+        List<StagePlan> changedPlans = stagePlans.stream()
+                .filter(plan -> plan.stage() != null)
+                .filter(plan -> plan.stage().isConfigurationEditable())
+                .filter(plan -> plan.stage().getSequenceNo()
+                        != plan.sequenceNo())
+                .toList();
+        if (changedPlans.isEmpty()) {
+            return;
         }
 
-        List<ReviewCriterion> criteria = new ArrayList<>();
-        for (int i = 0; i < criterionReqs.size(); i++) {
-            CriterionReq criterionReq = criterionReqs.get(i);
-
-            String code = (criterionReq.code() == null || criterionReq.code().isBlank())
-                    ? "criterion-" + (i + 1)
-                    : criterionReq.code();
-            int sortOrder = criterionReq.sortOrder() == null ? i + 1 : criterionReq.sortOrder();
-
-            criteria.add(ReviewCriterion.builder()
-                    .contestStage(stage)
-                    .code(code)
-                    .label(criterionReq.label())
-                    .maxScore(criterionReq.maxScore())
-                    .sortOrder(sortOrder)
-                    .active(true)
-                    .build());
+        int highestSequence = Math.max(
+                stagePlans.size(),
+                existingStages.stream()
+                        .mapToInt(ContestStage::getSequenceNo)
+                        .max()
+                        .orElse(0)
+        );
+        int temporarySequence =
+                highestSequence + stagePlans.size() + 1;
+        for (StagePlan plan : changedPlans) {
+            plan.stage().moveToSequence(temporarySequence++);
         }
-
-        return reviewCriterionRepository.saveAll(criteria);
+        contestStageRepository.flush();
     }
 
-    private List<CriterionRes> toCriterionResList(List<ReviewCriterion> criteria) {
-        return criteria.stream()
-                .map(CriterionRes::from)
-                .toList();
+    private record StagePlan(
+            StageReq request,
+            ContestStage stage,
+            int sequenceNo
+    ) {
     }
 }

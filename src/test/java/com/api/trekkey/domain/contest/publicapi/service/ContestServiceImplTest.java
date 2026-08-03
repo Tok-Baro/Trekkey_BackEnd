@@ -215,6 +215,43 @@ class ContestServiceImplTest {
     }
 
     @Test
+    @DisplayName("목록 미리보기 상세 조회는 조회 수를 증가시키지 않는다")
+    void getContestDetailWithoutViewIncrement_keepsViewCount() {
+        User participant = givenParticipant(10L, 2L);
+        Contest contest = contest();
+        ContestLike contestLike = ContestLike.builder()
+                .contest(contest)
+                .user(participant)
+                .build();
+        Set<ContestStatus> publicStatuses = Set.of(
+                ContestStatus.APPLICATION_OPEN,
+                ContestStatus.REVIEWING,
+                ContestStatus.AWARDED);
+
+        given(contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
+                contest.getPublicId(),
+                2L,
+                publicStatuses))
+                .willReturn(Optional.of(contest));
+        given(contestStageRepository.findAllByContestIdAndStageTypeInOrderBySequenceNoAsc(
+                1L,
+                Set.of(StageType.APPLICATION, StageType.SUBMISSION)))
+                .willReturn(List.of());
+        given(contestLikeRepository.countByContestId(1L)).willReturn(1L);
+        given(contestLikeRepository.findByContestIdAndUserId(1L, 10L))
+                .willReturn(Optional.of(contestLike));
+
+        ContestDetailRes result =
+                contestService.getContestDetailWithoutViewIncrement(
+                        10L,
+                        contest.getPublicId());
+
+        assertThat(result.viewCount()).isEqualTo(31L);
+        verify(contestRepository, never()).incrementViewCount(anyLong());
+        verify(contestRepository, never()).findById(anyLong());
+    }
+
+    @Test
     @DisplayName("없거나 다른 학교 또는 공개 전인 대회는 대회 없음으로 처리한다")
     void getContestDetail_throwsWhenPublicContestDoesNotExist() {
         givenParticipant(10L, 2L);

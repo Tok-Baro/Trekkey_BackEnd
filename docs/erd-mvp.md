@@ -2,7 +2,11 @@
 
 **합의된 목표 구현 기준 · 2026-07-27**
 
-이 페이지는 `REVIEW_ROUND` 전환 이후의 목표 모델이다. PR #9가 `develop`에 병합됐지만 실행 코드는 아직 `CONTEST_STAGE` 기반이므로, 후속 심사 모델 전환 PR이 병합되기 전에는 현재 DB 스키마로 간주하지 않는다.
+이 페이지는 `REVIEW_ROUND` 전환 이후의 목표 모델이다. 기존
+`CONTEST_STAGE` 기반 리뷰 데이터는
+[Review Round DB 이전 안내](./review-domain-final-erd-alignment.md)에 따라
+명시적으로 이전해야 하며, 이전 전 DB 스키마를 이 문서의 구조와 같다고
+간주하면 안 된다.
 
 </aside>
 
@@ -11,7 +15,7 @@
 Trekkey는 학교가 확정한 **참여·작품·수상 Credential 원문과 개인정보를 SQL 및 객체 저장소에 보존**하고, 여러 Credential을 Merkle Tree로 묶어 **root만 Kaia에 앵커링**한다.
 
 > 블록체인은 학교가 처음 입력한 사실의 현실적 진실성을 판정하지 않는다. 학교가 승인한 특정 시점의 Credential이 앵커링 이후 변경되지 않았고, 현재 폐기 또는 대체되지 않았는지를 검증한다.
-> 
+>
 
 ### 해결하려는 문제
 
@@ -185,10 +189,11 @@ sequenceDiagram
     participant API as Contest API
     participant DB as MySQL
 
+    Admin->>API: 심사 대상 준비 및 심사위원 배정
+    API->>DB: ELIGIBLE ENTRY와 ASSIGNMENT 저장
     Admin->>API: 라운드 시작
-    API->>DB: 대상 제출물 조회
-    API->>DB: REVIEW_ROUND_ENTRY 생성
-    API->>DB: REVIEW_ASSIGNMENT 생성
+    API->>DB: 현재 대상 집합 재검증 및 제출물 확정
+    API->>DB: ENTRY를 IN_REVIEW로 전환
     Judge->>API: 기준별 점수와 의견 제출
     API->>DB: REVIEW와 SCORE_ITEM 저장
     API->>DB: 제출된 REVIEW 잠금
@@ -204,6 +209,14 @@ sequenceDiagram
 - REVIEW_ROUND_ENTRY는 학교가 확정한 공식 점수·순위·통과·탈락 원장이다.
 - FINALIZED 라운드의 ENTRY, 평가 기준, 배정, 제출된 REVIEW는 수정·삭제할 수 없다.
 - AWARD.teamId는 조회용 비정규화 FK이며 ENTRY에서 도달한 TEAM과 같아야 한다.
+- 위 sequence는 점수형 라운드 기준이다.
+  `targetType=MANUAL`, `decisionRule=MANUAL`인 무채점 수동 라운드는
+  평가 기준, 배정, REVIEW, SCORE_ITEM을 만들지 않는다. 관리자가 모든
+  ENTRY의 판정 사유와 중복 없는 연속 순위 `1..N`을 제출하고
+  `finalScore=null`로 원자적으로 확정한다.
+- 라운드를 열기 전에 대상 TEAM의 명단이 모두 확정돼 있어야 하며,
+  앞선 라운드는 모두 FINALIZED여야 한다. 한 대회에는 OPEN 라운드를
+  하나만 허용한다.
 
 ## 6. Credential 발급 단위
 

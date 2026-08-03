@@ -31,7 +31,7 @@ public class AwardCredentialIssuer {
 
     public IssuedCredential issueForConfirmedAward(Award award) {
         Team team = award.getTeam();
-        Submission submission = award.getContestStageEntry().getSubmission();
+        Submission submission = award.getReviewRoundEntry().getSubmission();
         Instant confirmedAt = toInstant(award);
 
         return credentialIssuanceService.issue(new CredentialIssueCommand(
@@ -55,9 +55,9 @@ public class AwardCredentialIssuer {
         snapshot.put("prize", award.getPrize());
         snapshot.put("awardRankNo", award.getAwardRankNo());
         snapshot.put("certificateNo", award.getCertificateNo());
-        snapshot.put("submissionTitle", award.getContestStageEntry().getSubmission().getTitle());
-        if (award.getContestStageEntry().getFinalScore() != null) {
-            snapshot.put("finalScore", award.getContestStageEntry().getFinalScore().toPlainString());
+        snapshot.put("submissionTitle", award.getReviewRoundEntry().getSubmission().getTitle());
+        if (award.getReviewRoundEntry().getFinalScore() != null) {
+            snapshot.put("finalScore", award.getReviewRoundEntry().getFinalScore().toPlainString());
         }
 
         return new CredentialIssueCommand.Source(

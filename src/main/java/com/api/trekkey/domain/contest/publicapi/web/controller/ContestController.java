@@ -44,10 +44,16 @@ public class ContestController {
     @GetMapping("/{publicId}")
     public ResponseEntity<SuccessResponse<ContestDetailRes>> getContestDetail(
             @AuthenticationPrincipal AuthPrincipal authPrincipal,
-            @PathVariable String publicId) {
+            @PathVariable String publicId,
+            @RequestParam(defaultValue = "true") boolean trackView) {
+        ContestDetailRes response = trackView
+                ? contestService.getContestDetail(authPrincipal.getId(), publicId)
+                : contestService.getContestDetailWithoutViewIncrement(
+                        authPrincipal.getId(),
+                        publicId);
         return ResponseEntity
                 .status(HttpStatus.OK)
-                .body(SuccessResponse.ok(contestService.getContestDetail(authPrincipal.getId(), publicId)));
+                .body(SuccessResponse.ok(response));
     }
 
     @ApiErrorCodeExamples(value = ContestErrorResponseCode.class, codes = {"CONTEST_NOT_FOUND"})

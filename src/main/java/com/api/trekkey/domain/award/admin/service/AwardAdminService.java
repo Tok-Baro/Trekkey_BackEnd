@@ -6,7 +6,7 @@ import java.util.List;
 public interface AwardAdminService {
 
     // 수상 후보 산출 — 확정된 라운드의 통과작을 순위순으로 awardCount만큼 CANDIDATE 생성 (재산출 시 기존 후보 교체)
-    List<AwardRes> calculateAwards(Long adminUserId, Long stageId);
+    List<AwardRes> calculateAwards(Long adminUserId, Long roundId);
 
     // 대회별 수상 목록
     List<AwardRes> getAwards(Long adminUserId, String contestPublicId);

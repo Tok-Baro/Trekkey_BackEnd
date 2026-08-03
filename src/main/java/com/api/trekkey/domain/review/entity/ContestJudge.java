@@ -11,6 +11,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -23,46 +25,77 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
+@Table(
+        name = "contest_judge",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_contest_judge_user",
+                        columnNames = {"contest_id", "user_id"}),
+                @UniqueConstraint(
+                        name = "uk_contest_judge_review_token_hash",
+                        columnNames = "review_token_hash")
+        })
 public class ContestJudge extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    // 대회 심사위원 PK
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "contest_id", nullable = false)
-    // 배정된 대회
     private Contest contest;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
-    // 연결 사용자 — 외부 심사위원은 null (erd-mvp: 링크 초대 대상)
     private User user;
 
-    @Column(nullable = false, length = 50)
-    // 심사위원 이름 스냅샷
+    @Column(nullable = false, length = 100)
     private String name;
 
-    @Column(name = "role_label", nullable = false, length = 50)
-    // 심사위원 역할명. 예: 외부 심사위원, 전임교원
+    @Column(nullable = false, length = 100)
     private String roleLabel;
 
-    @Column(name = "review_token_hash", nullable = false, unique = true, length = 64)
-    // 심사 링크 토큰 SHA-256 — 원문은 발급 응답에만 노출한다
+    @Column(name = "review_token_hash", length = 64)
     private String reviewTokenHash;
 
-    @Column(name = "token_expires_at", nullable = false)
-    // 심사 링크 만료 시각
+    @Column(name = "token_issued_at")
+    private LocalDateTime tokenIssuedAt;
+
+    @Column(name = "token_expires_at")
     private LocalDateTime tokenExpiresAt;
 
-    // 링크 유출 대응 — 토큰을 새 해시로 교체하고 만료를 연장한다
-    public void rotateToken(String newTokenHash, LocalDateTime newExpiresAt) {
-        this.reviewTokenHash = newTokenHash;
-        this.tokenExpiresAt = newExpiresAt;
+    @Column(name = "token_revoked_at")
+    private LocalDateTime tokenRevokedAt;
+
+    public void issueReviewLink(
+            String reviewTokenHash,
+            LocalDateTime issuedAt,
+            LocalDateTime expiresAt
+    ) {
+        this.reviewTokenHash = reviewTokenHash;
+        this.tokenIssuedAt = issuedAt;
+        this.tokenExpiresAt = expiresAt;
+        this.tokenRevokedAt = null;
     }
 
-    public boolean isTokenExpired(LocalDateTime now) {
-        return now.isAfter(tokenExpiresAt);
+    public boolean revokeReviewLink(LocalDateTime revokedAt) {
+        if (reviewTokenHash == null || tokenRevokedAt != null) {
+            return false;
+        }
+        this.tokenRevokedAt = revokedAt;
+        return true;
+    }
+
+    public ReviewLinkStatus getReviewLinkStatus(LocalDateTime now) {
+        if (reviewTokenHash == null || tokenIssuedAt == null || tokenExpiresAt == null) {
+            return ReviewLinkStatus.NOT_ISSUED;
+        }
+        if (tokenRevokedAt != null) {
+            return ReviewLinkStatus.REVOKED;
+        }
+        if (!tokenExpiresAt.isAfter(now)) {
+            return ReviewLinkStatus.EXPIRED;
+        }
+        return ReviewLinkStatus.ACTIVE;
     }
 }

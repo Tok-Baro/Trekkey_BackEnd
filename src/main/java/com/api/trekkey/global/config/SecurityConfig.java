@@ -66,7 +66,20 @@ public class SecurityConfig {
                         .requestMatchers(SWAGGER_URLS).permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/organizations/**").permitAll() //회원가입 시 학교 검색 API
-                        .requestMatchers("/api/review/**").permitAll() //심사위원 링크 — reviewToken으로 자체 인증
+                        .requestMatchers(HttpMethod.POST, "/api/review/access").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/review/assignments").permitAll()
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/review/assignments/*/review"
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/review/files/*/download/check"
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/review/files/*/download"
+                        ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/contests").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.GET, "/api/contests/*").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.POST, "/api/contests/*/applications").hasRole("PARTICIPANT")
@@ -77,6 +90,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH, "/api/me/applications/*").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.GET, "/api/me/teams").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.GET, "/api/participants/search").hasRole("PARTICIPANT")
+                        .requestMatchers(
+                                "/api/teams/*/submission",
+                                "/api/teams/*/submission/**"
+                        ).hasRole("PARTICIPANT")
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/files/*/download"
+                        ).hasRole("PARTICIPANT")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN") //관리자 콘솔 (RoleHierarchy로 ROOT 포함)
                         .requestMatchers("/api/root/**").hasRole("ROOT_ADMIN") //초대 발급·가입 승인 등 ROOT_ADMIN 전용
                         .requestMatchers(HttpMethod.GET, "/api/public/credentials/**").permitAll()

@@ -16,7 +16,7 @@ import com.api.trekkey.domain.credential.service.CredentialIssuanceService;
 import com.api.trekkey.domain.credential.service.CredentialSchemaProfiles;
 import com.api.trekkey.domain.credential.service.dto.CredentialIssueCommand;
 import com.api.trekkey.domain.organization.entity.Organization;
-import com.api.trekkey.domain.review.entity.ContestStageEntry;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.submission.entity.Submission;
 import com.api.trekkey.domain.submission.entity.SubmissionFile;
 import com.api.trekkey.domain.submission.repository.SubmissionFileRepository;
@@ -91,7 +91,7 @@ class AwardCredentialIssuerTest {
         lenient().when(submission.getId()).thenReturn(30L);
         lenient().when(submission.getTitle()).thenReturn("AI 작품");
 
-        ContestStageEntry entry = mock(ContestStageEntry.class);
+        ReviewRoundEntry entry = mock(ReviewRoundEntry.class);
         lenient().when(entry.getSubmission()).thenReturn(submission);
         lenient().when(entry.getFinalScore()).thenReturn(new BigDecimal("87.5"));
 
@@ -103,7 +103,7 @@ class AwardCredentialIssuerTest {
         lenient().when(award.getAwardRankNo()).thenReturn(1);
         lenient().when(award.getConfirmedAt()).thenReturn(LocalDateTime.of(2026, 7, 20, 12, 0));
         lenient().when(award.getTeam()).thenReturn(team);
-        lenient().when(award.getContestStageEntry()).thenReturn(entry);
+        lenient().when(award.getReviewRoundEntry()).thenReturn(entry);
 
         SubmissionFile file = mock(SubmissionFile.class);
         lenient().when(file.getOriginalName()).thenReturn("제안서.pdf");

@@ -214,23 +214,24 @@ flowchart TD
     application --> teamApply["팀 참가 신청"]
     teamApply --> approval{"참가 승인?"}
     approval -->|"아니오"| rejected(["신청 종료"])
-    approval -->|"예"| roster["팀원 명단 확정"]
+    approval -->|"예"| submit["최종 작품 제출"]
+    approval -->|"예"| roster["심사 시작 전 팀원 명단 확정"]
     roster --> rosterLock["participationFinalizedAt 잠금"]
-    rosterLock --> submit["최종 작품 제출"]
     submit --> submissionDue["CONTEST 제출 마감"]
-    submissionDue --> roundOpen["REVIEW_ROUND OPEN"]
+    submissionDue --> roundEntry["ELIGIBLE ENTRY 초안 준비"]
+    roundEntry --> judgeAssign["심사위원 사전 배정"]
+    judgeAssign --> roundOpen["REVIEW_ROUND OPEN 및 대상 재검증"]
+    rosterLock --> roundOpen
     roundOpen --> submissionLock["대상 제출물 finalizedAt 확정"]
-    submissionLock --> roundEntry["REVIEW_ROUND_ENTRY 생성"]
-    roundEntry --> judgeAssign["심사위원 배정"]
-    judgeAssign --> review["점수와 의견 제출"]
+    submissionLock --> review["ENTRY IN_REVIEW 전환 후 점수와 의견 제출"]
     review --> finalize["공식 점수·순위·판정 확정"]
     finalize --> selected{"SELECTED 결과인가?"}
     selected -->|"아니오"| finished(["참여 이력 확정"])
     selected -->|"다음 라운드 존재"| nextRound(["다음 REVIEW_ROUND에서 반복"])
-    nextRound --> roundOpen
+    nextRound --> roundEntry
     selected -->|"가장 높은 라운드"| award["AWARD CONFIRMED"]
-    finished --> participationCredential["참여 Credential 발급"]
-    submit --> workCredential["작품 Credential 발급"]
+    rosterLock --> participationCredential["참여 Credential 발급"]
+    submissionLock --> workCredential["작품 Credential 발급"]
     award --> awardCredential["수상 Credential 발급"]
 ```
 
@@ -290,11 +291,12 @@ sequenceDiagram
     participant API as Contest API
     participant DB as MySQL
 
+    Admin->>API: 심사 대상 준비 및 심사위원 배정
+    API->>DB: ELIGIBLE ENTRY와 ASSIGNMENT 저장
     Admin->>API: Review Round OPEN 요청
-    API->>DB: 대상 제출물 조회
+    API->>DB: 현재 대상 제출물 집합 재검증
     API->>DB: 대상 SUBMISSION finalizedAt 확정
-    API->>DB: REVIEW_ROUND_ENTRY 생성
-    API->>DB: REVIEW_ASSIGNMENT 생성
+    API->>DB: ENTRY를 IN_REVIEW로 전환
     Judge->>API: 기준별 점수와 의견 제출
     API->>DB: REVIEW와 SCORE_ITEM 저장
     API->>DB: 제출된 REVIEW 잠금
@@ -306,7 +308,12 @@ sequenceDiagram
     API->>DB: 라운드 FINALIZED 및 변경 잠금
 ```
 
-`REVIEW`는 심사위원별 원점수이고, `REVIEW_ROUND_ENTRY`는 학교가 확정한 공식 판정 원장이다. 다음 라운드는 직전 라운드가 `FINALIZED`된 뒤 그 라운드의 `SELECTED` ENTRY만 대상으로 생성한다. 수상은 대회에 설정된 마지막 Review Round가 `FINALIZED`된 뒤에만 확정한다.
+`REVIEW`는 심사위원별 원점수이고, `REVIEW_ROUND_ENTRY`는 학교가 확정한 공식 판정 원장이다. 다음 라운드는 모든 앞선 라운드가 `FINALIZED`된 뒤 다시 대상 준비와 배정을 거친다. `PREVIOUS_SELECTED`일 때만 바로 이전 라운드의 `SELECTED` 제출물을 사용하고, `ALL_SUBMISSIONS`와 `MANUAL`은 각자의 대상 규칙을 사용한다. 한 대회에는 `OPEN` 라운드를 하나만 허용하며, 종료 시각이 지난 `OPEN` 라운드는 전용 연장 API로 미래 시각까지 연장한 뒤 미완료 배정을 이어간다. 수상은 대회에 설정된 마지막 Review Round가 `FINALIZED`된 뒤에만 확정한다.
+
+`targetType=MANUAL`이면서 `decisionRule=MANUAL`인 무채점 수동 라운드는
+평가 기준, 배정, `REVIEW`, 점수를 만들지 않는다. 관리자가 모든
+ENTRY의 판정 사유와 중복 없는 연속 순위 `1..N`을 함께 제출하며,
+`finalScore`는 null로 확정한다.
 
 ## 10. Credential 발급 트랜잭션
 

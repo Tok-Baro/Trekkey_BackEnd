@@ -14,5 +14,5 @@ public interface ContestLikeRepository extends JpaRepository<ContestLike, Long> 
 
     Optional<ContestLike> findByContestIdAndUserId(Long contestId, Long userId);
 
-    
+
 }

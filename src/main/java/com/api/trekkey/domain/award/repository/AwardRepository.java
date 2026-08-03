@@ -18,7 +18,7 @@ public interface AwardRepository extends JpaRepository<Award, Long> {
             from Award a
             join fetch a.team t
             join fetch t.contest c
-            join fetch a.contestStageEntry e
+            join fetch a.reviewRoundEntry e
             join fetch e.submission
             where c.id = :contestId
             order by a.awardRankNo asc
@@ -33,7 +33,7 @@ public interface AwardRepository extends JpaRepository<Award, Long> {
             from Award a
             join fetch a.team t
             join fetch t.contest
-            join fetch a.contestStageEntry e
+            join fetch a.reviewRoundEntry e
             join fetch e.submission
             where a.status = :status
               and (

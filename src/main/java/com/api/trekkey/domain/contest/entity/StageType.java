@@ -5,5 +5,9 @@ public enum StageType {
     SUBMISSION,
     REVIEW,
     PRESENTATION,
-    AWARD
+    AWARD;
+
+    public boolean supportsReviewCriteria() {
+        return this == REVIEW || this == PRESENTATION;
+    }
 }

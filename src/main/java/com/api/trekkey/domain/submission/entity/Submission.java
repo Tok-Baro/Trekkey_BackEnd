@@ -73,11 +73,28 @@ public class Submission extends BaseEntity {
     }
 
     // 제출을 확정한다. 심사가 시작되면 호출되며 이후 덮어쓰기를 거부한다.
-    public void finalizeSubmission(LocalDateTime now) {
-        this.finalizedAt = now;
+    public boolean finalizeSubmission(LocalDateTime now) {
+        return finalizeAt(now);
     }
 
     public boolean isFinalized() {
         return finalizedAt != null;
     }
+
+    /**
+     * 제출물을 심사 대상으로 확정한다.
+     *
+     * <p>제출 완료 상태만 한 번 확정할 수 있도록 엔티티 수준에서도 보호한다.
+     * 같은 제출물을 다시 확정하려는 호출은 최초 확정 시각을 유지한다.</p>
+     */
+    public boolean finalizeAt(LocalDateTime now) {
+        if (now == null
+                || isFinalized()
+                || status != SubmissionStatus.SUBMITTED) {
+            return false;
+        }
+        this.finalizedAt = now;
+        return true;
+    }
+
 }

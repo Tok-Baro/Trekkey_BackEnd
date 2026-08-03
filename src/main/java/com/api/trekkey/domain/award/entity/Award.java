@@ -1,6 +1,6 @@
 package com.api.trekkey.domain.award.entity;
 
-import com.api.trekkey.domain.review.entity.ContestStageEntry;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
 import com.api.trekkey.domain.team.entity.Team;
 import com.api.trekkey.global.entity.BaseEntity;
 import jakarta.persistence.Column;
@@ -44,9 +44,9 @@ public class Award extends BaseEntity {
     private String publicId;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "contest_stage_entry_id", nullable = false, unique = true)
+    @JoinColumn(name = "review_round_entry_id", nullable = false, unique = true)
     // 수상 근거 공식 결과 — ENTRY당 한 건 (erd-mvp 제약)
-    private ContestStageEntry contestStageEntry;
+    private ReviewRoundEntry reviewRoundEntry;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "team_id", nullable = false)

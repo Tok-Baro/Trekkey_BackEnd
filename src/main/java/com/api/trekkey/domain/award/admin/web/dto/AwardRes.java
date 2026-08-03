@@ -27,8 +27,8 @@ public record AwardRes(
                 award.getAwardRankNo(),
                 award.getPrize(),
                 award.getTeam().getName(),
-                award.getContestStageEntry().getSubmission().getTitle(),
-                award.getContestStageEntry().getFinalScore(),
+                award.getReviewRoundEntry().getSubmission().getTitle(),
+                award.getReviewRoundEntry().getFinalScore(),
                 award.getStatus(),
                 award.getCertificateNo(),
                 award.getConfirmedAt()

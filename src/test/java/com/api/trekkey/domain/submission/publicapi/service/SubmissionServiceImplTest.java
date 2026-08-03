@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -14,7 +13,6 @@ import static org.mockito.Mockito.verify;
 
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
-import com.api.trekkey.domain.contest.entity.StageStatus;
 import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
 import com.api.trekkey.domain.submission.entity.Submission;
@@ -213,9 +211,10 @@ class SubmissionServiceImplTest {
     @DisplayName("제출 단계가 열려 있지 않으면 제출할 수 없다")
     void submit_throwsWhenStageNotOpen() {
         ContestStage closedStage = mock(ContestStage.class);
-        given(closedStage.getStageType()).willReturn(StageType.SUBMISSION);
-        given(closedStage.getStatus()).willReturn(StageStatus.COMPLETED);
-        given(contestStageRepository.findAllByContestIdOrderBySequenceNoAsc(200L))
+        given(closedStage.isOpenAt(any(LocalDateTime.class))).willReturn(false);
+        given(contestStageRepository
+                .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
+                        200L, StageType.SUBMISSION))
                 .willReturn(List.of(closedStage));
 
         assertThatThrownBy(() -> submissionService.submit(10L, "team-pub-1", "작품", List.of(pdfFile())))
@@ -284,9 +283,10 @@ class SubmissionServiceImplTest {
     private void givenSubmissionStageOpen() {
         ContestStage stage = mock(ContestStage.class);
         lenient().when(stage.getStageType()).thenReturn(StageType.SUBMISSION);
-        lenient().when(stage.getStatus()).thenReturn(StageStatus.OPEN);
-        lenient().when(stage.getEndsAt()).thenReturn(LocalDateTime.now().plusDays(7));
-        lenient().when(contestStageRepository.findAllByContestIdOrderBySequenceNoAsc(200L))
+        lenient().when(stage.isOpenAt(any(LocalDateTime.class))).thenReturn(true);
+        lenient().when(contestStageRepository
+                        .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
+                                200L, StageType.SUBMISSION))
                 .thenReturn(List.of(stage));
     }
 

@@ -1,6 +1,5 @@
 package com.api.trekkey.domain.review.entity;
 
-import com.api.trekkey.domain.contest.entity.ReviewCriterion;
 import com.api.trekkey.global.entity.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -25,27 +24,24 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Table(
+        name = "review_score_item",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_score_item_review_criterion",
+                name = "uk_review_score_item_review_criterion",
                 columnNames = {"review_id", "criterion_id"}))
 public class ReviewScoreItem extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    // 항목별 점수 PK
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "review_id", nullable = false)
-    // 소속 심사 결과
     private Review review;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "criterion_id", nullable = false)
-    // 평가 기준
-    private ReviewCriterion criterion;
+    private ReviewCriterion reviewCriterion;
 
-    @Column(nullable = false, precision = 10, scale = 2)
-    // 부여 점수 — 0 이상, 기준 maxScore 이하 (서비스 검증)
+    @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal score;
 }

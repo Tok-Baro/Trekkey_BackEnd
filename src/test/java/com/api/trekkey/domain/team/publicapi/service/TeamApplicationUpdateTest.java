@@ -12,9 +12,9 @@ import com.api.trekkey.domain.award.repository.AwardRepository;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
-import com.api.trekkey.domain.contest.repository.ContestStageRepository;
 import com.api.trekkey.domain.organization.entity.Organization;
-import com.api.trekkey.domain.review.repository.ContestStageEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.submission.repository.SubmissionRepository;
 import com.api.trekkey.domain.team.entity.Team;
 import com.api.trekkey.domain.team.entity.TeamMember;
@@ -60,10 +60,10 @@ class TeamApplicationUpdateTest {
     private SubmissionRepository submissionRepository;
 
     @Mock
-    private ContestStageRepository contestStageRepository;
+    private ReviewRoundRepository reviewRoundRepository;
 
     @Mock
-    private ContestStageEntryRepository contestStageEntryRepository;
+    private ReviewRoundEntryRepository reviewRoundEntryRepository;
 
     @Mock
     private AwardRepository awardRepository;
@@ -84,8 +84,8 @@ class TeamApplicationUpdateTest {
                 teamRepository,
                 teamMemberRepository,
                 submissionRepository,
-                contestStageRepository,
-                contestStageEntryRepository,
+                reviewRoundRepository,
+                reviewRoundEntryRepository,
                 awardRepository);
 
         contest = Contest.builder()
@@ -103,7 +103,7 @@ class TeamApplicationUpdateTest {
     @DisplayName("보완요청 상태에서 수정하면 검토중으로 전환된다")
     void updateApplication_revisionRequestedBecomesPending() {
         Team team = teamFixture(TeamStatus.REVISION_REQUESTED, null);
-        given(teamRepository.findByContestPublicIdAndLeaderUserId("contest-public-id", 10L))
+        given(teamRepository.findByContestPublicIdAndLeaderUserIdForUpdate("contest-public-id", 10L))
                 .willReturn(Optional.of(team));
 
         teamApplicationService.updateApplication(
@@ -119,7 +119,7 @@ class TeamApplicationUpdateTest {
     @Test
     @DisplayName("대표자가 아닌 사용자는 신청을 찾을 수 없어 수정할 수 없다")
     void updateApplication_throwsNotFoundWhenUserIsNotLeader() {
-        given(teamRepository.findByContestPublicIdAndLeaderUserId("contest-public-id", 99L))
+        given(teamRepository.findByContestPublicIdAndLeaderUserIdForUpdate("contest-public-id", 99L))
                 .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> teamApplicationService.updateApplication(
@@ -137,7 +137,7 @@ class TeamApplicationUpdateTest {
     @DisplayName("명단이 확정된 팀은 신청을 수정할 수 없다")
     void updateApplication_throwsWhenFinalized() {
         Team team = teamFixture(TeamStatus.APPROVED, LocalDateTime.now());
-        given(teamRepository.findByContestPublicIdAndLeaderUserId("contest-public-id", 10L))
+        given(teamRepository.findByContestPublicIdAndLeaderUserIdForUpdate("contest-public-id", 10L))
                 .willReturn(Optional.of(team));
 
         assertThatThrownBy(() -> teamApplicationService.updateApplication(
@@ -160,7 +160,7 @@ class TeamApplicationUpdateTest {
                 .participationType(ParticipationType.INDIVIDUAL)
                 .build();
         Team team = teamFixture(TeamStatus.PENDING, null);
-        given(teamRepository.findByContestPublicIdAndLeaderUserId("contest-public-id", 10L))
+        given(teamRepository.findByContestPublicIdAndLeaderUserIdForUpdate("contest-public-id", 10L))
                 .willReturn(Optional.of(team));
 
         assertThatThrownBy(() -> teamApplicationService.updateApplication(
@@ -185,7 +185,7 @@ class TeamApplicationUpdateTest {
         TeamMember omittedMember = teamMember(team, omittedUser);
         TeamMember retainedMember = teamMember(team, retainedUser);
         given(organization.getId()).willReturn(2L);
-        given(teamRepository.findByContestPublicIdAndLeaderUserId("contest-public-id", 10L))
+        given(teamRepository.findByContestPublicIdAndLeaderUserIdForUpdate("contest-public-id", 10L))
                 .willReturn(Optional.of(team));
         given(userRepository.findAllByIdInAndOrganizationIdAndRoleAndStatus(
                 List.of(12L, 13L),
@@ -225,7 +225,7 @@ class TeamApplicationUpdateTest {
         Team team = teamFixture(TeamStatus.PENDING, null);
         User addedUser = User.builder().id(15L).build();
         given(organization.getId()).willReturn(2L);
-        given(teamRepository.findByContestPublicIdAndLeaderUserId("contest-public-id", 10L))
+        given(teamRepository.findByContestPublicIdAndLeaderUserIdForUpdate("contest-public-id", 10L))
                 .willReturn(Optional.of(team));
         given(userRepository.findAllByIdInAndOrganizationIdAndRoleAndStatus(
                 List.of(15L),
@@ -259,7 +259,7 @@ class TeamApplicationUpdateTest {
         Team team = teamFixture(TeamStatus.PENDING, null);
         User member = User.builder().id(11L).build();
         given(organization.getId()).willReturn(2L);
-        given(teamRepository.findByContestPublicIdAndLeaderUserId("contest-public-id", 10L))
+        given(teamRepository.findByContestPublicIdAndLeaderUserIdForUpdate("contest-public-id", 10L))
                 .willReturn(Optional.of(team));
         given(userRepository.findAllByIdInAndOrganizationIdAndRoleAndStatus(
                 List.of(11L),

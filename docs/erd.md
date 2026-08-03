@@ -1,12 +1,15 @@
 # Trekkey 공모전·Credential 최종 ERD
 
 - 기준일: 2026-07-27
-- 상태: 목표 ERD 확정. 현재 `develop`은 `CONTEST_STAGE` 기반이며 Review Round 전환 전이다.
+- 상태: 목표 ERD 확정. 리뷰 도메인은 `REVIEW_ROUND`를 공식 심사 라운드 원장으로 사용한다.
 - 통합 보기: [업무·블록체인 전체 ERD](./unified-erd.md)
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 상세 설계: [블록체인 앵커링 설계](./blockchain-anchoring-architecture.md)
 
-> 2026-07-27 PR #9가 `develop`에 병합됐지만 실행 코드는 아직 `CONTEST_STAGE`/`CONTEST_STAGE_ENTRY`다. 이 문서의 `REVIEW_ROUND` 모델은 합의된 목표이며, 후속 심사 모델 전환 PR이 병합되기 전에는 현재 DB 스키마로 간주하지 않는다.
+> 기존 `CONTEST_STAGE` 기반 리뷰 데이터가 있는 DB는 배포 전에
+> [Review Round DB 이전 안내](./review-domain-final-erd-alignment.md)에 따라
+> 명시적으로 이전해야 한다. Hibernate `ddl-auto=update`만으로는 기존 FK와
+> 데이터를 안전하게 전환할 수 없다.
 
 ## 1. 범위
 
@@ -99,7 +102,7 @@ erDiagram
         bigint ownerUserId FK "담당 관리자"
         string title "대회명"
         string department "주관 부서 스냅샷"
-        string status "DRAFT/PUBLISHED/COMPLETED/CANCELED"
+        string status "PREPARING/APPLICATION_OPEN/REVIEWING/AWARDED"
         string participationType "TEAM/INDIVIDUAL/MIXED"
         int awardCount "예정 시상 수"
         datetime applicationStartsAt "신청 시작"
@@ -197,7 +200,7 @@ erDiagram
         bigint reviewRoundId FK "평가 라운드"
         bigint submissionId FK "대상 제출물"
         string status "ELIGIBLE/IN_REVIEW/SELECTED/NOT_SELECTED/WITHDRAWN/DISQUALIFIED"
-        decimal finalScore "확정 합산 점수"
+        decimal finalScore "확정 평균 점수, 무채점 수동은 null"
         int rankNo "라운드 확정 순위"
         string decisionType "RULE/MANUAL"
         bigint decidedByUserId FK "수동 판정 관리자"
@@ -553,8 +556,11 @@ erDiagram
 
 ### 대회 일정과 상태
 
-- `CONTEST.status`는 `DRAFT/PUBLISHED/COMPLETED/CANCELED` 관리 상태만 저장한다.
-- 신청 전, 신청 중, 제출 중, 심사 중, 수상 완료 같은 화면 단계는 일정, 열린 Review Round, 확정 AWARD로 계산하며 별도 상태로 중복 저장하지 않는다.
+- `CONTEST.status`는
+  `PREPARING/APPLICATION_OPEN/REVIEWING/AWARDED` 운영 상태를 저장한다.
+- 일반 대회 생성·수정 API는 `AWARDED`로 직접 진입하거나
+  `AWARDED`에서 다른 상태로 되돌릴 수 없다. 최신 수상 후보 검증을
+  통과한 수상 확정 트랜잭션만 `AWARDED`로 전환한다.
 - `applicationStartsAt < applicationEndsAt <= submissionDueAt`을 검사한다.
 - 승인된 팀은 `submissionDueAt`까지 같은 제출물을 등록하고 수정할 수 있다.
 - 신청, 제출, 시상을 표현하는 별도 Stage row는 만들지 않는다.
@@ -565,6 +571,9 @@ erDiagram
 - `TEAM.leaderUserId`는 현재 팀원이며 `roleCode = LEADER`여야 한다.
 - 팀에 가입한 `TEAM_MEMBER`는 이탈하거나 삭제하지 않는다.
 - 팀원 추가는 `participationFinalizedAt` 전까지만 허용하고, 확정 이후에는 추가와 역할 변경도 거부한다.
+- 명단 확정 뒤에는 신청 상태도 바꿀 수 없다. 심사 탈락 처리가 필요하면
+  TEAM을 다시 반려하지 않고 REVIEW_ROUND_ENTRY의
+  `DISQUALIFIED` 판정과 Credential 상태 변경 흐름을 사용한다.
 - 구성원을 잘못 등록한 신청은 팀 자체를 반려하고 다시 신청한다.
 - `TEAM.memberCount`는 조회용 캐시이고 원장은 `TEAM_MEMBER`다.
 - 상장은 팀 단위 `AWARD` 및 Credential 한 건으로 발급하고, 모든 구성원은 같은 수상을 참조한다.
@@ -584,14 +593,23 @@ erDiagram
 
 - `UNIQUE REVIEW_ROUND (contestId, roundNo)`이고 `roundNo >= 1`이어야 한다.
 - `roundNo`는 1부터 빈 번호 없이 이어지도록 대회 설정 트랜잭션에서 검사한다.
+- 라운드를 열 때 낮은 번호의 모든 라운드가 `FINALIZED`인지 확인하고,
+  같은 대회의 다른 `OPEN` 라운드가 있으면 거부한다.
 - `UNIQUE REVIEW_ROUND_ENTRY (reviewRoundId, submissionId)`.
 - `startsAt < endsAt`이어야 한다.
 - 첫 Review Round의 `startsAt`은 `CONTEST.submissionDueAt`보다 빠를 수 없다.
 - `decisionRule = TOP_N`이면 `selectCount > 0`만, `MIN_SCORE`이면 `minScore >= 0`만 사용하고 `MANUAL`이면 둘 다 null이어야 한다.
 - `PREVIOUS_SELECTED`는 2라운드부터 가능하며 직전 `roundNo`가 `FINALIZED`이고 동일 제출물이 `SELECTED`인지 검사한다.
-- 라운드를 `OPEN`으로 전환할 때 대상 ENTRY를 생성하고 대상 `SUBMISSION.finalizedAt`을 확정해 이후 수정을 거부한다.
+- 심사위원 배정에 ENTRY 식별자가 필요하므로 `PREPARING`에서 `ELIGIBLE` ENTRY를 초안으로 준비할 수 있다. `OPEN` 트랜잭션은 현재 대상 집합을 다시 검증하고 대상 `SUBMISSION.finalizedAt`을 확정한 뒤 ENTRY를 `IN_REVIEW`로 전환한다.
+- `OPEN` 전에 모든 대상 TEAM의 `participationFinalizedAt`이 있어야
+  한다.
+- 종료 시각이 지난 `OPEN` 라운드는 일반 설정 수정이 아니라 전용
+  연장 API로만 현재와 기존 종료 시각보다 뒤의 시각까지 연장한다.
+- `ALL_SUBMISSIONS` 초안과 현재 승인·제출 완료 작품 집합이 다르면 `OPEN`을 거부한다. 관리자는 대상을 다시 동기화하거나, 채점 이력이 없는 준비 단계에서 미완료 배정과 ENTRY를 초기화한 뒤 다시 준비한다.
 - `SELECTED`, `NOT_SELECTED`, `WITHDRAWN`, `DISQUALIFIED`는 `finalizedAt`이 필수다.
 - `decisionType = MANUAL`이면 `decidedByUserId`와 `decisionReason`이 필수다.
+- 무채점 수동 라운드의 `finalScore`는 null이며 모든 ENTRY에 중복 없는
+  연속 순위 `1..N`이 필요하다.
 - `FINALIZED` 라운드의 ENTRY, 평가 기준, 심사 배정, 제출된 심사 결과는 수정 및 삭제할 수 없다.
 - `UNIQUE REVIEW_ASSIGNMENT (contestJudgeId, reviewRoundEntryId)`.
 - 심사 배정 생성 시 judge의 대회와 ENTRY 라운드의 대회가 같은지 트랜잭션 안에서 검사한다.
@@ -604,9 +622,11 @@ erDiagram
 
 - `UNIQUE AWARD (reviewRoundEntryId)`.
 - 대회에 설정된 가장 높은 `roundNo`의 Review Round가 `FINALIZED`일 때, 그 라운드의 `SELECTED REVIEW_ROUND_ENTRY`만 수상의 공식 원천이 된다.
-- 심사 없이 수동 선정하는 대회도 `targetType = MANUAL`, `decisionRule = MANUAL`인 Review Round 한 건을 생성한다.
+- 심사 없이 수동 선정하는 대회도 `targetType = MANUAL`, `decisionRule = MANUAL`인 Review Round 한 건을 생성한다. 이 조합은 평가 기준과 심사 배정을 만들지 않으며, 관리자는 모든 ENTRY의 판정 사유와 중복 없는 1..N 수동 순위를 함께 확정한다.
 - `AWARD.teamId`는 조회용 비정규화 FK이며 `ENTRY -> SUBMISSION -> TEAM`과 항상 같아야 한다.
 - `AWARD.awardRankNo`는 라운드 순위가 아니라 상장에 표시할 수상 순위다.
+- 후보 산출 후 `awardCount` 또는 마지막 라운드의 선정 결과가 바뀌면
+  확정을 거부하고 후보 재산출을 요구한다.
 - AWARD가 하나라도 `CONFIRMED`된 뒤에는 Review Round를 추가, 삭제, 재정렬할 수 없다.
 - `NOT_SELECTED`, `WITHDRAWN`, `DISQUALIFIED` ENTRY에는 수상을 확정할 수 없다.
 

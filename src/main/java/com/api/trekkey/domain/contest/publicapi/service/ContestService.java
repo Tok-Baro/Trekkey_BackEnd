@@ -11,5 +11,7 @@ public interface ContestService {
 
     ContestDetailRes getContestDetail(Long userId, String publicId);
 
+    ContestDetailRes getContestDetailWithoutViewIncrement(Long userId, String publicId);
+
     ContestLikeRes toggleLike(Long userId, String contestPublicId);
 }

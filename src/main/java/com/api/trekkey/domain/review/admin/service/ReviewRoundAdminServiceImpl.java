@@ -1,0 +1,897 @@
+package com.api.trekkey.domain.review.admin.service;
+
+import com.api.trekkey.domain.audit.entity.AuditAction;
+import com.api.trekkey.domain.audit.support.AdminAuditLogger;
+import com.api.trekkey.domain.contest.entity.Contest;
+import com.api.trekkey.domain.contest.entity.ContestStage;
+import com.api.trekkey.domain.contest.entity.ContestStatus;
+import com.api.trekkey.domain.contest.entity.StageType;
+import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
+import com.api.trekkey.domain.contest.repository.ContestRepository;
+import com.api.trekkey.domain.contest.repository.ContestStageRepository;
+import com.api.trekkey.domain.credential.integration.WorkCredentialIssuer;
+import com.api.trekkey.domain.review.entity.ReviewCriterion;
+import com.api.trekkey.domain.review.entity.ReviewAssignment;
+import com.api.trekkey.domain.review.entity.ReviewAssignmentStatus;
+import com.api.trekkey.domain.review.entity.ReviewRound;
+import com.api.trekkey.domain.review.entity.ReviewRoundDecisionRule;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntry;
+import com.api.trekkey.domain.review.entity.ReviewRoundEntryStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundStatus;
+import com.api.trekkey.domain.review.entity.ReviewRoundTargetType;
+import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
+import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
+import com.api.trekkey.domain.review.repository.ReviewCriterionRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
+import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundDeadlineExtendReq;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundCriterionReq;
+import com.api.trekkey.domain.review.admin.web.dto.request.ReviewRoundSaveReq;
+import com.api.trekkey.domain.review.admin.web.dto.response.ReviewRoundRes;
+import com.api.trekkey.domain.submission.entity.Submission;
+import com.api.trekkey.domain.submission.entity.SubmissionStatus;
+import com.api.trekkey.domain.submission.repository.SubmissionRepository;
+import com.api.trekkey.domain.team.entity.Team;
+import com.api.trekkey.domain.team.entity.TeamStatus;
+import com.api.trekkey.domain.team.repository.TeamRepository;
+import com.api.trekkey.domain.user.entity.User;
+import com.api.trekkey.domain.user.entity.UserRole;
+import com.api.trekkey.domain.user.entity.UserStatus;
+import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
+import com.api.trekkey.domain.user.repository.UserRepository;
+import com.api.trekkey.global.exception.CustomException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class ReviewRoundAdminServiceImpl implements ReviewRoundAdminService {
+
+    private static final String TARGET_TYPE_REVIEW_ROUND = "REVIEW_ROUND";
+    private static final String CRITERION_CODE_REGEX =
+            "[A-Za-z0-9][A-Za-z0-9_-]*";
+
+    private final UserRepository userRepository;
+    private final ContestRepository contestRepository;
+    private final ContestStageRepository contestStageRepository;
+    private final ReviewRoundRepository reviewRoundRepository;
+    private final ReviewCriterionRepository reviewCriterionRepository;
+    private final ReviewRoundEntryRepository reviewRoundEntryRepository;
+    private final ReviewAssignmentRepository reviewAssignmentRepository;
+    private final TeamRepository teamRepository;
+    private final SubmissionRepository submissionRepository;
+    private final WorkCredentialIssuer workCredentialIssuer;
+    private final AdminAuditLogger adminAuditLogger;
+    private final EntityManager entityManager;
+    private final Clock clock;
+
+    @Override
+    @Transactional
+    public ReviewRoundRes createRound(
+            Long adminUserId,
+            String contestPublicId,
+            ReviewRoundSaveReq req
+    ) {
+        User admin = findActiveAdmin(adminUserId);
+        Contest contest = findContest(contestPublicId, admin);
+        validateRoundRequest(req);
+
+        // 같은 대회의 라운드 번호를 동시에 만들지 못하도록 대회를 먼저 잠근다.
+        lockContest(contest);
+        rejectAwardedContestConfiguration(contest);
+        List<ReviewRound> existingRounds =
+                reviewRoundRepository
+                        .findAllForUpdateByContestIdOrderByRoundNoAsc(
+                                contest.getId());
+        validateNewRoundSequence(existingRounds, req.roundNo());
+        validateFirstRoundAfterSubmissionDeadline(
+                contest,
+                req.roundNo(),
+                req.startsAt());
+
+        List<CriterionPlan> criterionPlans =
+                resolveCriterionPlans(req.criteria(), List.of());
+        ReviewRound round = ReviewRound.builder()
+                .contest(contest)
+                .roundNo(req.roundNo())
+                .name(req.name().trim())
+                .status(ReviewRoundStatus.PREPARING)
+                .startsAt(req.startsAt())
+                .endsAt(req.endsAt())
+                .targetType(req.targetType())
+                .decisionRule(req.decisionRule())
+                .selectCount(req.selectCount())
+                .minScore(req.minScore())
+                .build();
+
+        try {
+            round = reviewRoundRepository.saveAndFlush(round);
+            List<ReviewCriterion> criteria =
+                    synchronizeCriteria(round, List.of(), criterionPlans);
+            reviewCriterionRepository.flush();
+
+            adminAuditLogger.log(
+                    admin.getId(),
+                    admin.getOrganization().getId(),
+                    AuditAction.REVIEW_ROUND_CREATE,
+                    TARGET_TYPE_REVIEW_ROUND,
+                    round.getId(),
+                    "contestId=" + contest.getId()
+                            + ", roundNo=" + round.getRoundNo()
+            );
+            return ReviewRoundRes.from(round, criteria);
+        } catch (DataIntegrityViolationException exception) {
+            throw new CustomException(
+                    ReviewErrorResponseCode.REVIEW_ROUND_DUPLICATED);
+        }
+    }
+
+    @Override
+    public List<ReviewRoundRes> getRounds(
+            Long adminUserId,
+            String contestPublicId
+    ) {
+        User admin = findActiveAdmin(adminUserId);
+        Contest contest = findContest(contestPublicId, admin);
+        List<ReviewRound> rounds =
+                reviewRoundRepository
+                        .findAllByContestIdOrderByRoundNoAsc(contest.getId());
+        if (rounds.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, List<ReviewCriterion>> criteriaByRoundId =
+                groupCriteriaByRoundId(
+                        reviewCriterionRepository
+                                .findAllByReviewRoundIdInOrderBySortOrderAsc(
+                                        rounds.stream()
+                                                .map(ReviewRound::getId)
+                                                .toList()));
+
+        return rounds.stream()
+                .map(round -> ReviewRoundRes.from(
+                        round,
+                        criteriaByRoundId.getOrDefault(
+                                round.getId(),
+                                List.of())))
+                .toList();
+    }
+
+    @Override
+    public ReviewRoundRes getRound(
+            Long adminUserId,
+            String contestPublicId,
+            Long roundId
+    ) {
+        User admin = findActiveAdmin(adminUserId);
+        Contest contest = findContest(contestPublicId, admin);
+        validateRoundOrganization(roundId, admin);
+        ReviewRound round = reviewRoundRepository.findById(roundId)
+                .orElseThrow(() -> new CustomException(
+                        ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND));
+        validateRoundContest(round, contest);
+
+        List<ReviewCriterion> criteria =
+                reviewCriterionRepository
+                        .findAllByReviewRoundIdInOrderBySortOrderAsc(
+                                List.of(roundId));
+        return ReviewRoundRes.from(round, criteria);
+    }
+
+    @Override
+    @Transactional
+    public ReviewRoundRes updateRound(
+            Long adminUserId,
+            String contestPublicId,
+            Long roundId,
+            ReviewRoundSaveReq req
+    ) {
+        User admin = findActiveAdmin(adminUserId);
+        Contest contest = findContest(contestPublicId, admin);
+        validateRoundRequest(req);
+        lockContest(contest);
+        rejectAwardedContestConfiguration(contest);
+        validateRoundOrganization(roundId, admin);
+
+        List<ReviewRound> lockedRounds =
+                reviewRoundRepository
+                        .findAllForUpdateByContestIdOrderByRoundNoAsc(
+                                contest.getId());
+        ReviewRound round = findRound(roundId, lockedRounds);
+        if (!round.isConfigurationEditable()) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_CONFIGURATION_LOCKED);
+        }
+        if (round.getRoundNo() != req.roundNo()) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_SEQUENCE_INVALID);
+        }
+        validateFirstRoundAfterSubmissionDeadline(
+                contest,
+                req.roundNo(),
+                req.startsAt());
+
+        List<ReviewCriterion> existingCriteria =
+                reviewCriterionRepository
+                        .findAllForUpdateByReviewRoundIdInOrderBySortOrderAsc(
+                                List.of(roundId));
+        List<ReviewRoundEntry> existingEntries =
+                reviewRoundEntryRepository
+                        .findAllForShareByReviewRoundIdOrderByIdAsc(roundId);
+        if (!existingEntries.isEmpty()) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_CONFIGURATION_LOCKED);
+        }
+        List<CriterionPlan> criterionPlans =
+                resolveCriterionPlans(req.criteria(), existingCriteria);
+
+        round.updateConfiguration(
+                req.name().trim(),
+                req.roundNo(),
+                req.startsAt(),
+                req.endsAt(),
+                req.targetType(),
+                req.decisionRule(),
+                req.selectCount(),
+                req.minScore()
+        );
+
+        try {
+            List<ReviewCriterion> criteria =
+                    synchronizeCriteria(
+                            round,
+                            existingCriteria,
+                            criterionPlans);
+            reviewRoundRepository.flush();
+            reviewCriterionRepository.flush();
+
+            adminAuditLogger.log(
+                    admin.getId(),
+                    admin.getOrganization().getId(),
+                    AuditAction.REVIEW_ROUND_UPDATE,
+                    TARGET_TYPE_REVIEW_ROUND,
+                    round.getId(),
+                    "contestId=" + contest.getId()
+                            + ", roundNo=" + round.getRoundNo()
+            );
+            return ReviewRoundRes.from(round, criteria);
+        } catch (DataIntegrityViolationException exception) {
+            throw new CustomException(
+                    ReviewErrorResponseCode.REVIEW_ROUND_DUPLICATED);
+        }
+    }
+
+    @Override
+    @Transactional
+    public ReviewRoundRes openRound(
+            Long adminUserId,
+            String contestPublicId,
+            Long roundId
+    ) {
+        User admin = findActiveAdmin(adminUserId);
+        Contest contest = findContest(contestPublicId, admin);
+        lockContest(contest);
+        if (contest.getStatus() == ContestStatus.AWARDED) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_STATUS_TRANSITION_INVALID);
+        }
+        validateRoundOrganization(roundId, admin);
+        ReviewRound round = reviewRoundRepository.findByIdForUpdate(roundId)
+                .orElseThrow(() -> new CustomException(
+                        ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND));
+        validateRoundContest(round, contest);
+
+        if (round.getStatus() != ReviewRoundStatus.PREPARING) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_STATUS_TRANSITION_INVALID);
+        }
+        List<ReviewRound> contestRounds = reviewRoundRepository
+                .findAllForUpdateByContestIdOrderByRoundNoAsc(
+                        contest.getId());
+        validateRoundOpeningOrder(round, contestRounds);
+        if (!round.hasValidConfigurationForOpening()) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_CONFIGURATION_INVALID);
+        }
+        LocalDateTime now = LocalDateTime.now(clock);
+        if (!now.isBefore(round.getEndsAt())) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_OPEN_WINDOW_EXPIRED);
+        }
+        validateSubmissionDeadlinePassed(contest, round, now);
+
+        List<ReviewCriterion> criteria =
+                reviewCriterionRepository
+                        .findAllForShareByReviewRoundIdOrderBySortOrderAsc(
+                                roundId);
+        List<ReviewCriterion> activeCriteria = activeCriteria(criteria);
+        boolean manualWithoutReview = round.isManualWithoutReview();
+        if (activeCriteria.isEmpty() && !manualWithoutReview) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_CRITERION_REQUIRED);
+        }
+        if (activeCriteria.stream()
+                .anyMatch(criterion -> criterion.getMaxScore() < 1)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_CONFIGURATION_INVALID);
+        }
+
+        List<ReviewRoundEntry> entries =
+                reviewRoundEntryRepository
+                        .findAllForUpdateByReviewRoundIdOrderByIdAsc(roundId);
+        if (entries.isEmpty()) {
+            throw new CustomException(
+                    ReviewErrorResponseCode.REVIEW_ENTRY_REQUIRED);
+        }
+        if (entries.stream().anyMatch(entry ->
+                entry.getStatus() != ReviewRoundEntryStatus.ELIGIBLE)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode.REVIEW_ROUND_ENTRY_INVALID);
+        }
+
+        if (!manualWithoutReview) {
+            List<Long> entryIds = entries.stream()
+                    .map(ReviewRoundEntry::getId)
+                    .toList();
+            List<ReviewAssignment> assignments =
+                    reviewAssignmentRepository
+                            .findAllForShareByReviewRoundEntryIdInOrderByEntryIdAscIdAsc(
+                                    entryIds);
+            Set<Long> assignedEntryIds = assignments.stream()
+                    .filter(assignment -> assignment.getStatus()
+                            != ReviewAssignmentStatus.CANCELED)
+                    .map(assignment ->
+                            assignment.getReviewRoundEntry().getId())
+                    .collect(java.util.stream.Collectors.toSet());
+            if (entryIds.stream().anyMatch(entryId ->
+                    !assignedEntryIds.contains(entryId))) {
+                throw new CustomException(
+                        ReviewErrorResponseCode.REVIEW_ASSIGNMENT_REQUIRED);
+            }
+        }
+
+        List<Team> lockedTeams =
+                teamRepository.findAllForUpdateByContestIdOrderByIdAsc(
+                        contest.getId());
+        validateTargetTeamsFinalized(entries, lockedTeams);
+        List<Submission> lockedSubmissions = submissionRepository
+                .findAllForUpdateByContestIdAndStatusAndTeamStatus(
+                        contest.getId(),
+                        SubmissionStatus.SUBMITTED,
+                        TeamStatus.APPROVED);
+        if (round.getTargetType()
+                == ReviewRoundTargetType.ALL_SUBMISSIONS) {
+            Set<Long> entrySubmissionIds = entries.stream()
+                    .map(entry -> entry.getSubmission().getId())
+                    .collect(java.util.stream.Collectors.toSet());
+            Set<Long> eligibleSubmissionIds = lockedSubmissions.stream()
+                    .map(Submission::getId)
+                    .collect(java.util.stream.Collectors.toSet());
+            if (!entrySubmissionIds.equals(eligibleSubmissionIds)) {
+                throw new CustomException(
+                        ReviewErrorResponseCode
+                                .REVIEW_ENTRY_SYNC_REQUIRED);
+            }
+        }
+        Map<Long, Submission> submissionsById = lockedSubmissions.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        Submission::getId,
+                        submission -> submission));
+        LocalDateTime finalizedAtUtc = LocalDateTime.ofInstant(
+                clock.instant(),
+                ZoneOffset.UTC);
+        for (ReviewRoundEntry entry : entries) {
+            Submission submission =
+                    submissionsById.get(entry.getSubmission().getId());
+            if (submission == null) {
+                throw new CustomException(
+                        ReviewErrorResponseCode
+                                .REVIEW_ENTRY_SUBMISSION_INVALID);
+            }
+            if (!submission.isFinalized()) {
+                if (!submission.finalizeAt(finalizedAtUtc)) {
+                    throw new CustomException(
+                            ReviewErrorResponseCode
+                                    .REVIEW_ENTRY_SUBMISSION_INVALID);
+                }
+                workCredentialIssuer.issueForFinalizedSubmission(submission);
+            }
+        }
+
+        if (!round.open()) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_STATUS_TRANSITION_INVALID);
+        }
+        entries.forEach(ReviewRoundEntry::startReview);
+        contest.changeStatus(ContestStatus.REVIEWING);
+        reviewRoundRepository.flush();
+        reviewRoundEntryRepository.flush();
+
+        adminAuditLogger.log(
+                admin.getId(),
+                admin.getOrganization().getId(),
+                AuditAction.REVIEW_ROUND_OPEN,
+                TARGET_TYPE_REVIEW_ROUND,
+                round.getId(),
+                "contestId=" + contest.getId()
+                        + ", entryCount=" + entries.size()
+        );
+
+        return ReviewRoundRes.from(round, activeCriteria);
+    }
+
+    @Override
+    @Transactional
+    public ReviewRoundRes extendDeadline(
+            Long adminUserId,
+            String contestPublicId,
+            Long roundId,
+            ReviewRoundDeadlineExtendReq req
+    ) {
+        User admin = findActiveAdmin(adminUserId);
+        Contest contest = findContest(contestPublicId, admin);
+        lockContest(contest);
+        rejectAwardedContestConfiguration(contest);
+        validateRoundOrganization(roundId, admin);
+
+        ReviewRound round = reviewRoundRepository.findByIdForUpdate(roundId)
+                .orElseThrow(() -> new CustomException(
+                        ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND));
+        validateRoundContest(round, contest);
+        if (round.getStatus() != ReviewRoundStatus.OPEN) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_STATUS_TRANSITION_INVALID);
+        }
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        if (req == null
+                || req.endsAt() == null
+                || !req.endsAt().isAfter(now)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_DEADLINE_INVALID);
+        }
+
+        LocalDateTime previousEndsAt = round.getEndsAt();
+        if (!round.extendEndsAt(req.endsAt())) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_DEADLINE_INVALID);
+        }
+        reviewRoundRepository.flush();
+
+        adminAuditLogger.log(
+                admin.getId(),
+                admin.getOrganization().getId(),
+                AuditAction.REVIEW_ROUND_DEADLINE_EXTEND,
+                TARGET_TYPE_REVIEW_ROUND,
+                round.getId(),
+                "endsAt=" + previousEndsAt + "->" + round.getEndsAt()
+        );
+
+        List<ReviewCriterion> criteria =
+                reviewCriterionRepository
+                        .findAllByReviewRoundIdInOrderBySortOrderAsc(
+                                List.of(roundId));
+        return ReviewRoundRes.from(round, criteria);
+    }
+
+    private void lockContest(Contest contest) {
+        entityManager.refresh(contest, LockModeType.PESSIMISTIC_WRITE);
+    }
+
+    private void validateRoundOpeningOrder(
+            ReviewRound round,
+            List<ReviewRound> contestRounds
+    ) {
+        if (contestRounds.stream().anyMatch(candidate ->
+                candidate.getRoundNo() < round.getRoundNo()
+                        && candidate.getStatus()
+                        != ReviewRoundStatus.FINALIZED)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_PREVIOUS_NOT_FINALIZED);
+        }
+        if (contestRounds.stream().anyMatch(candidate ->
+                !Objects.equals(candidate.getId(), round.getId())
+                        && candidate.getStatus()
+                        == ReviewRoundStatus.OPEN)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode.REVIEW_ROUND_ALREADY_OPEN);
+        }
+    }
+
+    private void validateTargetTeamsFinalized(
+            List<ReviewRoundEntry> entries,
+            List<Team> lockedTeams
+    ) {
+        Set<Long> targetTeamIds = entries.stream()
+                .map(entry -> entry.getSubmission().getTeam().getId())
+                .collect(java.util.stream.Collectors.toSet());
+        Set<Long> finalizedTeamIds = lockedTeams.stream()
+                .filter(Team::isFinalized)
+                .map(Team::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!finalizedTeamIds.containsAll(targetTeamIds)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ENTRY_TEAM_NOT_FINALIZED);
+        }
+    }
+
+    private void rejectAwardedContestConfiguration(Contest contest) {
+        if (contest.getStatus() == ContestStatus.AWARDED) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_CONFIGURATION_LOCKED);
+        }
+    }
+
+    private void validateFirstRoundAfterSubmissionDeadline(
+            Contest contest,
+            int roundNo,
+            LocalDateTime startsAt
+    ) {
+        if (roundNo != 1) {
+            return;
+        }
+        ContestStage submissionStage = findSubmissionStage(contest);
+        if (submissionStage == null) {
+            return;
+        }
+        LocalDateTime submissionEndsAt = submissionStage.getEndsAt();
+        if (submissionEndsAt == null
+                || startsAt.isBefore(submissionEndsAt)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_SUBMISSION_WINDOW_INVALID);
+        }
+    }
+
+    private void validateSubmissionDeadlinePassed(
+            Contest contest,
+            ReviewRound round,
+            LocalDateTime now
+    ) {
+        if (round.getRoundNo() != 1) {
+            return;
+        }
+        ContestStage submissionStage = findSubmissionStage(contest);
+        if (submissionStage == null) {
+            return;
+        }
+        LocalDateTime submissionEndsAt = submissionStage.getEndsAt();
+        if (submissionEndsAt == null
+                || !now.isAfter(submissionEndsAt)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_SUBMISSION_WINDOW_INVALID);
+        }
+    }
+
+    private ContestStage findSubmissionStage(Contest contest) {
+        return contestStageRepository
+                .findAllForShareByContestIdAndStageTypeOrderBySequenceNoAsc(
+                        contest.getId(),
+                        StageType.SUBMISSION)
+                .stream()
+                .findFirst()
+                .orElse(null);
+    }
+
+    private User findActiveAdmin(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(
+                        UserErrorResponseCode.USER_NOT_FOUND));
+        if ((user.getRole() != UserRole.ADMIN
+                && user.getRole() != UserRole.ROOT_ADMIN)
+                || user.getStatus() != UserStatus.ACTIVE) {
+            throw new CustomException(UserErrorResponseCode.USER_INVALID_TOKEN);
+        }
+        return user;
+    }
+
+    private Contest findContest(String publicId, User admin) {
+        Contest contest = contestRepository.findByPublicId(publicId)
+                .orElseThrow(() -> new CustomException(
+                        ContestErrorResponseCode.CONTEST_NOT_FOUND));
+        if (!contest.getOrganization().getId()
+                .equals(admin.getOrganization().getId())) {
+            throw new CustomException(
+                    ContestErrorResponseCode.CONTEST_FORBIDDEN);
+        }
+        return contest;
+    }
+
+    private void validateRoundOrganization(Long roundId, User admin) {
+        Long organizationId =
+                reviewRoundRepository.findOrganizationIdById(roundId)
+                        .orElseThrow(() -> new CustomException(
+                                ReviewErrorResponseCode
+                                        .REVIEW_ROUND_NOT_FOUND));
+        if (!organizationId.equals(admin.getOrganization().getId())) {
+            throw new CustomException(
+                    ContestErrorResponseCode.CONTEST_FORBIDDEN);
+        }
+    }
+
+    private void validateRoundContest(
+            ReviewRound round,
+            Contest contest
+    ) {
+        if (!round.getContest().getId().equals(contest.getId())) {
+            throw new CustomException(
+                    ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND);
+        }
+    }
+
+    private ReviewRound findRound(
+            Long roundId,
+            List<ReviewRound> rounds
+    ) {
+        return rounds.stream()
+                .filter(round -> round.getId().equals(roundId))
+                .findFirst()
+                .orElseThrow(() -> new CustomException(
+                        ReviewErrorResponseCode.REVIEW_ROUND_NOT_FOUND));
+    }
+
+    private void validateNewRoundSequence(
+            List<ReviewRound> rounds,
+            int requestedRoundNo
+    ) {
+        for (int index = 0; index < rounds.size(); index++) {
+            if (rounds.get(index).getRoundNo() != index + 1) {
+                throw new CustomException(
+                        ReviewErrorResponseCode
+                                .REVIEW_ROUND_SEQUENCE_INVALID);
+            }
+        }
+        if (requestedRoundNo != rounds.size() + 1) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_SEQUENCE_INVALID);
+        }
+    }
+
+    private void validateRoundRequest(ReviewRoundSaveReq req) {
+        if (req == null
+                || req.roundNo() == null
+                || req.roundNo() < 1
+                || req.name() == null
+                || req.name().isBlank()
+                || req.name().trim().length() > 100
+                || req.startsAt() == null
+                || req.endsAt() == null
+                || !req.startsAt().isBefore(req.endsAt())
+                || req.targetType() == null
+                || req.decisionRule() == null
+                || (req.targetType()
+                == ReviewRoundTargetType.PREVIOUS_SELECTED
+                && req.roundNo() <= 1)
+                || (req.targetType() == ReviewRoundTargetType.MANUAL
+                && req.decisionRule() == ReviewRoundDecisionRule.MANUAL
+                && req.criteria() != null
+                && !req.criteria().isEmpty())
+                || !hasValidDecisionConfiguration(req)) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_CONFIGURATION_INVALID);
+        }
+    }
+
+    private boolean hasValidDecisionConfiguration(ReviewRoundSaveReq req) {
+        return switch (req.decisionRule()) {
+            case TOP_N -> req.selectCount() != null
+                    && req.selectCount() > 0
+                    && req.minScore() == null;
+            case MIN_SCORE -> req.selectCount() == null
+                    && req.minScore() != null
+                    && req.minScore().compareTo(BigDecimal.ZERO) >= 0;
+            case MANUAL -> req.selectCount() == null
+                    && req.minScore() == null;
+        };
+    }
+
+    private List<CriterionPlan> resolveCriterionPlans(
+            List<ReviewRoundCriterionReq> requestedCriteria,
+            List<ReviewCriterion> existingCriteria
+    ) {
+        List<ReviewRoundCriterionReq> criterionReqs =
+                requestedCriteria == null ? List.of() : requestedCriteria;
+        Map<Long, ReviewCriterion> existingById = new HashMap<>();
+        Map<String, ReviewCriterion> existingByCode = new HashMap<>();
+        for (ReviewCriterion criterion : existingCriteria) {
+            existingById.put(criterion.getId(), criterion);
+            existingByCode.put(codeKey(criterion.getCode()), criterion);
+        }
+
+        List<CriterionPlan> plans = new ArrayList<>();
+        Set<Long> selectedCriterionIds = new HashSet<>();
+        Set<String> selectedCodes = new HashSet<>();
+        Set<Integer> selectedSortOrders = new HashSet<>();
+
+        for (ReviewRoundCriterionReq criterionReq : criterionReqs) {
+            validateCriterion(criterionReq);
+            String requestedCode = criterionReq.code().trim();
+            ReviewCriterion criterion;
+            String code;
+
+            if (criterionReq.id() != null) {
+                criterion = existingById.get(criterionReq.id());
+                if (criterion == null) {
+                    throw new CustomException(
+                            ReviewErrorResponseCode
+                                    .REVIEW_ROUND_CRITERION_NOT_FOUND);
+                }
+                if (!codeKey(criterion.getCode())
+                        .equals(codeKey(requestedCode))) {
+                    throw new CustomException(
+                            ReviewErrorResponseCode
+                                    .REVIEW_ROUND_CRITERION_CODE_IMMUTABLE);
+                }
+                code = criterion.getCode();
+            } else {
+                criterion = existingByCode.get(codeKey(requestedCode));
+                code = criterion == null
+                        ? requestedCode
+                        : criterion.getCode();
+            }
+
+            if (criterion != null
+                    && !selectedCriterionIds.add(criterion.getId())) {
+                throw new CustomException(
+                        ReviewErrorResponseCode
+                                .REVIEW_ROUND_CRITERION_DUPLICATED);
+            }
+            if (!selectedCodes.add(codeKey(code))
+                    || !selectedSortOrders.add(criterionReq.sortOrder())) {
+                throw new CustomException(
+                        ReviewErrorResponseCode
+                                .REVIEW_ROUND_CRITERION_DUPLICATED);
+            }
+
+            plans.add(new CriterionPlan(
+                    criterion,
+                    code,
+                    criterionReq.label().trim(),
+                    criterionReq.maxScore(),
+                    criterionReq.sortOrder()
+            ));
+        }
+        return plans;
+    }
+
+    private void validateCriterion(ReviewRoundCriterionReq criterionReq) {
+        if (criterionReq == null
+                || criterionReq.code() == null
+                || criterionReq.code().isBlank()
+                || criterionReq.code().length() > 60
+                || !criterionReq.code().matches(CRITERION_CODE_REGEX)
+                || criterionReq.label() == null
+                || criterionReq.label().isBlank()
+                || criterionReq.label().trim().length() > 60
+                || criterionReq.maxScore() == null
+                || criterionReq.maxScore() < 1
+                || criterionReq.sortOrder() == null
+                || criterionReq.sortOrder() < 1) {
+            throw new CustomException(
+                    ReviewErrorResponseCode
+                            .REVIEW_ROUND_CRITERION_INVALID);
+        }
+    }
+
+    private List<ReviewCriterion> synchronizeCriteria(
+            ReviewRound round,
+            List<ReviewCriterion> existingCriteria,
+            List<CriterionPlan> plans
+    ) {
+        List<ReviewCriterion> activeCriteria = new ArrayList<>();
+        Set<Long> retainedCriterionIds = new HashSet<>();
+
+        for (CriterionPlan plan : plans) {
+            ReviewCriterion criterion = plan.criterion();
+            if (criterion == null) {
+                criterion = ReviewCriterion.builder()
+                        .reviewRound(round)
+                        .code(plan.code())
+                        .label(plan.label())
+                        .maxScore(plan.maxScore())
+                        .sortOrder(plan.sortOrder())
+                        .active(true)
+                        .build();
+            } else {
+                criterion.update(
+                        plan.label(),
+                        plan.maxScore(),
+                        plan.sortOrder());
+                criterion.activate();
+                retainedCriterionIds.add(criterion.getId());
+            }
+            activeCriteria.add(criterion);
+        }
+
+        for (ReviewCriterion criterion : existingCriteria) {
+            if (!retainedCriterionIds.contains(criterion.getId())) {
+                criterion.deactivate();
+            }
+        }
+
+        List<ReviewCriterion> criteriaToSave =
+                new ArrayList<>(existingCriteria);
+        activeCriteria.stream()
+                .filter(criterion -> criterion.getId() == null)
+                .forEach(criteriaToSave::add);
+        if (!criteriaToSave.isEmpty()) {
+            reviewCriterionRepository.saveAll(criteriaToSave);
+        }
+        return activeCriteria(activeCriteria);
+    }
+
+    private Map<Long, List<ReviewCriterion>> groupCriteriaByRoundId(
+            List<ReviewCriterion> criteria
+    ) {
+        Map<Long, List<ReviewCriterion>> grouped = new HashMap<>();
+        for (ReviewCriterion criterion : criteria) {
+            grouped.computeIfAbsent(
+                    criterion.getReviewRound().getId(),
+                    key -> new ArrayList<>()).add(criterion);
+        }
+        return grouped;
+    }
+
+    private List<ReviewCriterion> activeCriteria(
+            List<ReviewCriterion> criteria
+    ) {
+        return criteria.stream()
+                .filter(ReviewCriterion::isActive)
+                .sorted(Comparator
+                        .comparingInt(ReviewCriterion::getSortOrder)
+                        .thenComparing(
+                                ReviewCriterion::getId,
+                                Comparator.nullsLast(Long::compareTo)))
+                .toList();
+    }
+
+    private String codeKey(String code) {
+        return code.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private record CriterionPlan(
+            ReviewCriterion criterion,
+            String code,
+            String label,
+            int maxScore,
+            int sortOrder
+    ) {
+    }
+}
