@@ -6,6 +6,7 @@
 - 기준 PR: [Backend Draft PR #16](https://github.com/Tok-Baro/Trekkey_BackEnd/pull/16)
 - 상세 실행 절차: [블록체인 구현 및 Kairos 실행 가이드](./blockchain-implementation-runbook.md)
 - 실제 체인 증적: [Kairos Registry 배포 및 E2E 검증 기록](./blockchain-kairos-deployment.md)
+- RPC와 서버 사양: [Kaia RPC와 EC2 배포 기준](./blockchain-rpc-and-ec2.md)
 
 ## 1. 결정
 
@@ -13,6 +14,7 @@ Trekkey는 당분간 Kaia Kairos Testnet을 계속 사용한다.
 
 - 졸업작품, 포트폴리오 시연, 팀 통합 개발, 학교 내부 베타는 Kairos에서 수행한다.
 - 현재 Registry를 재배포하지 않고 같은 주소에 후속 batch와 상태 변경을 기록한다.
+- Trekkey 애플리케이션 서버에는 Kaia Endpoint Node를 설치하지 않고 외부 JSON-RPC endpoint를 사용한다.
 - Kaiascan source verification은 기능 사용의 선행 조건이 아니다.
 - 실제 학생에게 장기 공식 증빙을 제공하기 전까지 Mainnet 배포를 서두르지 않는다.
 - Mainnet 전환은 이 문서의 운영 준비와 전환 조건을 모두 만족한 뒤 별도 배포로 진행한다.

@@ -99,7 +99,7 @@ src/main/java/com/api/trekkey
 | `JWT_REFRESH_COOKIE_SAME_SITE` | SameSite 정책 | `Lax` |
 | `BLOCKCHAIN_ANCHORING_MODE` | `DISABLED`, `READ_ONLY`, Kairos 전용 `LOCAL_RELAYER` | `DISABLED` |
 | `BLOCKCHAIN_CHAIN_ID` | Kaia chain ID | `1001` |
-| `BLOCKCHAIN_RPC_URL` | EVM JSON-RPC URL | Kairos public RPC |
+| `BLOCKCHAIN_RPC_URL` | Trekkey가 Kaia 노드에 조회·전송을 요청하는 EVM JSON-RPC endpoint. 자체 노드를 실행한다는 뜻이 아님 | Kairos Testnet public RPC |
 | `BLOCKCHAIN_CONTRACT_ADDRESS` | 배포한 registry 주소 | 없음 |
 | `BLOCKCHAIN_RUNTIME_CODE_HASH` | 승인한 registry runtime Keccak-256 | 없음 |
 | `BLOCKCHAIN_WORKER_ENABLED` | Outbox/receipt worker 실행 | `false` |
@@ -107,6 +107,9 @@ src/main/java/com/api/trekkey
 | `BLOCKCHAIN_RELAYER_PRIVATE_KEY` | Kairos 개발용 relayer key | 없음 |
 
 > `JWT_SECRET`이 없거나 HS512 기준보다 짧으면 애플리케이션이 기동하지 않습니다. HTTPS 환경에서는 `JWT_REFRESH_COOKIE_SECURE=true`를 사용하세요.
+
+`BLOCKCHAIN_RPC_URL`의 요청 흐름, public RPC와 자체 Endpoint Node의 차이, EC2 권장 사양은
+[Kaia RPC와 EC2 배포 기준](./docs/blockchain-rpc-and-ec2.md)을 참고하세요.
 
 ## 로컬 실행
 

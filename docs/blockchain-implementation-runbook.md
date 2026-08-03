@@ -10,6 +10,7 @@
 - 현재 backend relayer: `0xB87670C4171e913368F688B660e143366E0ca6ea`
 - 실제 배포 증적: [Kairos Registry 배포 기록과 재현 절차](./blockchain-kairos-deployment.md)
 - 후속 개발 순서: [Kairos 지속 사용 및 후속 개발 인계](./blockchain-kairos-continuation-plan.md)
+- RPC와 서버 사양: [Kaia RPC와 EC2 배포 기준](./blockchain-rpc-and-ec2.md)
 
 현재 개발·시연·학교 내부 베타는 같은 Kairos Registry를 계속 사용한다. Mainnet은 실제
 학교의 장기 공식 발급 요구, 공용 DB migration, QR E2E, KMS와 복구 준비가 모두 확정된 뒤
@@ -239,7 +240,11 @@ npm run verify:kairos -- <REGISTRY_ADDRESS> <INITIAL_ADMIN_ADDRESS>
 
 배포 결과 contract address는 백엔드의 `BLOCKCHAIN_CONTRACT_ADDRESS`와 EIP-712 `verifyingContract`에서 반드시 동일해야 한다.
 
-Kaia Foundation public RPC는 개발·시험용이다. 운영에서는 SLA와 rate limit이 명확한 provider를 사용하고, 장애 시 조회 전용 보조 provider를 둘 것을 권장한다.
+Kaia Foundation public RPC는 개발·시험용이다. `BLOCKCHAIN_RPC_URL`은 백엔드가 외부 Kaia
+Endpoint Node에 JSON-RPC 요청을 보내는 주소이며, 애플리케이션 EC2에서 Kaia 노드를 직접
+실행한다는 뜻이 아니다. 운영에서는 SLA와 rate limit이 명확한 provider를 사용하고, 장애 시
+조회 전용 보조 provider를 둘 것을 권장한다. 연결 구조와 서버 사양 판단은
+[Kaia RPC와 EC2 배포 기준](./blockchain-rpc-and-ec2.md)에 고정한다.
 
 ## 5. Relayer 역할과 학교 issuer 등록
 
@@ -276,6 +281,11 @@ Kaia Wallet 배포 화면에서 권한과 issuer 등록까지 완료했다면 �
 ## 6. Spring Boot 설정
 
 기본값은 블록체인 기능이 완전히 꺼진 `DISABLED`다.
+
+`BLOCKCHAIN_RPC_URL`은 Registry 주소나 지갑 주소가 아니라 web3j가 접속할 Kaia 노드의
+HTTPS endpoint다. 현재 Kairos public RPC를 사용하므로 Spring Boot 서버는 체인 데이터를
+동기화하거나 블록을 검증하지 않는다. Kaia 문서의 Endpoint Node 메모리·스토리지 권장치는
+현재 Trekkey 애플리케이션 EC2 사양에 더하지 않는다.
 
 ```dotenv
 BLOCKCHAIN_ANCHORING_MODE=LOCAL_RELAYER

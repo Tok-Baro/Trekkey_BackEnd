@@ -1,6 +1,6 @@
 # Trekkey 설계 문서
 
-팀 구현 기준 문서는 다음 여덟 개다.
+팀 구현 기준 문서는 다음 아홉 개다.
 
 1. [업무·블록체인 전체 통합 ERD](./unified-erd.md)
    - 업무 SQL 16개, 인증·관리 SQL 3개, 앵커링 SQL 9개를 한 캔버스에 표시
@@ -36,20 +36,26 @@
    - 팀 업무 서비스가 연결할 `CredentialIssuanceService`
    - 운영 전 필수 체크리스트
 
-6. [2026-07-28 Kairos Registry 배포 기록과 재현 절차](./blockchain-kairos-deployment.md)
+6. [Kaia RPC와 EC2 배포 기준](./blockchain-rpc-and-ec2.md)
+   - `BLOCKCHAIN_RPC_URL`의 의미와 실제 JSON-RPC 호출 흐름
+   - public RPC, 관리형 RPC, 자체 Endpoint Node의 차이
+   - 16GB 노드 시험 사양과 Trekkey 애플리케이션 EC2 사양 구분
+   - 환경별 RPC 선택, 장애 판단과 배포 체크리스트
+
+7. [2026-07-28 Kairos Registry 배포 기록과 재현 절차](./blockchain-kairos-deployment.md)
    - 실제 Registry 주소와 세 트랜잭션 증적
    - Kaia Wallet 계정 전환 및 승인 순서
    - issuer 소유 증명 typed data
    - calldata 디코딩과 최종 온체인 readback
    - 실패 복구와 백엔드 반영값
 
-7. [Kairos 지속 사용 및 후속 개발 인계](./blockchain-kairos-continuation-plan.md)
+8. [Kairos 지속 사용 및 후속 개발 인계](./blockchain-kairos-continuation-plan.md)
    - Kairos를 계속 사용하는 현재 결정과 제한
    - 실제 학교 public ID 연결 분기
    - QR, AWS KMS, 모니터링·복구 우선순위와 완료 기준
    - Mainnet 전환 조건과 다음 개발자 시작 순서
 
-8. [2026-07-27 통합 회의 안건](./meetings/2026-07-27-integration-agenda.md)
+9. [2026-07-27 통합 회의 안건](./meetings/2026-07-27-integration-agenda.md)
    - 보안 조치와 커밋 추적
    - 팀원·제출·심사·수상 인수 기준
    - Credential·Kairos 운영 결정
