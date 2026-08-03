@@ -6,12 +6,6 @@ import com.api.trekkey.domain.auth.web.dto.AuthResult;
 import com.api.trekkey.domain.auth.web.dto.UserSignInReq;
 import com.api.trekkey.domain.auth.web.dto.UserSignInRes;
 import com.api.trekkey.domain.auth.web.dto.UserSessionRes;
-import com.api.trekkey.domain.audit.entity.AuditAction;
-import com.api.trekkey.domain.audit.support.AdminAuditLogger;
-import com.api.trekkey.domain.invitation.entity.AdminInvitation;
-import com.api.trekkey.domain.invitation.exception.AdminInvitationErrorResponseCode;
-import com.api.trekkey.domain.invitation.repository.AdminInvitationRepository;
-import com.api.trekkey.domain.invitation.web.dto.request.AdminSignUpReq;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.organization.entity.OrganizationStatus;
 import com.api.trekkey.domain.organization.exception.OrganizationErrorResponseCode;
@@ -48,19 +42,12 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 @Transactional
 public class AuthServiceImpl implements AuthService {
-
-    // 로그인 잠금 정책 (설계 §3-1): 계정 기준 연속 5회 실패 → 15분 잠금
-    private static final int MAX_FAILED_ATTEMPTS = 5;
-    private static final int LOCK_MINUTES = 15;
-
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final OrganizationRepository organizationRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final JwtProperties jwtProperties;
-    private final AdminInvitationRepository adminInvitationRepository;
-    private final AdminAuditLogger adminAuditLogger;
 
     @Override
     public void signUp(UserSignUpReq userSignUpReq) {
@@ -68,13 +55,6 @@ public class AuthServiceImpl implements AuthService {
         // 사용자가 입력한 이메일이 이미 존재하는지 확인
         if (userRepository.existsByEmail(userSignUpReq.getEmail())) {
             throw new CustomException(UserErrorResponseCode.USER_EXISTS_EMAIL);
-        }
-
-        // 같은 학교 안에서 학번 중복 확인 — DB 복합 유일 제약(uk_user_organization_student_id)의 사전 검증
-        if (userSignUpReq.getStudentId() != null && !userSignUpReq.getStudentId().isBlank()
-                && userRepository.existsByOrganizationIdAndStudentId(
-                        userSignUpReq.getOrganizationId(), userSignUpReq.getStudentId())) {
-            throw new CustomException(UserErrorResponseCode.USER_EXISTS_STUDENT_ID);
         }
 
         // 사용자가 선택한 학교가 실제로 활성상태인지 확인
@@ -98,81 +78,16 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(user);
     }
 
-    // noRollbackFor: ISSUED인데 만료된 초대를 EXPIRED로 lazy 전이한 뒤 예외를 던져도 전이가 커밋되도록 한다.
     @Override
-    @Transactional(noRollbackFor = CustomException.class)
-    public void signUpAdmin(AdminSignUpReq adminSignUpReq) {
-        LocalDateTime now = LocalDateTime.now();
-
-        // 초대 토큰은 원문 미저장 — 해시로 조회한다. (RefreshToken과 동일 패턴)
-        AdminInvitation invitation = adminInvitationRepository.findByTokenHash(hash(adminSignUpReq.inviteToken()))
-                .orElseThrow(() -> new CustomException(AdminInvitationErrorResponseCode.INVITATION_INVALID));
-
-        validateInvitationUsable(invitation, now);
-
-        // 초대 이메일 일치 검증 — 어떤 검증이 실패했는지 구분 노출하지 않는다 (INVITATION_INVALID로 통일)
-        if (!invitation.getEmail().equals(adminSignUpReq.email())) {
-            throw new CustomException(AdminInvitationErrorResponseCode.INVITATION_INVALID);
-        }
-
-        if (userRepository.existsByEmail(adminSignUpReq.email())) {
-            throw new CustomException(UserErrorResponseCode.USER_EXISTS_EMAIL);
-        }
-
-        // 가입 직후 상태 = PENDING_APPROVAL → ROOT_ADMIN 승인 전까지 로그인 불가 (설계 §2 게이트 3)
-        User user = User.builder()
-                .organization(invitation.getOrganization())
-                .email(adminSignUpReq.email())
-                .name(adminSignUpReq.name())
-                .password(passwordEncoder.encode(adminSignUpReq.password()))
-                .department(adminSignUpReq.department())
-                .position(adminSignUpReq.position())
-                .role(UserRole.ADMIN)
-                .memberType(MemberType.STAFF)
-                .status(UserStatus.PENDING_APPROVAL)
-                .build();
-
-        userRepository.save(user);
-        invitation.use(now);
-
-        adminAuditLogger.log(
-                user.getId(),
-                invitation.getOrganization().getId(),
-                AuditAction.ADMIN_SIGNUP,
-                "USER",
-                user.getId(),
-                adminSignUpReq.email()
-        );
-    }
-
-    // noRollbackFor: 실패 카운트 증가·잠금 기록이 CustomException에도 롤백되지 않고 커밋되어야 한다. (reissue와 동일 패턴)
-    @Override
-    @Transactional(noRollbackFor = CustomException.class)
     public AuthResult signIn(UserSignInReq userSignInReq) {
-        LocalDateTime now = LocalDateTime.now();
 
         User user = userRepository.findByEmail(userSignInReq.getEmail())
                 .orElseThrow(() -> new CustomException(UserErrorResponseCode.USER_INVALID_CREDENTIALS));
 
-        // 잠금 중 시도 → 423. 미존재 이메일은 위에서 이미 동일한 자격 오류로 응답 (존재 여부 비노출, 설계 §3-1)
-        if (user.isLocked(now)) {
-            throw new CustomException(UserErrorResponseCode.USER_ACCOUNT_LOCKED);
-        }
-
-        if (!passwordEncoder.matches(userSignInReq.getPassword(), user.getPassword())) {
-            handleFailedLogin(user, now);
+        if (user.getStatus() != UserStatus.ACTIVE
+                || !passwordEncoder.matches(userSignInReq.getPassword(), user.getPassword())) {
             throw new CustomException(UserErrorResponseCode.USER_INVALID_CREDENTIALS);
         }
-
-        // 승인 대기 관리자는 구분된 에러로 안내 — 본인은 자기 가입 사실을 알므로 정보 노출 아님 (설계 §2-3)
-        if (user.getStatus() == UserStatus.PENDING_APPROVAL) {
-            throw new CustomException(UserErrorResponseCode.USER_PENDING_APPROVAL);
-        }
-        if (user.getStatus() != UserStatus.ACTIVE) {
-            throw new CustomException(UserErrorResponseCode.USER_INVALID_CREDENTIALS);
-        }
-
-        user.resetLoginFailure();
 
         return issueTokens(user, UUID.randomUUID().toString());
     }
@@ -235,37 +150,6 @@ public class AuthServiceImpl implements AuthService {
 
 
     //======= 헬퍼 메서드 ==========
-
-    // 초대가 가입에 사용 가능한 상태인지 검증한다. ISSUED인데 만료 시각이 지났으면 EXPIRED로 전이까지 수행한다.
-    private void validateInvitationUsable(AdminInvitation invitation, LocalDateTime now) {
-        switch (invitation.getStatus()) {
-            case USED -> throw new CustomException(AdminInvitationErrorResponseCode.INVITATION_ALREADY_USED);
-            case REVOKED -> throw new CustomException(AdminInvitationErrorResponseCode.INVITATION_INVALID);
-            case EXPIRED -> throw new CustomException(AdminInvitationErrorResponseCode.INVITATION_EXPIRED);
-            case ISSUED -> {
-                if (invitation.isExpired(now)) {
-                    invitation.expire();
-                    throw new CustomException(AdminInvitationErrorResponseCode.INVITATION_EXPIRED);
-                }
-            }
-        }
-    }
-
-    // 로그인 실패 카운트를 올리고, 임계치 도달 시 계정을 잠그고 감사 로그를 남긴다. (설계 §3-1)
-    private void handleFailedLogin(User user, LocalDateTime now) {
-        if (user.increaseFailedLogin() >= MAX_FAILED_ATTEMPTS) {
-            user.lock(now.plusMinutes(LOCK_MINUTES));
-            adminAuditLogger.log(
-                    user.getId(),
-                    user.getOrganization().getId(),
-                    AuditAction.LOGIN_LOCKED,
-                    "USER",
-                    user.getId(),
-                    "연속 " + MAX_FAILED_ATTEMPTS + "회 실패 잠금"
-            );
-        }
-    }
-
     private AuthResult issueTokens(User user, String familyId) {
         Authentication authentication = createAuthentication(user);
         TokenDto tokenDto = jwtTokenProvider.createTokens(authentication);

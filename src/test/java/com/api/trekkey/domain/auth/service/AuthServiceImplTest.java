@@ -5,24 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
-import com.api.trekkey.domain.audit.entity.AuditAction;
-import com.api.trekkey.domain.audit.support.AdminAuditLogger;
 import com.api.trekkey.domain.auth.entity.RefreshToken;
 import com.api.trekkey.domain.auth.repository.RefreshTokenRepository;
-import com.api.trekkey.domain.invitation.entity.AdminInvitation;
-import com.api.trekkey.domain.invitation.entity.InvitationStatus;
-import com.api.trekkey.domain.invitation.exception.AdminInvitationErrorResponseCode;
-import com.api.trekkey.domain.invitation.repository.AdminInvitationRepository;
-import com.api.trekkey.domain.invitation.web.dto.request.AdminSignUpReq;
 import com.api.trekkey.domain.auth.web.dto.AuthResult;
 import com.api.trekkey.domain.auth.web.dto.UserSignInReq;
 import com.api.trekkey.domain.organization.entity.Organization;
@@ -75,12 +65,6 @@ class AuthServiceImplTest {
     @Mock
     private JwtProperties jwtProperties;
 
-    @Mock
-    private AdminInvitationRepository adminInvitationRepository;
-
-    @Mock
-    private AdminAuditLogger adminAuditLogger;
-
     private BCryptPasswordEncoder passwordEncoder;
     private AuthServiceImpl authService;
 
@@ -93,9 +77,7 @@ class AuthServiceImplTest {
                 organizationRepository,
                 refreshTokenRepository,
                 jwtTokenProvider,
-                jwtProperties,
-                adminInvitationRepository,
-                adminAuditLogger
+                jwtProperties
         );
     }
 

@@ -9,7 +9,6 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -102,15 +101,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse<?>> handleBaseException(BaseException e) {
         log.warn("BaseException: {}", e.getBaseResponseCode().getMessage());
         ErrorResponse<?> errorResponse = ErrorResponse.from(e.getBaseResponseCode());
-        return ResponseEntity.status(errorResponse.getHttpStatus()).body(errorResponse);
-    }
-
-    // @PreAuthorize 등 메서드 시큐리티의 인가 실패는 필터가 아니라 DispatcherServlet 안에서 발생하므로
-    // 여기서 잡아 JwtAccessDeniedHandler와 동일한 403 포맷으로 응답한다.
-    @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<ErrorResponse<?>> handleAccessDeniedException(AccessDeniedException e) {
-        log.warn("AccessDeniedException: {}", e.getMessage());
-        ErrorResponse<?> errorResponse = ErrorResponse.from(ErrorResponseCode.FORBIDDEN);
         return ResponseEntity.status(errorResponse.getHttpStatus()).body(errorResponse);
     }
 
