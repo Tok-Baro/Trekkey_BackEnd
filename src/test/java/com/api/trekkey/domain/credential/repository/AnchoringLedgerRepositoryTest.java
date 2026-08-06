@@ -196,9 +196,89 @@ class AnchoringLedgerRepositoryTest {
         assertThat(dueTransactions).extracting(AncChainTransaction::getId).containsExactly(due.getId());
     }
 
-    private AncCredential credential(String publicId, int seed) {
-        return AncCredential.ready(
+    @Test
+    void statusEventSummaryIsOrganizationScopedAndIncludesTransactionState() {
+        AncCredential original = credentialRepository.saveAndFlush(
+                credential(1L, "credential-original", 10));
+        original.markBatched();
+        original.markAnchored();
+        AncCredential replacement = credentialRepository.saveAndFlush(
+                credential(1L, "credential-replacement", 11));
+        replacement.markBatched();
+        replacement.markAnchored();
+        credentialRepository.flush();
+
+        AncCredentialStatusEvent event = AncCredentialStatusEvent.request(
+                original.getId(),
+                2L,
+                CredentialStatus.ANCHORED,
+                CredentialStatus.SUPERSEDED,
+                "REISSUED",
+                "corrected certificate",
+                3L,
+                replacement.getId(),
                 1L,
+                NOW.plusHours(1),
+                "status-event-org-1",
+                NOW);
+        event.recordApproval("{\"status\":1}", bytes(51), bytes(52, 65));
+        statusEventRepository.saveAndFlush(event);
+
+        AncChainTransaction transaction = AncChainTransaction.pending(
+                null,
+                event.getId(),
+                null,
+                ChainOperationType.SUPERSEDE,
+                "SUPERSEDE:credential-original",
+                1001L,
+                address(),
+                "v1",
+                null);
+        transaction.markFailed("REVERTED");
+        chainTransactionRepository.saveAndFlush(transaction);
+
+        AncCredential otherOrganizationCredential = credentialRepository.saveAndFlush(
+                credential(2L, "credential-other-org", 12));
+        statusEventRepository.saveAndFlush(AncCredentialStatusEvent.request(
+                otherOrganizationCredential.getId(),
+                3L,
+                CredentialStatus.ANCHORED,
+                CredentialStatus.REVOKED,
+                "ADMIN_REQUEST",
+                null,
+                4L,
+                null,
+                1L,
+                NOW.plusHours(1),
+                "status-event-org-2",
+                NOW));
+
+        List<AncCredentialStatusEventRepository.StatusEventRow> rows =
+                statusEventRepository.findAllRowsByOrganizationId(1L);
+
+        assertThat(rows).singleElement().satisfies(row -> {
+            assertThat(row.getId()).isEqualTo(event.getId());
+            assertThat(row.getCredentialPublicId()).isEqualTo("credential-original");
+            assertThat(row.getCredentialNo()).isEqualTo("CERT-10");
+            assertThat(row.getCredentialStatus()).isEqualTo("ANCHORED");
+            assertThat(row.getPreviousStatus()).isEqualTo("ANCHORED");
+            assertThat(row.getNextStatus()).isEqualTo("SUPERSEDED");
+            assertThat(row.getReasonCode()).isEqualTo("REISSUED");
+            assertThat(row.getSupersedingCredentialPublicId())
+                    .isEqualTo("credential-replacement");
+            assertThat(row.getIssuerSignature()).hasSize(65);
+            assertThat(row.getTransactionStatus()).isEqualTo("FAILED");
+            assertThat(row.getLastErrorCode()).isEqualTo("REVERTED");
+        });
+    }
+
+    private AncCredential credential(String publicId, int seed) {
+        return credential(1L, publicId, seed);
+    }
+
+    private AncCredential credential(Long organizationId, String publicId, int seed) {
+        return AncCredential.ready(
+                organizationId,
                 publicId,
                 bytes(seed),
                 "CERT-" + seed,

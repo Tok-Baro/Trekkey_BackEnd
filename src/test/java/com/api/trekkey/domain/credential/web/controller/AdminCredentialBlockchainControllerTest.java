@@ -11,11 +11,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.api.trekkey.domain.credential.entity.BatchStatus;
+import com.api.trekkey.domain.credential.entity.ChainTransactionStatus;
+import com.api.trekkey.domain.credential.entity.CredentialStatus;
 import com.api.trekkey.domain.credential.entity.IssuerKeyStatus;
 import com.api.trekkey.domain.credential.exception.CredentialErrorResponseCode;
 import com.api.trekkey.domain.credential.service.AuthenticatedOrganizationResolver;
 import com.api.trekkey.domain.credential.service.CredentialBlockchainService;
 import com.api.trekkey.domain.credential.service.dto.BlockchainApprovalView;
+import com.api.trekkey.domain.credential.service.dto.CredentialStatusEventView;
 import com.api.trekkey.domain.credential.service.dto.IssuerKeyView;
 import com.api.trekkey.domain.credential.service.dto.SealedBatchView;
 import com.api.trekkey.domain.credential.service.dto.StatusChangeCommand;
@@ -23,6 +26,7 @@ import com.api.trekkey.global.exception.CustomException;
 import com.api.trekkey.global.exception.GlobalExceptionHandler;
 import com.api.trekkey.global.security.AuthPrincipal;
 import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -106,6 +110,39 @@ class AdminCredentialBlockchainControllerTest {
                 .andExpect(jsonPath("$.data.publicId").value("batch-public-1"));
 
         then(credentialBlockchainService).should().sealBatch(ORGANIZATION_ID, "award-v1", 1);
+    }
+
+    @Test
+    void getBatches_returnsMappedList() throws Exception {
+        given(credentialBlockchainService.getBatches(ORGANIZATION_ID))
+                .willReturn(List.of(sealedBatch()));
+
+        mockMvc.perform(get("/api/admin/blockchain/batches"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data[0].publicId").value("batch-public-1"))
+                .andExpect(jsonPath("$.data[0].status").value("SEALED"))
+                .andExpect(jsonPath("$.data[0].leafCount").value(2))
+                .andExpect(jsonPath("$.data[0].merkleRoot")
+                        .value("0x" + "b".repeat(64)))
+                .andExpect(jsonPath("$.data[0].approvalDeadline").exists());
+
+        then(authenticatedOrganizationResolver).should().resolve(USER_ID);
+        then(credentialBlockchainService).should().getBatches(ORGANIZATION_ID);
+    }
+
+    @Test
+    void getBatches_returnsEmptyList() throws Exception {
+        given(credentialBlockchainService.getBatches(ORGANIZATION_ID))
+                .willReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/blockchain/batches"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data").isEmpty());
+
+        then(authenticatedOrganizationResolver).should().resolve(USER_ID);
+        then(credentialBlockchainService).should().getBatches(ORGANIZATION_ID);
     }
 
     @Test
@@ -196,6 +233,42 @@ class AdminCredentialBlockchainControllerTest {
     }
 
     @Test
+    void getStatusEvents_returnsMappedList() throws Exception {
+        given(credentialBlockchainService.getStatusEvents(ORGANIZATION_ID))
+                .willReturn(List.of(statusEvent()));
+
+        mockMvc.perform(get("/api/admin/blockchain/status-events"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data[0].id").value(31))
+                .andExpect(jsonPath("$.data[0].credentialPublicId")
+                        .value("credential-public-1"))
+                .andExpect(jsonPath("$.data[0].credentialNo").value("AWARD-1"))
+                .andExpect(jsonPath("$.data[0].credentialStatus").value("ANCHORED"))
+                .andExpect(jsonPath("$.data[0].nextStatus").value("REVOKED"))
+                .andExpect(jsonPath("$.data[0].approved").value(true))
+                .andExpect(jsonPath("$.data[0].transactionStatus").value("FAILED"))
+                .andExpect(jsonPath("$.data[0].lastErrorCode").value("REVERTED"));
+
+        then(authenticatedOrganizationResolver).should().resolve(USER_ID);
+        then(credentialBlockchainService).should().getStatusEvents(ORGANIZATION_ID);
+    }
+
+    @Test
+    void getStatusEvents_returnsEmptyList() throws Exception {
+        given(credentialBlockchainService.getStatusEvents(ORGANIZATION_ID))
+                .willReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/blockchain/status-events"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data").isEmpty());
+
+        then(authenticatedOrganizationResolver).should().resolve(USER_ID);
+        then(credentialBlockchainService).should().getStatusEvents(ORGANIZATION_ID);
+    }
+
+    @Test
     void statusApproval_readAndWriteDelegate() throws Exception {
         BlockchainApprovalView approval = approval("STATUS_EVENT", "31");
         given(credentialBlockchainService.getStatusApproval(ORGANIZATION_ID, 31L)).willReturn(approval);
@@ -265,6 +338,26 @@ class AdminCredentialBlockchainControllerTest {
                 2,
                 "0x" + "b".repeat(64),
                 Instant.parse("2026-07-20T01:00:00Z"));
+    }
+
+    private CredentialStatusEventView statusEvent() {
+        return new CredentialStatusEventView(
+                31L,
+                "credential-public-1",
+                "AWARD-1",
+                CredentialStatus.ANCHORED,
+                CredentialStatus.ANCHORED,
+                CredentialStatus.REVOKED,
+                "ISSUED_IN_ERROR",
+                "duplicate certificate",
+                USER_ID,
+                null,
+                true,
+                Instant.parse("2026-07-20T01:00:00Z"),
+                Instant.parse("2026-07-20T00:30:00Z"),
+                ChainTransactionStatus.FAILED,
+                "REVERTED",
+                Instant.parse("2026-07-20T00:30:00Z"));
     }
 
     private BlockchainApprovalView approval(String aggregateType, String aggregateId) {

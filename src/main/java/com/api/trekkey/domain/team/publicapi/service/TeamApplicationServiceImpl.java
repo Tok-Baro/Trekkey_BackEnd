@@ -30,6 +30,7 @@ import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationUpdateReq;
 import com.api.trekkey.domain.team.repository.TeamMemberRepository;
 import com.api.trekkey.domain.team.repository.TeamRepository;
+import com.api.trekkey.domain.team.web.dto.TeamMemberSummaryRes;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.entity.UserRole;
 import com.api.trekkey.domain.user.entity.UserStatus;
@@ -39,8 +40,10 @@ import com.api.trekkey.global.exception.CustomException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -197,8 +200,19 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
         userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(UserErrorResponseCode.USER_NOT_FOUND));
 
-        return teamMemberRepository.findAllWithTeamAndContestByUserId(userId).stream()
-                .map(ParticipantTeamRes::from)
+        List<TeamMember> memberships =
+                teamMemberRepository.findAllWithTeamAndContestByUserId(userId);
+        Map<Long, List<TeamMemberSummaryRes>> membersByTeamId =
+                getMembersByTeamId(memberships.stream()
+                        .map(TeamMember::getTeam)
+                        .toList());
+
+        return memberships.stream()
+                .map(membership -> ParticipantTeamRes.from(
+                        membership,
+                        membersByTeamId.getOrDefault(
+                                membership.getTeam().getId(),
+                                List.of())))
                 .toList();
     }
 
@@ -451,5 +465,22 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
         }
         teamMemberRepository.saveAll(membersToAdd);
         return finalMemberUserIds.size() + 1;
+    }
+
+    private Map<Long, List<TeamMemberSummaryRes>> getMembersByTeamId(
+            List<Team> teams) {
+        if (teams.isEmpty()) {
+            return Map.of();
+        }
+
+        return teamMemberRepository
+                .findAllByTeamIdInOrderByTeamIdAscUserIdAsc(
+                        teams.stream().map(Team::getId).distinct().toList())
+                .stream()
+                .collect(Collectors.groupingBy(
+                        member -> member.getTeam().getId(),
+                        Collectors.mapping(
+                                TeamMemberSummaryRes::from,
+                                Collectors.toList())));
     }
 }

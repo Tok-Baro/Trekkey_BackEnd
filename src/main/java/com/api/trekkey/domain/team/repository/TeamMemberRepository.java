@@ -5,6 +5,7 @@ import com.api.trekkey.domain.team.entity.TeamMemberRole;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,6 +20,10 @@ public interface TeamMemberRepository extends JpaRepository<TeamMember, Long> {
             order by u.id asc
             """)
     List<TeamMember> findAllByTeamIdOrderByUserIdAsc(@Param("teamId") Long teamId);
+
+    @EntityGraph(attributePaths = "user")
+    List<TeamMember> findAllByTeamIdInOrderByTeamIdAscUserIdAsc(
+            Collection<Long> teamIds);
 
     @Query("""
             select teamMember

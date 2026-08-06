@@ -27,6 +27,21 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 
     List<Review> findAllByAssignmentIdIn(Collection<Long> assignmentIds);
 
+    @Query("""
+            select review
+            from Review review
+            join fetch review.assignment assignment
+            join fetch assignment.contestJudge
+            join fetch assignment.reviewRoundEntry entry
+            join fetch entry.reviewRound reviewRound
+            join fetch entry.submission submission
+            join fetch submission.team
+            where reviewRound.id = :reviewRoundId
+            order by review.submittedAt asc, review.id asc
+            """)
+    List<Review> findAllWithDetailsByReviewRoundId(
+            @Param("reviewRoundId") Long reviewRoundId);
+
     // 라운드 확정 집계 — 심사 대상별 제출 점수를 조회한다.
     @Query("""
             select r.assignment.reviewRoundEntry.id, r.totalScore

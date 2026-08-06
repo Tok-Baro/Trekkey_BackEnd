@@ -1,15 +1,19 @@
 package com.api.trekkey.domain.credential.service;
 
 import com.api.trekkey.domain.credential.service.dto.BlockchainApprovalView;
+import com.api.trekkey.domain.credential.service.dto.CredentialStatusEventView;
 import com.api.trekkey.domain.credential.service.dto.IssuerKeyView;
 import com.api.trekkey.domain.credential.service.dto.SealedBatchView;
 import com.api.trekkey.domain.credential.service.dto.StatusChangeCommand;
+import java.util.List;
 
 public interface CredentialBlockchainService {
 
     IssuerKeyView syncIssuerKey(Long organizationId, int keyVersion, String signerRef);
 
     SealedBatchView sealBatch(Long organizationId, String schemaProfileId, int keyVersion);
+
+    List<SealedBatchView> getBatches(Long organizationId);
 
     BlockchainApprovalView getBatchApproval(Long organizationId, String batchPublicId);
 
@@ -24,6 +28,8 @@ public interface CredentialBlockchainService {
             Long actorUserId,
             String credentialPublicId,
             StatusChangeCommand command);
+
+    List<CredentialStatusEventView> getStatusEvents(Long organizationId);
 
     BlockchainApprovalView getStatusApproval(Long organizationId, Long statusEventId);
 

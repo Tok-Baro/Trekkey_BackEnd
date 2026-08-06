@@ -1,17 +1,25 @@
 package com.api.trekkey.domain.contest.repository;
 
 import static com.api.trekkey.domain.contest.entity.QContest.contest;
+import static com.api.trekkey.domain.review.entity.QContestJudge.contestJudge;
+import static com.api.trekkey.domain.submission.entity.QSubmission.submission;
+import static com.api.trekkey.domain.team.entity.QTeam.team;
 import static com.api.trekkey.domain.user.entity.QUser.user;
 
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSearchCond;
 import com.api.trekkey.domain.contest.admin.web.dto.ContestSortKey;
+import com.querydsl.core.Tuple;
+import com.querydsl.core.types.Expression;
 import com.querydsl.core.types.OrderSpecifier;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.ComparableExpressionBase;
 import com.querydsl.jpa.impl.JPAQueryFactory;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -29,6 +37,7 @@ public class ContestQueryRepository {
         return queryFactory
                 .selectFrom(contest)
                 .leftJoin(contest.ownerUser, user)
+                .fetchJoin()
                 .where(
                         contest.organization.id.eq(organizationId),
                         statusEq(cond.status()),
@@ -52,6 +61,63 @@ public class ContestQueryRepository {
                 )
                 .fetchOne();
         return total == null ? 0L : total;
+    }
+
+    public Map<Long, Long> countTeamsByContestIds(Collection<Long> contestIds) {
+        if (contestIds.isEmpty()) {
+            return Map.of();
+        }
+        Expression<Long> contestId = team.contest.id;
+        Expression<Long> count = team.count();
+        List<Tuple> rows = queryFactory
+                .select(contestId, count)
+                .from(team)
+                .where(team.contest.id.in(contestIds))
+                .groupBy(team.contest.id)
+                .fetch();
+        return toCountMap(rows, contestId, count);
+    }
+
+    public Map<Long, Long> countSubmissionsByContestIds(Collection<Long> contestIds) {
+        if (contestIds.isEmpty()) {
+            return Map.of();
+        }
+        Expression<Long> contestId = team.contest.id;
+        Expression<Long> count = submission.count();
+        List<Tuple> rows = queryFactory
+                .select(contestId, count)
+                .from(submission)
+                .join(submission.team, team)
+                .where(team.contest.id.in(contestIds))
+                .groupBy(team.contest.id)
+                .fetch();
+        return toCountMap(rows, contestId, count);
+    }
+
+    public Map<Long, Long> countJudgesByContestIds(Collection<Long> contestIds) {
+        if (contestIds.isEmpty()) {
+            return Map.of();
+        }
+        Expression<Long> contestId = contestJudge.contest.id;
+        Expression<Long> count = contestJudge.count();
+        List<Tuple> rows = queryFactory
+                .select(contestId, count)
+                .from(contestJudge)
+                .where(contestJudge.contest.id.in(contestIds))
+                .groupBy(contestJudge.contest.id)
+                .fetch();
+        return toCountMap(rows, contestId, count);
+    }
+
+    private Map<Long, Long> toCountMap(
+            List<Tuple> rows,
+            Expression<Long> contestId,
+            Expression<Long> count
+    ) {
+        return rows.stream().collect(Collectors.toMap(
+                row -> row.get(contestId),
+                row -> row.get(count)
+        ));
     }
 
     private BooleanExpression statusEq(ContestStatus status) {

@@ -33,6 +33,7 @@ import com.api.trekkey.domain.credential.repository.AncCredentialStatusEventRepo
 import com.api.trekkey.domain.credential.repository.AncIssuerKeyRepository;
 import com.api.trekkey.domain.credential.repository.AncOutboxEventRepository;
 import com.api.trekkey.domain.credential.service.dto.BlockchainApprovalView;
+import com.api.trekkey.domain.credential.service.dto.CredentialStatusEventView;
 import com.api.trekkey.domain.credential.service.dto.IssuerKeyView;
 import com.api.trekkey.domain.credential.service.dto.SealedBatchView;
 import com.api.trekkey.domain.credential.service.dto.StatusChangeCommand;
@@ -155,6 +156,17 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
                 .toList());
         credentials.forEach(AncCredential::markBatched);
         return batchView(batch);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SealedBatchView> getBatches(Long organizationId) {
+        return batchRepository
+                .findAllByIssuerOrganizationIdOrderBySealedAtDescIdDesc(
+                        organizationId)
+                .stream()
+                .map(this::batchView)
+                .toList();
     }
 
     @Override
@@ -301,6 +313,16 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
                 "STATUS:" + credential.getPublicId(),
                 UtcTime.toLocalDateTime(effectiveAt)));
         return statusApprovalView(event, credential, issuerKey, replacement);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CredentialStatusEventView> getStatusEvents(
+            Long organizationId) {
+        return statusEventRepository.findAllRowsByOrganizationId(organizationId)
+                .stream()
+                .map(this::statusEventView)
+                .toList();
     }
 
     @Override
@@ -764,6 +786,30 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
                 batch.getLeafCount(),
                 Hash32.of(batch.getMerkleRoot()).hex(),
                 UtcTime.toInstant(batch.getApprovalDeadline()));
+    }
+
+    private CredentialStatusEventView statusEventView(
+            AncCredentialStatusEventRepository.StatusEventRow row) {
+        return new CredentialStatusEventView(
+                row.getId(),
+                row.getCredentialPublicId(),
+                row.getCredentialNo(),
+                CredentialStatus.valueOf(row.getCredentialStatus()),
+                CredentialStatus.valueOf(row.getPreviousStatus()),
+                CredentialStatus.valueOf(row.getNextStatus()),
+                row.getReasonCode(),
+                row.getReasonDetail(),
+                row.getActorUserId(),
+                row.getSupersedingCredentialPublicId(),
+                row.getIssuerSignature() != null,
+                UtcTime.toInstant(row.getApprovalDeadline()),
+                UtcTime.toInstant(row.getEffectiveAt()),
+                row.getTransactionStatus() == null
+                        ? null
+                        : ChainTransactionStatus.valueOf(
+                                row.getTransactionStatus()),
+                row.getLastErrorCode(),
+                UtcTime.toInstant(row.getCreatedAt()));
     }
 
     private IssuerKeyView issuerKeyView(AncIssuerKey issuerKey) {

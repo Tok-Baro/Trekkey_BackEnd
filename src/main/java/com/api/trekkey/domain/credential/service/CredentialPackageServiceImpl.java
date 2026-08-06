@@ -34,6 +34,7 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
     private final CredentialVerificationService credentialVerificationService;
     private final AncCredentialRepository credentialRepository;
     private final AncBatchRepository batchRepository;
+    private final CredentialCertificateService credentialCertificateService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -52,6 +53,8 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
             addEntry(zip, "anchor.json", writeJson(anchorJson(view)));
             addEntry(zip, "issuer-approval.json", writeJson(issuerApprovalJson(view)));
             addEntry(zip, "status.json", writeJson(statusJson(view)));
+            addEntry(zip, "rendered-certificate.pdf",
+                    credentialCertificateService.renderCertificate(credentialPublicId).zipBytes());
             addEntry(zip, "README.txt", readme(view).getBytes(StandardCharsets.UTF_8));
         } catch (IOException exception) {
             throw new UncheckedIOException(exception);
@@ -139,6 +142,7 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
                 - anchor.json          Kaia 앵커링 좌표 (chainId, contract, tx)
                 - issuer-approval.json 발급 학교의 EIP-712 배치 승인 서명
                 - status.json          패키지 생성 시점의 검증 상태
+                - rendered-certificate.pdf 사람용 표시물 (cryptographic source of truth 아님)
 
                 검증 방법: credential.json을 SHA-256 해시하면 merkle-proof.json의 contentHash와
                 일치해야 하고, leaf 재계산 후 proof를 따라가면 merkleRoot가 나오며,

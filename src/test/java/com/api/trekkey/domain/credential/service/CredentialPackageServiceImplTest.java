@@ -12,6 +12,7 @@ import com.api.trekkey.domain.credential.exception.CredentialErrorResponseCode;
 import com.api.trekkey.domain.credential.repository.AncBatchRepository;
 import com.api.trekkey.domain.credential.repository.AncCredentialRepository;
 import com.api.trekkey.domain.credential.service.dto.CredentialPackageFile;
+import com.api.trekkey.domain.credential.service.dto.CredentialPackageFile;
 import com.api.trekkey.domain.credential.service.dto.CredentialVerificationStatus;
 import com.api.trekkey.domain.credential.service.dto.CredentialVerificationView;
 import com.api.trekkey.global.exception.CustomException;
@@ -45,12 +46,18 @@ class CredentialPackageServiceImplTest {
     @Mock
     private AncBatchRepository batchRepository;
 
+    @Mock
+    private CredentialCertificateService credentialCertificateService;
+
     private CredentialPackageServiceImpl credentialPackageService;
 
     @BeforeEach
     void setUp() {
         credentialPackageService = new CredentialPackageServiceImpl(
-                credentialVerificationService, credentialRepository, batchRepository, new ObjectMapper());
+                credentialVerificationService, credentialRepository, batchRepository,
+                credentialCertificateService, new ObjectMapper());
+        lenient().when(credentialCertificateService.renderCertificate("cred-pub-1"))
+                .thenReturn(new CredentialPackageFile("cert.pdf", "%PDF-fake".getBytes(StandardCharsets.UTF_8)));
     }
 
     @Test
@@ -70,7 +77,10 @@ class CredentialPackageServiceImplTest {
         Map<String, byte[]> entries = unzip(result.zipBytes());
         assertThat(entries).containsKeys(
                 "credential.json", "file-manifest.json", "merkle-proof.json",
-                "anchor.json", "issuer-approval.json", "status.json", "README.txt");
+                "anchor.json", "issuer-approval.json", "status.json",
+                "rendered-certificate.pdf", "README.txt");
+        assertThat(new String(entries.get("rendered-certificate.pdf"), StandardCharsets.UTF_8))
+                .startsWith("%PDF-");
         //canonical 원문은 재직렬화 없이 바이트 그대로 (§7 — hash 재현성)
         assertThat(new String(entries.get("credential.json"), StandardCharsets.UTF_8))
                 .isEqualTo("{\"credentialNo\":\"2026-C1-001\"}");

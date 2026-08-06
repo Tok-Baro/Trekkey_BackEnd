@@ -41,6 +41,7 @@ import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationRes;
 import com.api.trekkey.domain.team.repository.TeamMemberRepository;
 import com.api.trekkey.domain.team.repository.TeamRepository;
+import com.api.trekkey.domain.team.web.dto.TeamMemberSummaryRes;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.entity.UserRole;
 import com.api.trekkey.domain.user.entity.UserStatus;
@@ -424,25 +425,68 @@ class TeamApplicationServiceImplTest {
                 TeamStatus.APPROVED,
                 LocalDateTime.of(2026, 7, 24, 15, 30),
                 LocalDateTime.of(2026, 7, 24, 16, 10));
+        ReflectionTestUtils.setField(team, "id", 1L);
         ReflectionTestUtils.setField(team, "publicId", "team-public-id");
+        team.changeStatus(TeamStatus.REVISION_REQUESTED, "연락처를 확인해주세요.");
+        User leader = User.builder()
+                .id(10L)
+                .name("김대표")
+                .studentId("20260010")
+                .major("컴퓨터공학부")
+                .build();
+        User member = User.builder()
+                .id(11L)
+                .name("이팀원")
+                .studentId("20260011")
+                .major("산업공학과")
+                .build();
         TeamMember membership = teamMember(
                 team,
-                org.mockito.Mockito.mock(User.class),
+                leader,
                 TeamMemberRole.LEADER);
         given(teamMemberRepository.findAllWithTeamAndContestByUserId(10L))
                 .willReturn(List.of(membership));
+        given(teamMemberRepository.findAllByTeamIdInOrderByTeamIdAscUserIdAsc(
+                List.of(1L)))
+                .willReturn(List.of(
+                        membership,
+                        teamMember(team, member, TeamMemberRole.MEMBER)));
 
         List<ParticipantTeamRes> result = teamApplicationService.getMyTeams(10L);
 
-        assertThat(result).containsExactly(new ParticipantTeamRes(
-                "team-public-id",
-                "contest-public-id",
-                "AI 창의 경진대회",
-                "트랙키 팀",
-                TeamMemberRole.LEADER,
-                3,
-                TeamStatus.APPROVED,
-                null));
+        assertThat(result).singleElement().satisfies(response -> {
+            assertThat(response.teamPublicId()).isEqualTo("team-public-id");
+            assertThat(response.contestPublicId()).isEqualTo("contest-public-id");
+            assertThat(response.myRole()).isEqualTo(TeamMemberRole.LEADER);
+            assertThat(response.status()).isEqualTo(TeamStatus.REVISION_REQUESTED);
+            assertThat(response.revisionReason()).isEqualTo("연락처를 확인해주세요.");
+            assertThat(response.members())
+                    .extracting(
+                            TeamMemberSummaryRes::userId,
+                            TeamMemberSummaryRes::name,
+                            TeamMemberSummaryRes::studentId,
+                            TeamMemberSummaryRes::major,
+                            TeamMemberSummaryRes::role)
+                    .containsExactly(
+                            tuple(10L, "김대표", "20260010", "컴퓨터공학부", TeamMemberRole.LEADER),
+                            tuple(11L, "이팀원", "20260011", "산업공학과", TeamMemberRole.MEMBER));
+        });
+        verify(teamMemberRepository)
+                .findAllByTeamIdInOrderByTeamIdAscUserIdAsc(List.of(1L));
+    }
+
+    @Test
+    @DisplayName("본인이 속한 팀이 없으면 팀원 일괄 조회 없이 빈 목록을 반환한다")
+    void getMyTeams_returnsEmptyListWithoutMemberLookup() {
+        given(userRepository.findById(10L))
+                .willReturn(Optional.of(org.mockito.Mockito.mock(User.class)));
+        given(teamMemberRepository.findAllWithTeamAndContestByUserId(10L))
+                .willReturn(List.of());
+
+        assertThat(teamApplicationService.getMyTeams(10L)).isEmpty();
+
+        verify(teamMemberRepository, never())
+                .findAllByTeamIdInOrderByTeamIdAscUserIdAsc(any());
     }
 
     @Test

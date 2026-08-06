@@ -3,6 +3,7 @@ package com.api.trekkey.domain.credential.web.controller;
 import com.api.trekkey.domain.credential.service.AuthenticatedOrganizationResolver;
 import com.api.trekkey.domain.credential.service.CredentialBlockchainService;
 import com.api.trekkey.domain.credential.service.dto.BlockchainApprovalView;
+import com.api.trekkey.domain.credential.service.dto.CredentialStatusEventView;
 import com.api.trekkey.domain.credential.service.dto.IssuerKeyView;
 import com.api.trekkey.domain.credential.service.dto.SealedBatchView;
 import com.api.trekkey.domain.credential.web.dto.BatchSealRequest;
@@ -13,6 +14,7 @@ import com.api.trekkey.global.response.SuccessResponse;
 import com.api.trekkey.global.security.AuthPrincipal;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -57,6 +59,14 @@ public class AdminCredentialBlockchainController {
                 request.schemaProfileId(),
                 request.keyVersion());
         return ResponseEntity.status(HttpStatus.CREATED).body(SuccessResponse.create(response));
+    }
+
+    @GetMapping("/batches")
+    public ResponseEntity<SuccessResponse<List<SealedBatchView>>> getBatches(
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        Long organizationId = organizationId(principal);
+        return ResponseEntity.ok(SuccessResponse.ok(
+                credentialBlockchainService.getBatches(organizationId)));
     }
 
     @GetMapping("/batches/{batchPublicId}/approval")
@@ -112,6 +122,16 @@ public class AdminCredentialBlockchainController {
                 credentialPublicId,
                 request.toCommand());
         return ResponseEntity.status(HttpStatus.CREATED).body(SuccessResponse.create(response));
+    }
+
+    @GetMapping("/status-events")
+    public ResponseEntity<SuccessResponse<List<CredentialStatusEventView>>>
+            getStatusEvents(
+                    @AuthenticationPrincipal AuthPrincipal principal) {
+        Long organizationId = organizationId(principal);
+        return ResponseEntity.ok(SuccessResponse.ok(
+                credentialBlockchainService.getStatusEvents(
+                        organizationId)));
     }
 
     @GetMapping("/status-events/{statusEventId}/approval")

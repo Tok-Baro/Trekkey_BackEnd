@@ -3,9 +3,14 @@ package com.api.trekkey.domain.contest.admin.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.anyCollection;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSearchCond;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSummaryRes;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestSortKey;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
@@ -26,9 +31,12 @@ import com.api.trekkey.domain.user.entity.UserStatus;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
+import com.api.trekkey.global.response.PageRes;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -66,6 +74,134 @@ class ContestAdminQueryServiceImplTest {
         );
         organization = organization(1L);
         admin = user(10L, organization, UserRole.ADMIN, UserStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("관리자 대회 목록은 담당자, 일정, 운영 건수를 한 번에 반환한다")
+    void getContests_returnsEnrichedSummaries() {
+        User secondOwner = user(
+                11L,
+                organization,
+                UserRole.ADMIN,
+                UserStatus.ACTIVE
+        );
+        Contest firstContest = contest(
+                100L,
+                "contest-one",
+                organization,
+                admin
+        );
+        Contest secondContest = contest(
+                101L,
+                "contest-two",
+                organization,
+                secondOwner
+        );
+        ContestStage application = stage(
+                201L,
+                firstContest,
+                "참가 신청",
+                StageType.APPLICATION,
+                1,
+                LocalDateTime.of(2026, 8, 1, 9, 0),
+                LocalDateTime.of(2026, 8, 10, 18, 0)
+        );
+        ContestStage submission = stage(
+                202L,
+                firstContest,
+                "작품 제출",
+                StageType.SUBMISSION,
+                2,
+                LocalDateTime.of(2026, 8, 11, 9, 0),
+                LocalDateTime.of(2026, 8, 20, 23, 59)
+        );
+        ContestAdminSearchCond cond = new ContestAdminSearchCond(
+                null,
+                null,
+                ContestSortKey.TITLE,
+                "ASC",
+                0,
+                20
+        );
+        List<Long> contestIds = List.of(100L, 101L);
+        Set<StageType> summaryStageTypes = Set.of(
+                StageType.APPLICATION,
+                StageType.SUBMISSION
+        );
+        given(userRepository.findById(10L)).willReturn(Optional.of(admin));
+        given(contestQueryRepository.findAdminContests(1L, cond))
+                .willReturn(List.of(firstContest, secondContest));
+        given(contestQueryRepository.countAdminContests(1L, cond))
+                .willReturn(2L);
+        given(contestStageRepository
+                .findAllByContestIdInAndStageTypeInOrderByContestIdAscSequenceNoAsc(
+                        contestIds,
+                        summaryStageTypes))
+                .willReturn(List.of(application, submission));
+        given(contestQueryRepository.countTeamsByContestIds(contestIds))
+                .willReturn(Map.of(100L, 2L, 101L, 1L));
+        given(contestQueryRepository.countSubmissionsByContestIds(contestIds))
+                .willReturn(Map.of(100L, 1L));
+        given(contestQueryRepository.countJudgesByContestIds(contestIds))
+                .willReturn(Map.of(100L, 3L, 101L, 1L));
+
+        PageRes<ContestAdminSummaryRes> response =
+                contestAdminQueryService.getContests(10L, cond);
+
+        assertThat(response.content())
+                .extracting(ContestAdminSummaryRes::id)
+                .containsExactly("contest-one", "contest-two");
+        ContestAdminSummaryRes first = response.content().getFirst();
+        assertThat(first.ownerName()).isEqualTo("관리자");
+        assertThat(first.applicationStartsAt()).isEqualTo(application.getStartsAt());
+        assertThat(first.applicationEndsAt()).isEqualTo(application.getEndsAt());
+        assertThat(first.submissionDueAt()).isEqualTo(submission.getEndsAt());
+        assertThat(first.teamCount()).isEqualTo(2L);
+        assertThat(first.submissionCount()).isEqualTo(1L);
+        assertThat(first.judgeCount()).isEqualTo(3L);
+        ContestAdminSummaryRes second = response.content().get(1);
+        assertThat(second.applicationStartsAt()).isNull();
+        assertThat(second.applicationEndsAt()).isNull();
+        assertThat(second.submissionDueAt()).isNull();
+        assertThat(second.teamCount()).isEqualTo(1L);
+        assertThat(second.submissionCount()).isZero();
+        assertThat(second.judgeCount()).isEqualTo(1L);
+        assertThat(response.totalElements()).isEqualTo(2L);
+        assertThat(response.totalPages()).isEqualTo(1);
+        assertThat(response.hasNext()).isFalse();
+        verify(contestQueryRepository).countTeamsByContestIds(contestIds);
+        verify(contestQueryRepository).countSubmissionsByContestIds(contestIds);
+        verify(contestQueryRepository).countJudgesByContestIds(contestIds);
+    }
+
+    @Test
+    @DisplayName("관리자 대회 목록이 비어 있으면 요약 배치 조회를 실행하지 않는다")
+    void getContests_skipsSummaryQueriesForEmptyPage() {
+        ContestAdminSearchCond cond = new ContestAdminSearchCond(
+                null,
+                null,
+                null,
+                null,
+                0,
+                20
+        );
+        given(userRepository.findById(10L)).willReturn(Optional.of(admin));
+        given(contestQueryRepository.findAdminContests(1L, cond))
+                .willReturn(List.of());
+        given(contestQueryRepository.countAdminContests(1L, cond))
+                .willReturn(0L);
+
+        PageRes<ContestAdminSummaryRes> response =
+                contestAdminQueryService.getContests(10L, cond);
+
+        assertThat(response.content()).isEmpty();
+        assertThat(response.totalElements()).isZero();
+        assertThat(response.totalPages()).isZero();
+        assertThat(response.hasNext()).isFalse();
+        verifyNoInteractions(contestStageRepository);
+        verify(contestQueryRepository, never()).countTeamsByContestIds(anyCollection());
+        verify(contestQueryRepository, never()).countSubmissionsByContestIds(anyCollection());
+        verify(contestQueryRepository, never()).countJudgesByContestIds(anyCollection());
     }
 
     @Test
@@ -221,11 +357,25 @@ class ContestAdminQueryServiceImplTest {
     }
 
     private Contest contest(Long id, Organization contestOrganization) {
+        return contest(
+                id,
+                "contest-public-id",
+                contestOrganization,
+                admin
+        );
+    }
+
+    private Contest contest(
+            Long id,
+            String publicId,
+            Organization contestOrganization,
+            User owner
+    ) {
         return Contest.builder()
                 .id(id)
-                .publicId("contest-public-id")
+                .publicId(publicId)
                 .organization(contestOrganization)
-                .ownerUser(admin)
+                .ownerUser(owner)
                 .title("AI 창의 경진대회")
                 .department("SW중심대학사업단")
                 .status(ContestStatus.PREPARING)

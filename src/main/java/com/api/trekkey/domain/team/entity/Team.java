@@ -75,6 +75,10 @@ public class Team extends BaseEntity {
     // 참가 신청 검토 상태
     private TeamStatus status;
 
+    @Column(name = "revision_reason", length = 500)
+    // 보완요청 상태에서 참가자에게 전달할 최근 검토 사유
+    private String revisionReason;
+
     @Column(name = "contact_email", nullable = false, length = 255)
     // 신청 관련 연락 이메일
     private String contactEmail;
@@ -110,12 +114,16 @@ public class Team extends BaseEntity {
         this.motivation = motivation;
         if (this.status == TeamStatus.REVISION_REQUESTED) {
             this.status = TeamStatus.PENDING;
+            this.revisionReason = null;
         }
     }
 
     // 관리자 신청 상태 변경
-    public void changeStatus(TeamStatus status) {
+    public void changeStatus(TeamStatus status, String revisionReason) {
         this.status = status;
+        this.revisionReason = status == TeamStatus.REVISION_REQUESTED
+                ? revisionReason
+                : null;
     }
 
     // 팀원 명단 확정 — 이후 신청 변경 잠금 (erd-mvp §5)

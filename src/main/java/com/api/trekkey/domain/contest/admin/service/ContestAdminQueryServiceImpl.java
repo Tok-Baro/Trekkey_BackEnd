@@ -3,6 +3,8 @@ package com.api.trekkey.domain.contest.admin.service;
 import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSearchCond;
 import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSummaryRes;
 import com.api.trekkey.domain.contest.entity.Contest;
+import com.api.trekkey.domain.contest.entity.ContestStage;
+import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.contest.repository.ContestQueryRepository;
 import com.api.trekkey.domain.contest.repository.ContestRepository;
@@ -17,6 +19,9 @@ import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
 import com.api.trekkey.global.response.PageRes;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,8 +45,33 @@ public class ContestAdminQueryServiceImpl implements ContestAdminQueryService {
         List<Contest> contests = contestQueryRepository.findAdminContests(organizationId, cond);
         long totalElements = contestQueryRepository.countAdminContests(organizationId, cond);
 
+        if (contests.isEmpty()) {
+            return PageRes.of(List.of(), cond.page(), cond.size(), totalElements);
+        }
+
+        List<Long> contestIds = contests.stream()
+                .map(Contest::getId)
+                .toList();
+        Map<Long, List<ContestStage>> stagesByContestId = contestStageRepository
+                .findAllByContestIdInAndStageTypeInOrderByContestIdAscSequenceNoAsc(
+                        contestIds,
+                        Set.of(StageType.APPLICATION, StageType.SUBMISSION))
+                .stream()
+                .collect(Collectors.groupingBy(stage -> stage.getContest().getId()));
+        Map<Long, Long> teamCounts =
+                contestQueryRepository.countTeamsByContestIds(contestIds);
+        Map<Long, Long> submissionCounts =
+                contestQueryRepository.countSubmissionsByContestIds(contestIds);
+        Map<Long, Long> judgeCounts =
+                contestQueryRepository.countJudgesByContestIds(contestIds);
+
         List<ContestAdminSummaryRes> content = contests.stream()
-                .map(ContestAdminSummaryRes::from)
+                .map(contest -> ContestAdminSummaryRes.from(
+                        contest,
+                        stagesByContestId.getOrDefault(contest.getId(), List.of()),
+                        teamCounts.getOrDefault(contest.getId(), 0L),
+                        submissionCounts.getOrDefault(contest.getId(), 0L),
+                        judgeCounts.getOrDefault(contest.getId(), 0L)))
                 .toList();
 
         return PageRes.of(content, cond.page(), cond.size(), totalElements);

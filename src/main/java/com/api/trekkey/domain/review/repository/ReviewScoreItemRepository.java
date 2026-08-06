@@ -23,4 +23,16 @@ public interface ReviewScoreItemRepository
             @Param("reviewId") Long reviewId);
 
     List<ReviewScoreItem> findAllByReviewIdIn(Collection<Long> reviewIds);
+
+    @Query("""
+            select item
+            from ReviewScoreItem item
+            join fetch item.review review
+            join fetch item.reviewCriterion criterion
+            where review.id in :reviewIds
+            order by review.id asc, criterion.sortOrder asc,
+                     criterion.id asc, item.id asc
+            """)
+    List<ReviewScoreItem> findAllWithCriterionByReviewIdIn(
+            @Param("reviewIds") Collection<Long> reviewIds);
 }

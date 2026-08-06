@@ -38,7 +38,11 @@ public enum TeamErrorResponseCode implements BaseResponseCode {
     TEAM_NOT_APPROVED(
             "TEAM_NOT_APPROVED",
             400,
-            "승인된 팀만 명단을 확정할 수 있습니다.");
+            "승인된 팀만 명단을 확정할 수 있습니다."),
+    TEAM_REVISION_REASON_REQUIRED(
+            "TEAM_REVISION_REASON_REQUIRED",
+            400,
+            "보완 요청 사유를 입력해주세요.");
 
     private final String code;
     private final int httpStatus;
