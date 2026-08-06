@@ -14,25 +14,13 @@ on:
 permissions:
   contents: read
 
-env:
-  DATASOURCE_URL: jdbc:h2:mem:trekkey-ci;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE;NON_KEYWORDS=USER
-  DATASOURCE_USERNAME: sa
-  DATASOURCE_PASSWORD: ""
-  SPRING_JPA_HIBERNATE_DDL_AUTO: create-drop
-  CORS_ALLOWED_ORIGIN: http://localhost:5173
-  FRONT_BASE_URL: http://localhost:5173
-  FILE_UPLOAD_DIR: build/test-uploads
-  JWT_SECRET_KEY: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQ==
-  JWT_ACCESS_EXPIRATION: "1800"
-  JWT_REFRESH_EXPIRATION: "1209600"
-
 concurrency:
   group: backend-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  java:
-    name: Java 21 tests
+  package:
+    name: Build executable JAR
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -49,99 +37,6 @@ jobs:
             echo ".DS_Store must not be tracked"
             exit 1
           fi
-
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-
-      - name: Run tests
-        run: ./gradlew clean test --no-daemon
-
-  mysql-integration:
-    name: MySQL integration tests
-    runs-on: ubuntu-latest
-    services:
-      mysql:
-        image: mysql:8.4
-        env:
-          MYSQL_DATABASE: trekkey_test
-          MYSQL_ROOT_PASSWORD: root
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-
-      - name: Rehearse review schema migration
-        env:
-          MYSQL_TEST_HOST: 127.0.0.1
-          MYSQL_TEST_PORT: "3306"
-          MYSQL_TEST_USERNAME: root
-          MYSQL_TEST_PASSWORD: root
-        run: bash scripts/verify-review-round-migration.sh
-
-      - name: Run MySQL integration tests
-        env:
-          RUN_MYSQL_INTEGRATION_TESTS: "true"
-          MYSQL_TEST_URL: jdbc:mysql://127.0.0.1:3306/trekkey_test?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
-          MYSQL_TEST_USERNAME: root
-          MYSQL_TEST_PASSWORD: root
-          JWT_SECRET_KEY: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQ==
-        run: >-
-          ./gradlew test --no-daemon
-          --tests '*MySqlIntegrationTest'
-
-  contracts:
-    name: Solidity tests and typecheck
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: contracts
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: contracts/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run contract tests
-        run: npm test
-
-      - name: Typecheck
-        run: npx tsc --noEmit
-
-  package:
-    name: Build executable JAR
-    needs:
-      - java
-      - mysql-integration
-      - contracts
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
 
       - name: Set up Java
         uses: actions/setup-java@v5

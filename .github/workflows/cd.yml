@@ -75,7 +75,7 @@ jobs:
         env:
           EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           EC2_SSH_KNOWN_HOSTS: ${{ secrets.EC2_SSH_KNOWN_HOSTS }}
-          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+          ENV_FILE: ${{ secrets.ENV_FILE }}
         run: |
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$EC2_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_deploy"
@@ -83,12 +83,12 @@ jobs:
           printf '%s\n' "$EC2_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
           umask 077
-          printf '%s\n' "$PROD_ENV_FILE" > "$RUNNER_TEMP/trekkey.env"
+          printf '%s\n' "$ENV_FILE" > "$RUNNER_TEMP/trekkey.env"
 
           for key in MYSQL_DATABASE MYSQL_USER MYSQL_PASSWORD MYSQL_ROOT_PASSWORD \
               CORS_ALLOWED_ORIGIN FRONT_BASE_URL JWT_SECRET_KEY; do
             if ! grep -q "^${key}=" "$RUNNER_TEMP/trekkey.env"; then
-              echo "PROD_ENV_FILE is missing ${key}"
+              echo "ENV_FILE is missing ${key}"
               exit 1
             fi
           done
