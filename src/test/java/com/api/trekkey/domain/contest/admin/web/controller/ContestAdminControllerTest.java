@@ -1,6 +1,8 @@
 package com.api.trekkey.domain.contest.admin.web.controller;
 
 import static org.mockito.BDDMockito.given;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -8,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.api.trekkey.domain.contest.admin.service.ContestAdminQueryService;
 import com.api.trekkey.domain.contest.admin.service.ContestCommandService;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSearchCond;
+import com.api.trekkey.domain.contest.admin.web.dto.ContestAdminSummaryRes;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
 import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.entity.StageStatus;
@@ -18,6 +22,7 @@ import com.api.trekkey.domain.contest.web.dto.StageRes;
 import com.api.trekkey.global.exception.CustomException;
 import com.api.trekkey.global.exception.GlobalExceptionHandler;
 import com.api.trekkey.global.security.AuthPrincipal;
+import com.api.trekkey.global.response.PageRes;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -69,6 +74,61 @@ class ContestAdminControllerTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("관리자 대회 목록은 일정과 운영 건수를 포함한 페이지를 반환한다")
+    void getAdminContests_returnsEnrichedPage() throws Exception {
+        LocalDateTime applicationStartsAt =
+                LocalDateTime.of(2026, 8, 1, 9, 0);
+        LocalDateTime applicationEndsAt =
+                LocalDateTime.of(2026, 8, 10, 18, 0);
+        LocalDateTime submissionDueAt =
+                LocalDateTime.of(2026, 8, 20, 23, 59);
+        ContestAdminSummaryRes summary = new ContestAdminSummaryRes(
+                "contest-public-id",
+                "AI 창의 경진대회",
+                "SW중심대학사업단",
+                "관리자",
+                ContestStatus.APPLICATION_OPEN,
+                ParticipationType.BOTH,
+                3,
+                applicationStartsAt,
+                applicationEndsAt,
+                submissionDueAt,
+                4L,
+                2L,
+                3L,
+                LocalDateTime.of(2026, 7, 1, 9, 0)
+        );
+        given(contestAdminQueryService.getContests(
+                eq(10L),
+                any(ContestAdminSearchCond.class)
+        )).willReturn(PageRes.of(List.of(summary), 0, 20, 1L));
+
+        mockMvc.perform(get("/api/admin/contests"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].id")
+                        .value("contest-public-id"))
+                .andExpect(jsonPath("$.data.content[0].ownerName")
+                        .value("관리자"))
+                .andExpect(jsonPath("$.data.content[0].applicationStartsAt")
+                        .exists())
+                .andExpect(jsonPath("$.data.content[0].applicationEndsAt")
+                        .exists())
+                .andExpect(jsonPath("$.data.content[0].submissionDueAt")
+                        .exists())
+                .andExpect(jsonPath("$.data.content[0].teamCount").value(4))
+                .andExpect(jsonPath("$.data.content[0].submissionCount").value(2))
+                .andExpect(jsonPath("$.data.content[0].judgeCount").value(3))
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.totalPages").value(1))
+                .andExpect(jsonPath("$.data.hasNext").value(false));
+
+        verify(contestAdminQueryService).getContests(
+                eq(10L),
+                any(ContestAdminSearchCond.class)
+        );
     }
 
     @Test

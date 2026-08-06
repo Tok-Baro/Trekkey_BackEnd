@@ -112,6 +112,7 @@ class TeamApplicationUpdateTest {
                 updateReq(List.of()));
 
         assertThat(team.getStatus()).isEqualTo(TeamStatus.PENDING);
+        assertThat(team.getRevisionReason()).isNull();
         assertThat(team.getName()).isEqualTo("수정된 팀명");
         assertThat(team.getMemberCount()).isEqualTo(1);
     }
@@ -298,6 +299,9 @@ class TeamApplicationUpdateTest {
                 .major("컴퓨터공학부")
                 .memberCount(3)
                 .status(status)
+                .revisionReason(status == TeamStatus.REVISION_REQUESTED
+                        ? "연락처를 확인해주세요."
+                        : null)
                 .contactEmail("harin@hansung.ac.kr")
                 .phone("010-1234-5678")
                 .motivation("동기")

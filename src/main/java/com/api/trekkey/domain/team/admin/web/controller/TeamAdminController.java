@@ -42,7 +42,8 @@ public class TeamAdminController {
 
     @ApiErrorCodeExamples(value = TeamErrorResponseCode.class, codes = {
             "TEAM_NOT_FOUND",
-            "TEAM_ALREADY_FINALIZED"
+            "TEAM_ALREADY_FINALIZED",
+            "TEAM_REVISION_REASON_REQUIRED"
     })
     @PatchMapping("/api/admin/teams/{teamPublicId}/status")
     public ResponseEntity<SuccessResponse<TeamAdminRes>> changeStatus(

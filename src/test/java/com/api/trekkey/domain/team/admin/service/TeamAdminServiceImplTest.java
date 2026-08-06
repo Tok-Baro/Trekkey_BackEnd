@@ -24,8 +24,11 @@ import com.api.trekkey.domain.team.admin.web.dto.TeamAdminListRes;
 import com.api.trekkey.domain.team.admin.web.dto.TeamAdminRes;
 import com.api.trekkey.domain.team.admin.web.dto.TeamStatusUpdateReq;
 import com.api.trekkey.domain.team.entity.Team;
+import com.api.trekkey.domain.team.entity.TeamMember;
+import com.api.trekkey.domain.team.entity.TeamMemberRole;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
+import com.api.trekkey.domain.team.repository.TeamMemberRepository;
 import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.entity.UserRole;
@@ -60,6 +63,9 @@ class TeamAdminServiceImplTest {
     private TeamRepository teamRepository;
 
     @Mock
+    private TeamMemberRepository teamMemberRepository;
+
+    @Mock
     private ParticipationCredentialIssuer participationCredentialIssuer;
 
     @Mock
@@ -75,6 +81,7 @@ class TeamAdminServiceImplTest {
     void setUp() {
         teamAdminService = new TeamAdminServiceImpl(
                 userRepository, contestRepository, teamRepository,
+                teamMemberRepository,
                 participationCredentialIssuer, Clock.fixed(Instant.parse("2026-07-27T12:00:00Z"), ZoneOffset.UTC),
                 adminAuditLogger);
 
@@ -100,18 +107,38 @@ class TeamAdminServiceImplTest {
     @Test
     @DisplayName("대회별 신청 목록을 상태 필터와 상태별 카운트와 함께 반환한다")
     void getTeams_returnsFilteredListWithStatusCounts() {
+        Team pendingTeam = teamFixture(1L, TeamStatus.PENDING, null);
+        Team firstApprovedTeam = teamFixture(2L, TeamStatus.APPROVED, null);
+        Team secondApprovedTeam = teamFixture(3L, TeamStatus.APPROVED, null);
+        User leader = memberFixture(10L, "김대표", "20260010", "컴퓨터공학부");
+        User member = memberFixture(11L, "이팀원", "20260011", "산업공학과");
         given(contestRepository.findByPublicId("contest-pub-1")).willReturn(Optional.of(contest));
         given(teamRepository.findAllByContestIdOrderByCreatedAtDesc(200L)).willReturn(List.of(
-                teamFixture(1L, TeamStatus.PENDING, null),
-                teamFixture(2L, TeamStatus.APPROVED, null),
-                teamFixture(3L, TeamStatus.APPROVED, null)));
+                pendingTeam,
+                firstApprovedTeam,
+                secondApprovedTeam));
+        given(teamMemberRepository.findAllByTeamIdInOrderByTeamIdAscUserIdAsc(
+                List.of(2L, 3L)))
+                .willReturn(List.of(
+                        teamMember(firstApprovedTeam, leader, TeamMemberRole.LEADER),
+                        teamMember(firstApprovedTeam, member, TeamMemberRole.MEMBER)));
 
         TeamAdminListRes result = teamAdminService.getTeams(100L, "contest-pub-1", TeamStatus.APPROVED);
 
         assertThat(result.content()).hasSize(2);
+        assertThat(result.content().get(0).members())
+                .extracting("userId", "name", "studentId", "major", "role")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                10L, "김대표", "20260010", "컴퓨터공학부", TeamMemberRole.LEADER),
+                        org.assertj.core.groups.Tuple.tuple(
+                                11L, "이팀원", "20260011", "산업공학과", TeamMemberRole.MEMBER));
+        assertThat(result.content().get(1).members()).isEmpty();
         assertThat(result.total()).isEqualTo(3);
         assertThat(result.statusCounts().get(TeamStatus.PENDING)).isEqualTo(1);
         assertThat(result.statusCounts().get(TeamStatus.APPROVED)).isEqualTo(2);
+        verify(teamMemberRepository)
+                .findAllByTeamIdInOrderByTeamIdAscUserIdAsc(List.of(2L, 3L));
     }
 
     @Test
@@ -161,6 +188,51 @@ class TeamAdminServiceImplTest {
         assertThat(result.status()).isEqualTo(TeamStatus.APPROVED);
         verify(adminAuditLogger).log(eq(100L), eq(1L), eq(AuditAction.TEAM_STATUS_CHANGE),
                 eq("TEAM"), eq(1L), eq("status: PENDING→APPROVED"));
+    }
+
+    @Test
+    @DisplayName("보완 요청 상태로 변경하면 사유를 정리해 저장하고 응답한다")
+    void changeStatus_revisionRequestedStoresReason() {
+        Team team = teamFixture(1L, TeamStatus.PENDING, null);
+        User leader = memberFixture(10L, "김대표", "20260010", "컴퓨터공학부");
+        given(teamRepository.findByPublicIdForUpdate("team-pub-1"))
+                .willReturn(Optional.of(team));
+        given(teamMemberRepository.findAllByTeamIdOrderByUserIdAsc(1L))
+                .willReturn(List.of(teamMember(team, leader, TeamMemberRole.LEADER)));
+
+        TeamAdminRes result = teamAdminService.changeStatus(
+                100L,
+                "team-pub-1",
+                new TeamStatusUpdateReq(
+                        TeamStatus.REVISION_REQUESTED,
+                        "  연락처를 확인해주세요.  "));
+
+        assertThat(result.status()).isEqualTo(TeamStatus.REVISION_REQUESTED);
+        assertThat(result.revisionReason()).isEqualTo("연락처를 확인해주세요.");
+        assertThat(result.members()).singleElement().satisfies(member -> {
+            assertThat(member.userId()).isEqualTo(10L);
+            assertThat(member.role()).isEqualTo(TeamMemberRole.LEADER);
+        });
+        assertThat(team.getRevisionReason()).isEqualTo("연락처를 확인해주세요.");
+    }
+
+    @Test
+    @DisplayName("보완 요청 상태에는 사유가 반드시 필요하다")
+    void changeStatus_revisionRequestedRejectsBlankReason() {
+        Team team = teamFixture(1L, TeamStatus.PENDING, null);
+        given(teamRepository.findByPublicIdForUpdate("team-pub-1"))
+                .willReturn(Optional.of(team));
+
+        assertThatThrownBy(() -> teamAdminService.changeStatus(
+                100L,
+                "team-pub-1",
+                new TeamStatusUpdateReq(TeamStatus.REVISION_REQUESTED, "  ")))
+                .isInstanceOf(CustomException.class)
+                .extracting(e -> ((CustomException) e).getBaseResponseCode())
+                .isEqualTo(TeamErrorResponseCode.TEAM_REVISION_REASON_REQUIRED);
+
+        assertThat(team.getStatus()).isEqualTo(TeamStatus.PENDING);
+        verifyNoInteractions(adminAuditLogger, teamMemberRepository);
     }
 
     @Test
@@ -269,5 +341,22 @@ class TeamAdminServiceImplTest {
             ReflectionTestUtils.setField(team, "participationFinalizedAt", finalizedAt);
         }
         return team;
+    }
+
+    private User memberFixture(Long id, String name, String studentId, String major) {
+        return User.builder()
+                .id(id)
+                .name(name)
+                .studentId(studentId)
+                .major(major)
+                .build();
+    }
+
+    private TeamMember teamMember(Team team, User user, TeamMemberRole role) {
+        return TeamMember.builder()
+                .team(team)
+                .user(user)
+                .role(role)
+                .build();
     }
 }

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import com.api.trekkey.domain.credential.config.BlockchainProperties;
@@ -35,6 +36,7 @@ import com.api.trekkey.domain.credential.repository.AncCredentialRepository;
 import com.api.trekkey.domain.credential.repository.AncCredentialStatusEventRepository;
 import com.api.trekkey.domain.credential.repository.AncIssuerKeyRepository;
 import com.api.trekkey.domain.credential.repository.AncOutboxEventRepository;
+import com.api.trekkey.domain.credential.service.dto.CredentialStatusEventView;
 import com.api.trekkey.domain.credential.service.dto.SealedBatchView;
 import com.api.trekkey.domain.credential.service.port.BlockchainAnchorPort;
 import com.api.trekkey.domain.credential.service.support.ApprovalNonceGenerator;
@@ -119,6 +121,83 @@ class CredentialBlockchainServiceImplTest {
                 new ObjectMapper(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
+    }
+
+    @Test
+    void getsOrganizationBatchesAndMapsExistingView() {
+        AncBatch batch = AncBatch.seal(
+                1L,
+                5L,
+                "batch-public-1",
+                bytes(1, 32),
+                bytes(2, 32),
+                1,
+                2,
+                bytes(3, 32),
+                1L,
+                LocalDateTime.ofInstant(NOW.plus(Duration.ofMinutes(15)), ZoneOffset.UTC),
+                LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
+        given(batchRepository
+                .findAllByIssuerOrganizationIdOrderBySealedAtDescIdDesc(1L))
+                .willReturn(List.of(batch));
+
+        List<SealedBatchView> result = service.getBatches(1L);
+
+        assertThat(result).singleElement().satisfies(view -> {
+            assertThat(view.publicId()).isEqualTo("batch-public-1");
+            assertThat(view.status()).isEqualTo(BatchStatus.SEALED);
+            assertThat(view.leafCount()).isEqualTo(2);
+            assertThat(view.merkleRoot()).isEqualTo(Hash32.of(bytes(3, 32)).hex());
+            assertThat(view.approvalDeadline())
+                    .isEqualTo(NOW.plus(Duration.ofMinutes(15)));
+        });
+        verify(batchRepository)
+                .findAllByIssuerOrganizationIdOrderBySealedAtDescIdDesc(1L);
+    }
+
+    @Test
+    void getsOrganizationStatusEventsAndMapsProjection() {
+        AncCredentialStatusEventRepository.StatusEventRow row =
+                statusEventRow();
+        given(statusEventRepository.findAllRowsByOrganizationId(1L))
+                .willReturn(List.of(row));
+
+        List<CredentialStatusEventView> result = service.getStatusEvents(1L);
+
+        assertThat(result).singleElement().satisfies(view -> {
+            assertThat(view.id()).isEqualTo(51L);
+            assertThat(view.credentialPublicId()).isEqualTo("credential-public-1");
+            assertThat(view.credentialNo()).isEqualTo("AWARD-1");
+            assertThat(view.credentialStatus()).isEqualTo(CredentialStatus.REVOKED);
+            assertThat(view.previousStatus()).isEqualTo(CredentialStatus.ANCHORED);
+            assertThat(view.nextStatus()).isEqualTo(CredentialStatus.REVOKED);
+            assertThat(view.reasonCode()).isEqualTo("ISSUED_IN_ERROR");
+            assertThat(view.reasonDetail()).isEqualTo("duplicate certificate");
+            assertThat(view.actorUserId()).isEqualTo(99L);
+            assertThat(view.supersedingCredentialPublicId())
+                    .isEqualTo("replacement-public-1");
+            assertThat(view.approved()).isTrue();
+            assertThat(view.approvalDeadline())
+                    .isEqualTo(NOW.plus(Duration.ofMinutes(15)));
+            assertThat(view.effectiveAt()).isEqualTo(NOW);
+            assertThat(view.transactionStatus())
+                    .isEqualTo(ChainTransactionStatus.FAILED);
+            assertThat(view.lastErrorCode()).isEqualTo("REVERTED");
+            assertThat(view.createdAt()).isEqualTo(NOW.minus(Duration.ofMinutes(1)));
+        });
+        verify(statusEventRepository).findAllRowsByOrganizationId(1L);
+    }
+
+    @Test
+    void blockchainWorkListsAreEmptyWhenRepositoryHasNoRows() {
+        given(batchRepository
+                .findAllByIssuerOrganizationIdOrderBySealedAtDescIdDesc(1L))
+                .willReturn(List.of());
+        given(statusEventRepository.findAllRowsByOrganizationId(1L))
+                .willReturn(List.of());
+
+        assertThat(service.getBatches(1L)).isEmpty();
+        assertThat(service.getStatusEvents(1L)).isEmpty();
     }
 
     @Test
@@ -467,6 +546,34 @@ class CredentialBlockchainServiceImplTest {
         outbox.markDead("REVERTED");
         ReflectionTestUtils.setField(outbox, "id", 71L);
         return outbox;
+    }
+
+    private AncCredentialStatusEventRepository.StatusEventRow statusEventRow() {
+        AncCredentialStatusEventRepository.StatusEventRow row =
+                mock(AncCredentialStatusEventRepository.StatusEventRow.class);
+        given(row.getId()).willReturn(51L);
+        given(row.getCredentialPublicId()).willReturn("credential-public-1");
+        given(row.getCredentialNo()).willReturn("AWARD-1");
+        given(row.getCredentialStatus()).willReturn("REVOKED");
+        given(row.getPreviousStatus()).willReturn("ANCHORED");
+        given(row.getNextStatus()).willReturn("REVOKED");
+        given(row.getReasonCode()).willReturn("ISSUED_IN_ERROR");
+        given(row.getReasonDetail()).willReturn("duplicate certificate");
+        given(row.getActorUserId()).willReturn(99L);
+        given(row.getSupersedingCredentialPublicId())
+                .willReturn("replacement-public-1");
+        given(row.getIssuerSignature()).willReturn(bytes(15, 65));
+        given(row.getApprovalDeadline()).willReturn(
+                LocalDateTime.ofInstant(
+                        NOW.plus(Duration.ofMinutes(15)), ZoneOffset.UTC));
+        given(row.getEffectiveAt()).willReturn(
+                LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
+        given(row.getTransactionStatus()).willReturn("FAILED");
+        given(row.getLastErrorCode()).willReturn("REVERTED");
+        given(row.getCreatedAt()).willReturn(
+                LocalDateTime.ofInstant(
+                        NOW.minus(Duration.ofMinutes(1)), ZoneOffset.UTC));
+        return row;
     }
 
     private Organization organization() {

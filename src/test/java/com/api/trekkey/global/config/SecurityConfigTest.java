@@ -16,12 +16,14 @@ import com.api.trekkey.domain.contest.publicapi.web.dto.ContestLikeRes;
 import com.api.trekkey.domain.contest.publicapi.web.dto.ContestSearchStatus;
 import com.api.trekkey.domain.review.publicapi.service.ReviewAccessService;
 import com.api.trekkey.domain.review.admin.service.ReviewAssignmentAdminService;
+import com.api.trekkey.domain.review.admin.service.ReviewRecordAdminService;
 import com.api.trekkey.domain.review.publicapi.service.ReviewFileService;
 import com.api.trekkey.domain.review.admin.service.ReviewRoundEntryAdminService;
 import com.api.trekkey.domain.review.publicapi.service.ReviewSheetService;
 import com.api.trekkey.domain.review.publicapi.service.ReviewSubmissionService;
 import com.api.trekkey.domain.review.publicapi.web.controller.ReviewAccessController;
 import com.api.trekkey.domain.review.admin.web.controller.ReviewAssignmentAdminController;
+import com.api.trekkey.domain.review.admin.web.controller.ReviewRecordAdminController;
 import com.api.trekkey.domain.review.publicapi.web.controller.ReviewFileController;
 import com.api.trekkey.domain.review.admin.web.controller.ReviewRoundEntryAdminController;
 import com.api.trekkey.domain.review.publicapi.web.controller.ReviewSheetController;
@@ -69,6 +71,7 @@ import org.springframework.test.web.servlet.MockMvc;
                 TeamAdminController.class,
                 ReviewAccessController.class,
                 ReviewAssignmentAdminController.class,
+                ReviewRecordAdminController.class,
                 ReviewFileController.class,
                 ReviewRoundEntryAdminController.class,
                 ReviewSheetController.class,
@@ -109,6 +112,9 @@ class SecurityConfigTest {
 
     @MockitoBean
     private ReviewAssignmentAdminService reviewAssignmentAdminService;
+
+    @MockitoBean
+    private ReviewRecordAdminService reviewRecordAdminService;
 
     @MockitoBean
     private ReviewRoundEntryAdminService reviewRoundEntryAdminService;
@@ -524,6 +530,89 @@ class SecurityConfigTest {
                 30L,
                 req
         );
+    }
+
+    @Test
+    @DisplayName("심사 세부 기록 조회는 인증 없이 요청할 수 없다")
+    void reviewRecords_rejectsAnonymous() throws Exception {
+        mockMvc.perform(get(
+                        "/api/admin/contests/{publicId}"
+                                + "/review-rounds/{roundId}/reviews",
+                        "public-id",
+                        20L
+                ))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+
+        verifyNoInteractions(reviewRecordAdminService);
+    }
+
+    @Test
+    @DisplayName("참가자는 심사 세부 기록을 조회할 수 없다")
+    void reviewRecords_rejectsParticipant() throws Exception {
+        mockMvc.perform(get(
+                        "/api/admin/contests/{publicId}"
+                                + "/review-rounds/{roundId}/reviews",
+                        "public-id",
+                        20L
+                ).header(
+                        HttpHeaders.AUTHORIZATION,
+                        "Bearer " + accessToken("PARTICIPANT")
+                ))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GLOBAL_403"));
+
+        verifyNoInteractions(reviewRecordAdminService);
+    }
+
+    @Test
+    @DisplayName("관리자는 심사 세부 기록을 조회할 수 있다")
+    void reviewRecords_permitsAdmin() throws Exception {
+        given(reviewRecordAdminService.getReviews(
+                10L,
+                "public-id",
+                20L
+        )).willReturn(List.of());
+
+        mockMvc.perform(get(
+                        "/api/admin/contests/{publicId}"
+                                + "/review-rounds/{roundId}/reviews",
+                        "public-id",
+                        20L
+                ).header(
+                        HttpHeaders.AUTHORIZATION,
+                        "Bearer " + accessToken("ADMIN")
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"));
+
+        verify(reviewRecordAdminService)
+                .getReviews(10L, "public-id", 20L);
+    }
+
+    @Test
+    @DisplayName("최고 관리자는 역할 계층을 통해 심사 세부 기록을 조회할 수 있다")
+    void reviewRecords_permitsRootAdmin() throws Exception {
+        given(reviewRecordAdminService.getReviews(
+                10L,
+                "public-id",
+                20L
+        )).willReturn(List.of());
+
+        mockMvc.perform(get(
+                        "/api/admin/contests/{publicId}"
+                                + "/review-rounds/{roundId}/reviews",
+                        "public-id",
+                        20L
+                ).header(
+                        HttpHeaders.AUTHORIZATION,
+                        "Bearer " + accessToken("ROOT_ADMIN")
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("SUCCESS_200"));
+
+        verify(reviewRecordAdminService)
+                .getReviews(10L, "public-id", 20L);
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.api.trekkey.domain.credential.repository;
 
 import com.api.trekkey.domain.credential.entity.AncBatch;
+import java.util.List;
 import java.util.Optional;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,6 +14,9 @@ public interface AncBatchRepository extends JpaRepository<AncBatch, Long> {
     Optional<AncBatch> findByPublicId(String publicId);
 
     Optional<AncBatch> findByBatchIdHash(byte[] batchIdHash);
+
+    List<AncBatch> findAllByIssuerOrganizationIdOrderBySealedAtDescIdDesc(
+            Long issuerOrganizationId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from AncBatch b where b.publicId = :publicId")

@@ -12,7 +12,9 @@ import com.api.trekkey.domain.team.admin.web.dto.TeamStatusUpdateReq;
 import com.api.trekkey.domain.team.entity.Team;
 import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
+import com.api.trekkey.domain.team.repository.TeamMemberRepository;
 import com.api.trekkey.domain.team.repository.TeamRepository;
+import com.api.trekkey.domain.team.web.dto.TeamMemberSummaryRes;
 import com.api.trekkey.domain.user.entity.User;
 import com.api.trekkey.domain.user.entity.UserRole;
 import com.api.trekkey.domain.user.entity.UserStatus;
@@ -39,6 +41,7 @@ public class TeamAdminServiceImpl implements TeamAdminService {
     private final UserRepository userRepository;
     private final ContestRepository contestRepository;
     private final TeamRepository teamRepository;
+    private final TeamMemberRepository teamMemberRepository;
     private final ParticipationCredentialIssuer participationCredentialIssuer;
     private final Clock clock;
     private final AdminAuditLogger adminAuditLogger;
@@ -62,9 +65,17 @@ public class TeamAdminServiceImpl implements TeamAdminService {
         List<Team> visibleTeams = status == null
                 ? allTeams
                 : allTeams.stream().filter(team -> team.getStatus() == status).toList();
+        Map<Long, List<TeamMemberSummaryRes>> membersByTeamId =
+                getMembersByTeamId(visibleTeams);
 
         return new TeamAdminListRes(
-                visibleTeams.stream().map(TeamAdminRes::from).toList(),
+                visibleTeams.stream()
+                        .map(team -> TeamAdminRes.from(
+                                team,
+                                membersByTeamId.getOrDefault(
+                                        team.getId(),
+                                        List.of())))
+                        .toList(),
                 statusCounts,
                 allTeams.size());
     }
@@ -81,12 +92,13 @@ public class TeamAdminServiceImpl implements TeamAdminService {
             throw new CustomException(
                     TeamErrorResponseCode.TEAM_ALREADY_FINALIZED);
         }
-        team.changeStatus(request.status());
+        String revisionReason = normalizeRevisionReason(request);
+        team.changeStatus(request.status(), revisionReason);
 
         adminAuditLogger.log(admin.getId(), admin.getOrganization().getId(), AuditAction.TEAM_STATUS_CHANGE,
                 TARGET_TYPE_TEAM, team.getId(), "status: " + previousStatus + "→" + request.status());
 
-        return TeamAdminRes.from(team);
+        return TeamAdminRes.from(team, getMembers(team));
     }
 
     @Override
@@ -111,7 +123,7 @@ public class TeamAdminServiceImpl implements TeamAdminService {
         adminAuditLogger.log(admin.getId(), admin.getOrganization().getId(), AuditAction.TEAM_FINALIZE,
                 TARGET_TYPE_TEAM, team.getId(), team.getName());
 
-        return TeamAdminRes.from(team);
+        return TeamAdminRes.from(team, getMembers(team));
     }
 
     //======= 헬퍼 메서드 ==========
@@ -126,6 +138,43 @@ public class TeamAdminServiceImpl implements TeamAdminService {
                     UserErrorResponseCode.USER_INVALID_TOKEN);
         }
         return user;
+    }
+
+    private String normalizeRevisionReason(TeamStatusUpdateReq request) {
+        if (request.status() != TeamStatus.REVISION_REQUESTED) {
+            return null;
+        }
+        if (request.revisionReason() == null
+                || request.revisionReason().isBlank()) {
+            throw new CustomException(
+                    TeamErrorResponseCode.TEAM_REVISION_REASON_REQUIRED);
+        }
+        return request.revisionReason().trim();
+    }
+
+    private List<TeamMemberSummaryRes> getMembers(Team team) {
+        return teamMemberRepository
+                .findAllByTeamIdOrderByUserIdAsc(team.getId())
+                .stream()
+                .map(TeamMemberSummaryRes::from)
+                .toList();
+    }
+
+    private Map<Long, List<TeamMemberSummaryRes>> getMembersByTeamId(
+            List<Team> teams) {
+        if (teams.isEmpty()) {
+            return Map.of();
+        }
+
+        return teamMemberRepository
+                .findAllByTeamIdInOrderByTeamIdAscUserIdAsc(
+                        teams.stream().map(Team::getId).toList())
+                .stream()
+                .collect(Collectors.groupingBy(
+                        member -> member.getTeam().getId(),
+                        Collectors.mapping(
+                                TeamMemberSummaryRes::from,
+                                Collectors.toList())));
     }
 
     // 팀 조회 + 관리자 소속 조직 검증 — 타 학교 신청은 존재 여부를 노출하지 않고 404로 응답한다
