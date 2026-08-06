@@ -1,0 +1,6 @@
+**
+
+!Dockerfile
+!build/
+!build/libs/
+!build/libs/trekkey-0.0.1-SNAPSHOT.jar

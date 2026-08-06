@@ -47,14 +47,12 @@ public class JwtTokenProvider implements InitializingBean {
         if (encodedKey == null || encodedKey.isBlank()) {
             throw new IllegalStateException("JWT_SECRET is required");
         }
-
         byte[] keyBytes;
         try {
             keyBytes = Decoders.BASE64.decode(encodedKey);
         } catch (RuntimeException exception) {
             throw new IllegalStateException("JWT_SECRET must be valid Base64", exception);
         }
-
         if (keyBytes.length < HS512_MIN_KEY_BYTES) {
             throw new IllegalStateException("JWT_SECRET must decode to at least 64 bytes for HS512");
         }

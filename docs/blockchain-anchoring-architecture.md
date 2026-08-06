@@ -1,7 +1,7 @@
 # Trekkey Credential 및 Kaia 앵커링 설계
 
-- 기준일: 2026-07-21
-- 상태: MVP 구현 기준
+- 기준일: 2026-07-24
+- 상태: 블록체인 기반 구현 완료, 업무 도메인 연결 전
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)
 - 기준 ERD: [Trekkey 공모전·Credential 최종 ERD](./erd.md)
 - 대상 네트워크: Kaia Kairos 우선, EVM 체인 교체 가능 구조
@@ -34,7 +34,7 @@ Trekkey는 대회 원문과 개인정보를 SQL 및 객체 저장소에 보관�
 - EIP-712 학교 승인
 - 표준 EVM relayer를 통한 Kaia 앵커링
 - Credential revoke 및 supersede
-- QR 검증과 Portable Credential Package
+- 공개 검증 API
 
 ### 후속 대상
 
@@ -46,6 +46,14 @@ Trekkey는 대회 원문과 개인정보를 SQL 및 객체 저장소에 보관�
 - batch 전체 revoke
 - Kaia native fee delegation adapter
 - 학교별 물리 서버 배포
+- QR 검증 화면과 Portable Credential Package
+
+### 현재 코드 상태
+
+- 구현 완료: canonical JSON, source fingerprint, file manifest, Merkle batch/proof, EIP-712, Solidity registry, web3j adapter, Transactional Outbox, 공개 검증, revoke/supersede
+- 연결 대기: 팀이 구현할 `TEAM`, `SUBMISSION`, `AWARD` 확정 서비스에서 내부 `CredentialIssuanceService` 호출
+- 배포 대기: Kairos 실제 contract address와 운영 계정은 저장소에 포함하지 않음
+- 후속 구현: QR UI, Portable Package, KMS/HSM adapter, mainnet 운영
 
 ## 3. 시스템 경계
 
@@ -53,21 +61,21 @@ Trekkey는 대회 원문과 개인정보를 SQL 및 객체 저장소에 보관�
 flowchart LR
     admin["학교 관리자"] -->|"참여·작품·수상 확정"| domainApi["대회 업무 API"]
     domainApi --> mysql[("MySQL")]
-    domainApi --> outbox["Transactional Outbox"]
-    outbox --> issueWorker["Credential Worker"]
-    issueWorker --> mysql
-    issueWorker --> objectStorage[("Object Storage")]
-    batchWorker["Merkle Batch Worker"] --> mysql
-    batchWorker --> signer["학교 Issuer Signer"]
-    signer --> anchorWorker["Anchor Worker"]
+    domainApi --> issueService["CredentialIssuanceService"]
+    issueService --> mysql
+    domainApi --> objectStorage[("Object Storage")]
+    batchApi["관리자 Batch API"] --> mysql
+    batchApi --> signer["학교 Issuer Signer"]
+    signer --> outbox["Transactional Outbox"]
+    outbox --> anchorWorker["Anchor Worker"]
     anchorWorker --> relayer["Trekkey Relayer"]
     relayer --> kaia["Kaia Registry Contract"]
     verifier["학생·외부 검증자"] --> verifyApi["Verification API"]
     verifyApi --> mysql
     verifyApi --> objectStorage
     verifyApi --> kaia
-    issueWorker --> package["Portable Credential Package"]
-    verifier --> package
+    issueService -. "후속 구현" .-> package["Portable Credential Package"]
+    verifier -. "후속 구현" .-> package
 ```
 
 역할은 세 층으로 나뉜다.
@@ -175,7 +183,6 @@ AWARD         -> AWARD.status CONFIRMED + confirmedAt 존재
 - `ANC_CREDENTIAL`
 - `ANC_CREDENTIAL_SOURCE`
 - 모든 `ANC_CREDENTIAL_SUBJECT`
-- 발급 완료 outbox
 
 한 부분이라도 실패하면 전체를 rollback한다. `READY`가 된 이후 payload, canonical bytes, source, subject를 UPDATE하지 않는다.
 
@@ -369,7 +376,7 @@ nodeHash = keccak256(sorted(left, right))
 
 필수 fixture:
 
-- leaf 1, 2, 3개와 홀수 개수
+- leaf 1, 2, 3, 5개
 - 동일 content와 서로 다른 Credential ID
 - payload 한 글자 변경
 - 잘못된 proof와 순서 변경
@@ -416,6 +423,8 @@ EIP-712 domain에는 다음을 포함한다.
 
 DB에는 typed data JSON, digest, signature, key ID, nonce, deadline을 보존한다. V1 컨트랙트는 이미 사용된 `approvalDigest`를 기록해 같은 승인의 replay를 거부한다.
 
+백엔드는 서명을 저장하기 전에 `v=0/1`을 `27/28`로 정규화하고 secp256k1 low-s 형식만 허용한다. 이는 Java에서 복구되는 서명과 OpenZeppelin `ECDSA.recover`가 수용하는 서명의 집합을 같게 만든다.
+
 ## 15. 온체인 모델
 
 V1 컨트랙트는 관계형 업무 데이터를 저장하지 않는다.
@@ -447,6 +456,7 @@ enum CredentialState {
 struct StatusRecord {
     CredentialState state;
     uint64 effectiveAt;
+    uint64 recordedAt;
     uint64 issuerKeyVersion;
     bytes32 replacementCredentialIdHash;
 }
@@ -477,7 +487,7 @@ V1은 batch 전체 revoke를 지원하지 않는다. 잘못된 Credential은 개
 - issuer key 등록 권한과 relayer 제출 권한을 분리한다.
 - 신규 anchor를 pause하더라도 revoke와 supersede는 계속 허용한다.
 - issuer key는 `validFrom`, `validUntil`, `compromisedAt`을 검증한다.
-- 키 회전은 과거 정상 batch를 자동 무효화하지 않는다.
+- 정상 키 회전은 종료 시각 이전의 batch를 무효화하지 않는다. 침해 시각을 과거로 소급 기록하면 그 시각 이후 해당 키로 기록된 batch와 상태 변경은 `ISSUER_INVALID`가 되지만 root 자체는 바뀌지 않는다.
 - V1은 upgradeable proxy를 사용하지 않는다.
 - 로직 변경은 새 contract address와 `contractVersion`으로 배포한다.
 - 운영 admin은 개인 EOA 한 개가 아니라 multisig와 timelock을 사용한다.
@@ -486,7 +496,7 @@ V1은 batch 전체 revoke를 지원하지 않는다. 잘못된 Credential은 개
 
 Kaia를 선택하는 이유:
 
-- EVM 호환으로 Solidity, Foundry, OpenZeppelin 등 기존 도구를 사용할 수 있다.
+- EVM 호환으로 Solidity, Hardhat, OpenZeppelin 등 기존 도구를 사용할 수 있다.
 - 빠른 block 생성과 BFT 기반 immediate finality를 제공한다.
 - Kairos testnet과 mainnet의 구분이 명확하다.
 - native fee delegation과 관리형 fee delegation 선택지가 있다.
@@ -500,16 +510,20 @@ Kaia를 선택하는 이유:
 
 V1은 Kaia native fee-delegated transaction을 사용하지 않고 표준 EVM relayer를 사용한다. 학생과 검증자는 트랜잭션을 보내지 않으므로 지갑과 KAIA가 필요 없다. 학교는 EIP-712 approval만 서명하고 Trekkey relayer가 가스비를 낸다.
 
+V1의 issuer `signer`는 Kaia 계정 주소가 아니라 표준 `ECDSA.recover`로 복구되는 secp256k1 주소다. Kaia 역할 기반 키처럼 계정 주소와 키가 분리된 경우에는 공개키 유도 EVM 주소를 signer로 등록한다. 계정 주소 자체를 검증 identity로 사용하려면 `validateSender` 기반 새 컨트랙트·adapter가 필요하다. 현재 web3j relayer는 Kairos의 `AccountKeyLegacy` EOA로 제한한다.
+
 native fee delegation은 학교 담당자나 학생이 자기 지갑으로 직접 컨트랙트를 호출하면서 Trekkey가 수수료만 대신 내야 할 때 별도 adapter로 도입한다.
 
 백엔드 core에는 Kaia SDK 타입을 직접 노출하지 않는다.
 
 ```java
 public interface BlockchainAnchorPort {
-    AnchorSubmission submit(AnchorBatchPayload payload);
-    AnchorReceipt getReceipt(String txHash);
-    OnChainBatch getBatch(String batchIdHash);
-    CredentialChainStatus getCredentialStatus(String issuerId, String credentialIdHash);
+    PreparedTransaction prepareBatch(BatchApproval approval, Signature65 signature);
+    PreparedTransaction prepareStatus(StatusApproval approval, Signature65 signature);
+    void broadcast(PreparedTransaction prepared);
+    ChainReceipt getReceipt(Hash32 txHash, ChainOperationType operationType);
+    OnChainBatch getBatch(Hash32 batchIdHash);
+    OnChainCredentialStatus getCredentialStatus(Hash32 issuerId, Hash32 credentialIdHash);
 }
 ```
 
@@ -523,24 +537,25 @@ sequenceDiagram
     actor Admin as 학교 관리자
     participant Domain as 대회 업무 API
     participant DB as MySQL
-    participant Issue as Credential Worker
-    participant Batch as Merkle Batch Worker
+    participant Issue as CredentialIssuanceService
+    participant Batch as 관리자 Batch API
     participant Signer as Issuer Signer
     participant Anchor as Anchor Worker
     participant Kaia as Kaia Registry
 
     Admin->>Domain: 참여·작품·수상 확정
-    Domain->>DB: 원천 상태와 outbox 원자적 저장
-    Issue->>DB: 확정 원천과 팀원 조회
+    Domain->>DB: 업무 원천 확정
+    Domain->>Issue: 확정 snapshot으로 issue 호출
     Issue->>Issue: source fingerprint 계산
     Issue->>Issue: snapshot, canonical bytes, hash 생성
     Issue->>DB: READY Credential·source·subjects 저장
+    Admin->>Batch: READY Credential batch 생성
     Batch->>DB: READY Credential 잠금 조회
     Batch->>Batch: leaf, root, proof 생성
-    Batch->>DB: SEALED batch·items·outbox 저장
+    Batch->>DB: SEALED batch·items 저장
     Batch->>Signer: EIP-712 BatchApproval 요청
     Signer-->>Batch: key version과 signature
-    Batch->>DB: SIGNED 저장
+    Batch->>DB: SIGNED·chain transaction·outbox 원자적 저장
     Anchor->>Kaia: anchorBatch 전송
     Kaia-->>Anchor: receipt와 BatchAnchored event
     Anchor->>Kaia: batch 상태 재조회
@@ -582,6 +597,7 @@ sequenceDiagram
 | `ANCHOR_NOT_FOUND` | 온체인 batch가 없음 |
 | `ISSUER_INVALID` | 발급 당시 issuer key 검증 실패 |
 | `RPC_UNAVAILABLE` | 체인 조회 장애이며 위조로 단정하지 않음 |
+| `BLOCKCHAIN_CONFIGURATION_ERROR` | chain ID, contract 주소 또는 ABI 설정 불일치 |
 | `SCHEMA_UNSUPPORTED` | verifier가 schema 또는 tree version을 모름 |
 
 QR에는 학번이나 전체 proof를 넣지 않는다. 기본 QR은 HTTPS URL과 무작위 Credential public ID만 포함한다.
@@ -671,33 +687,41 @@ public interface IssuerSignerPort {
 공개 검증과 관리자 검색을 분리한다.
 
 ```text
-GET /api/v1/credentials/{publicId}
-GET /api/v1/credentials/{publicId}/verify
-GET /api/v1/credentials/{publicId}/package
+GET  /api/public/credentials/{credentialPublicId}
 
-GET /api/v1/organizations/{organizationId}/students/{studentId}/credentials
-GET /api/v1/contests/{contestPublicId}/credentials
-GET /api/v1/teams/{teamPublicId}/credentials
-
-POST /internal/v1/credentials/issue
-POST /internal/v1/batches/{batchPublicId}/seal
-POST /internal/v1/batches/{batchPublicId}/submit
-POST /internal/v1/credentials/{publicId}/revoke
-POST /internal/v1/credentials/{publicId}/supersede
+POST /api/admin/blockchain/issuer-keys/{keyVersion}/sync
+POST /api/admin/blockchain/batches
+GET  /api/admin/blockchain/batches/{batchPublicId}/approval
+POST /api/admin/blockchain/batches/{batchPublicId}/approval
+POST /api/admin/blockchain/batches/{batchPublicId}/approval/renew
+POST /api/admin/blockchain/batches/{batchPublicId}/reconcile
+POST /api/admin/blockchain/credentials/{credentialPublicId}/status-events
+GET  /api/admin/blockchain/status-events/{statusEventId}/approval
+POST /api/admin/blockchain/status-events/{statusEventId}/approval
+POST /api/admin/blockchain/status-events/{statusEventId}/approval/renew
+POST /api/admin/blockchain/status-events/{statusEventId}/reconcile
 ```
 
-학번 기반 전체 이력 API는 본인 인증 또는 학교 관리자 권한이 필요하다.
+원천 발급은 외부 HTTP API가 아니라 확정된 대회 업무 서비스가 `CredentialIssuanceService`를 호출한다. 학번 기반 전체 이력 API는 본인 인증 또는 학교 관리자 권한이 필요하며 아직 연결 전이다.
 
 ## 24. 장애 및 보안 기준
 
-- 업무 확정과 outbox 저장은 한 트랜잭션이다.
+- 업무 연동 시 원천 확정과 `CredentialIssuanceService.issue()`는 같은 트랜잭션에 참여시킨다.
 - Credential 생성과 source·subject 저장은 한 트랜잭션이다.
-- batch seal과 anchor outbox 저장은 한 트랜잭션이다.
-- relayer nonce는 단일 sequencer 또는 DB lease로 관리한다.
-- 전송 전 `eth_call`, chain ID, contract allowlist, function selector, value zero, gas cap을 확인한다.
-- RPC timeout은 `UNKNOWN`으로 기록한다.
-- 재전송 전 batch ID hash 또는 Credential status를 온체인 조회한다.
-- issuer와 relayer private key는 소스, DB, 일반 환경변수에 두지 않는다.
+- 학교 서명 저장과 chain transaction·anchor outbox 생성은 한 트랜잭션이다.
+- signed raw transaction, relayer address, nonce, tx hash를 broadcast 전에 DB에 저장한다.
+- `(chainId, relayerAddress, txNonce)` 유일 제약으로 여러 worker가 다른 트랜잭션에 같은 nonce를 예약하지 못하게 한다.
+- RPC 응답 유실 시 새 nonce를 만들지 않고 저장된 tx hash의 receipt를 조회한다.
+- 만료된 Outbox `PROCESSING` lease는 저장된 `PREPARED` raw transaction을 그대로 재방송한다.
+- 전송 전 RPC chain ID와 설정된 contract address를 확인하고, 고정 ABI calldata·value zero·추정 gas 20% margin으로 raw transaction을 만든다.
+- 준비 단계 RPC 장애는 `PENDING`으로 재시도하고, broadcast 결과 유실 또는 receipt timeout은 `UNKNOWN`으로 기록한다.
+- `UNKNOWN`은 receipt를 계속 조회하면서 저장된 동일 raw transaction만 제한적으로 재방송한다. 새 nonce와 새 raw transaction은 만들지 않는다.
+- `PREPARED` 재시도는 새 nonce를 만들지 않고 같은 raw transaction을 사용한다.
+- 만료된 실패 승인을 갱신할 때 batch 또는 Credential status를 온체인 조회해 이미 처리된 작업을 차단한다.
+- receipt revert 또는 readback 불일치 시 transaction과 outbox를 각각 `FAILED`, `DEAD`로 남겨 명시적 승인 갱신만 허용한다.
+- 이미 온체인 값이 정확히 존재하면 reconciliation API로 batch/Credential 상태만 수렴시키고, 실패 transaction/outbox는 감사 원장으로 보존한다.
+- issuer private key는 백엔드 소스·DB·일반 환경변수에 두지 않는다.
+- 현재 `LOCAL_RELAYER`의 환경변수 private key는 Kairos 개발용이며 운영에서는 KMS/HSM adapter로 교체한다.
 - 운영 RPC는 두 provider 이상을 사용하고 receipt, event, block hash를 교차 확인할 수 있게 한다.
 - relayer 잔액, 일별 가스 예산, outbox backlog, 실패율을 모니터링한다.
 - MySQL 복구 훈련, 객체 저장소 versioning, package 복원 테스트를 수행한다.
@@ -733,8 +757,9 @@ Kaia는 BFT 기반 immediate finality를 제공하므로 임의의 Ethereum conf
 ### 장애 복구
 
 - 동일 outbox와 source fingerprint 재처리가 중복 Credential을 만들지 않는다.
-- RPC timeout 후 readback으로 이미 성공한 트랜잭션을 확인한다.
-- SQL 백업과 Portable Package만으로 proof를 재검증할 수 있다.
+- broadcast 응답 유실 후 저장된 tx hash로 receipt를 추적하고, 동일 raw transaction 재방송으로 복구한다.
+- `FAILED + DEAD` 승인 갱신 전에 온체인 readback으로 이미 성공한 트랜잭션을 확인한다.
+- Portable Package 구현 후 SQL 백업과 package 각각으로 proof를 재검증한다.
 
 ## 26. 구현 순서
 
@@ -749,29 +774,20 @@ Kaia는 BFT 기반 immediate finality를 제공하므로 임의의 Ethereum conf
 
 ### Phase 2. 체인 독립 Credential
 
-- schema profile과 JSON Schema
-- RFC 8785 canonicalizer
-- source fingerprint와 idempotent issuance
-- subject snapshot
-- file manifest
-- Portable Package 초안
+- 완료: schema profile, RFC 8785 canonicalizer, source fingerprint, idempotent issuance, subject snapshot, file manifest
+- 후속: 정식 JSON Schema 배포와 Portable Package
 
 ### Phase 3. Merkle와 Solidity
 
-- OpenZeppelin-compatible fixture
-- `TrekkeyCredentialRegistryV1`
-- EIP-712 BatchApproval과 StatusApproval
-- issuer key rotation
-- revoke와 supersede
-- Foundry 단위·fuzz 테스트
+- 완료: OpenZeppelin-compatible fixture, `TrekkeyCredentialRegistryV1`, EIP-712 승인, issuer key lifecycle, revoke와 supersede
+- 완료: Hardhat 단위 테스트와 Java/OpenZeppelin fixture 교차 검증
 
 ### Phase 4. Spring Boot 및 Kaia
 
-- batch worker와 anchor worker
-- signer, relayer, JSON-RPC adapter
-- Kairos 배포 및 explorer 검증
-- 공개 verify API와 QR
-- 모니터링 및 재시도
+- 완료: 관리자 batch API, anchor worker, 외부 signer 경계, relayer, JSON-RPC adapter
+- 완료: 공개 verify API, outbox 재시도, raw transaction/receipt 원장
+- 배포 대기: Kairos contract 배포 및 explorer 검증
+- 후속: QR 화면과 운영 모니터링
 
 ### Phase 5. 운영 확장
 
@@ -789,7 +805,7 @@ Trekkey는 개인정보와 인증서 원문을 퍼블릭 체인에 저장하지 
 
 업무 DB와 체인 처리는 transactional outbox로 분리했으며, source fingerprint, batch ID, chain operation별 멱등 키로 중복 발급과 중복 전송을 방지한다. 폐기와 정정은 기존 원문 수정이 아니라 revoke와 supersede로 처리한다.
 
-블록체인 root만으로 원문을 복구할 수 없다는 한계도 설계에 반영했다. SQL 백업, 객체 저장소, 학생 소유 Portable Credential Package를 함께 제공해 장기 증빙 가능성을 확보한다.
+블록체인 root만으로 원문을 복구할 수 없다는 한계도 설계에 반영했다. 현재는 SQL과 객체 저장소 백업을 책임 경계로 두고, 후속 Portable Credential Package로 학생 소유 장기 증빙을 추가한다.
 
 ## 28. 최종 결정 요약
 
@@ -804,12 +820,15 @@ Trekkey는 개인정보와 인증서 원문을 퍼블릭 체인에 저장하지 
 - JCS + NFC, SHA-256 content hash, OpenZeppelin-compatible Merkle 규칙을 고정한다.
 - 학교는 EIP-712 approval을 서명하고 표준 EVM relayer가 Kaia 트랜잭션을 보낸다.
 - V1은 개별 revoke와 supersede만 지원한다.
-- Credential Package는 장기 검증의 필수 산출물이다.
+- Credential Package는 장기 검증을 강화할 후속 필수 산출물이다.
 - 졸업, 학적 이력, 제출 버전, batch revoke는 실제 요구가 생길 때 확장한다.
 
 ## 29. 참고
 
 - [Kaia Foundation Setup](https://docs.kaia.io/build/get-started/foundation-setup/)
+- [Kaia public JSON-RPC endpoints](https://docs.kaia.io/references/public-en/)
+- [Kaia Ethereum contract porting and decoupled keys](https://docs.kaia.io/build/smart-contracts/fundamentals/porting-ethereum-contract/)
+- [Kaia validateSender precompile](https://docs.kaia.io/learn/smart-contracts/precompiled-contracts/)
 - [Kaia execution model and finality](https://docs.kaia.io/learn/computation/execution-model/)
 - [Kaia and Ethereum comparison](https://docs.kaia.io/learn/kaia-vs-ethereum/)
 - [Kaia fee delegation](https://docs.kaia.io/build/transactions/fee-delegation/)
