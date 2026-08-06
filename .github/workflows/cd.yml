@@ -86,8 +86,9 @@ jobs:
           umask 077
           printf '%s\n' "$ENV_FILE" > "$RUNNER_TEMP/trekkey.env"
 
-          for key in MYSQL_DATABASE MYSQL_USER MYSQL_PASSWORD MYSQL_ROOT_PASSWORD \
-              CORS_ALLOWED_ORIGIN FRONT_BASE_URL JWT_SECRET_KEY; do
+          for key in DATASOURCE_URL DATASOURCE_USERNAME DATASOURCE_PASSWORD MYSQL_ROOT_PASSWORD \
+              CORS_ALLOWED_ORIGIN FRONT_BASE_URL JWT_SECRET_KEY \
+              JWT_ACCESS_EXPIRATION JWT_REFRESH_EXPIRATION; do
             if ! grep -q "^${key}=" "$RUNNER_TEMP/trekkey.env"; then
               echo "ENV_FILE is missing ${key}"
               exit 1
