@@ -151,6 +151,7 @@ BLOCKCHAIN_ANCHORING_MODE=LOCAL_RELAYER
 BLOCKCHAIN_CHAIN_ID=1001
 BLOCKCHAIN_RPC_URL=https://public-en-kairos.node.kaia.io
 BLOCKCHAIN_CONTRACT_ADDRESS=0x...
+BLOCKCHAIN_RUNTIME_CODE_HASH=0x...
 BLOCKCHAIN_CONTRACT_VERSION=1
 BLOCKCHAIN_TREE_VERSION=1
 BLOCKCHAIN_BATCH_SIZE=100
@@ -161,8 +162,40 @@ BLOCKCHAIN_WORKER_MAX_ATTEMPTS=8
 BLOCKCHAIN_OUTBOX_LEASE_TIMEOUT=1m
 BLOCKCHAIN_RECEIPT_POLLING_INTERVAL=2s
 BLOCKCHAIN_RECEIPT_TIMEOUT=2m
-BLOCKCHAIN_RELAYER_PRIVATE_KEY=0x...
 ```
+
+위 값은 비밀이 아닌 배포 설정이다. GitHub `production` Environment Variables에 저장하며, DB 비밀번호와 JWT 키가 들어 있는 `ENV_FILE` Secret과 분리한다.
+
+현재 Kairos 배포값은 [`contracts/deployments/kairos-1001.json`](../contracts/deployments/kairos-1001.json)을 원본으로 사용한다.
+
+```dotenv
+BLOCKCHAIN_ANCHORING_MODE=LOCAL_RELAYER
+BLOCKCHAIN_CHAIN_ID=1001
+BLOCKCHAIN_RPC_URL=https://public-en-kairos.node.kaia.io
+BLOCKCHAIN_CONTRACT_ADDRESS=0x4ca738CC22Af5aE40EA8A23E001FA93e1e044117
+BLOCKCHAIN_RUNTIME_CODE_HASH=0x6bdcd078a99c833e1e6126d71954b570fb7bfb4afe4720fc4a438009039571a2
+BLOCKCHAIN_CONTRACT_VERSION=1
+BLOCKCHAIN_TREE_VERSION=1
+BLOCKCHAIN_BATCH_SIZE=100
+BLOCKCHAIN_APPROVAL_TTL=15m
+BLOCKCHAIN_WORKER_ENABLED=true
+BLOCKCHAIN_WORKER_CLAIM_SIZE=10
+BLOCKCHAIN_WORKER_MAX_ATTEMPTS=8
+BLOCKCHAIN_OUTBOX_LEASE_TIMEOUT=1m
+BLOCKCHAIN_RECEIPT_POLLING_INTERVAL=2s
+BLOCKCHAIN_RECEIPT_TIMEOUT=2m
+```
+
+relayer private key는 GitHub에 저장하지 않는다. EC2 한 곳에서만 다음 형식의 별도 파일로 주입한다.
+
+```text
+/etc/trekkey/relayer.env
+owner: root:root
+mode: 600
+content: BLOCKCHAIN_RELAYER_PRIVATE_KEY=<32-byte hex private key>
+```
+
+키 값을 터미널 인자, 문서, Git 로그에 붙여 넣지 않는다. 로컬 Keychain에서 표준입력으로 EC2에 전송하고, 배포 워크플로는 파일 존재 여부·권한·형식만 검사한다. 컨테이너 환경변수 주입은 Kairos 통합 시험용이며, Kaia mainnet 전환 전에는 `BlockchainAnchorPort`의 KMS/HSM signer adapter로 교체한다.
 
 모드:
 
@@ -393,6 +426,8 @@ action, effective time, issuer key version, replacement hash가 모두 일치해
 - [ ] Kairos contract source 검증
 - [ ] Java와 OpenZeppelin Merkle fixture 교차 테스트
 - [ ] 학교 issuer와 relayer 키 분리
+- [ ] relayer key가 EC2 `/etc/trekkey/relayer.env`에만 존재하고 권한이 `600`인지 확인
+- [ ] Registry runtime code hash가 배포 manifest와 일치하는지 확인
 - [ ] 승인 nonce·deadline·chain ID·contract address 확인
 - [ ] relayer 잔액 및 가스 예산 알림
 - [ ] Outbox backlog, `UNKNOWN`, `DEAD` 알림

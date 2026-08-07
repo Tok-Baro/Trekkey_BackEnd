@@ -19,9 +19,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  package:
-    name: Build executable JAR
+  java:
+    name: Java tests and executable JAR
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: trekkey_test
+          MYSQL_ROOT_PASSWORD: test-root-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -ptest-root-password --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      JWT_SECRET_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZg==
+      JWT_ACCESS_EXPIRATION: "1800"
+      JWT_REFRESH_EXPIRATION: "1209600"
+      FRONT_BASE_URL: http://localhost:3000
+      CORS_ALLOWED_ORIGIN: http://localhost:3000
+      FILE_UPLOAD_DIR: /tmp/trekkey-test-uploads
+      RUN_MYSQL_INTEGRATION_TESTS: "true"
+      MYSQL_TEST_URL: jdbc:mysql://127.0.0.1:3306/trekkey_test?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      MYSQL_TEST_USERNAME: root
+      MYSQL_TEST_PASSWORD: test-root-password
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -45,5 +69,31 @@ jobs:
           java-version: "21"
           cache: gradle
 
-      - name: Build JAR
-        run: ./gradlew clean bootJar --no-daemon -x test
+      - name: Test and build JAR
+        run: ./gradlew clean test bootJar --no-daemon
+
+  contracts:
+    name: Solidity and deployment-tool tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test contracts
+        run: npm test
+
+      - name: Type-check deployment tools
+        run: npx tsc --noEmit
