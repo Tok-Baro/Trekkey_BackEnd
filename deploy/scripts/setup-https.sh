@@ -4,7 +4,7 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly NGINX_TEMPLATE="${SCRIPT_DIR}/../nginx/trekkey.conf.template"
 readonly NGINX_TARGET="/etc/nginx/conf.d/trekkey.conf"
-readonly BACKEND_HEALTH_URL="http://127.0.0.1:8080/api/organizations"
+readonly BACKEND_HEALTH_URL="http://127.0.0.1:8080/api/organizations?keyword=aa"
 
 usage() {
   echo "Usage: sudo $0 <domain> <email>" >&2
@@ -151,7 +151,7 @@ curl \
   --show-error \
   --max-time 10 \
   --resolve "${DOMAIN}:443:127.0.0.1" \
-  "https://${DOMAIN}/api/organizations" >/dev/null \
+  "https://${DOMAIN}/api/organizations?keyword=aa" >/dev/null \
   || fail "HTTPS proxy health check failed"
 
 config_replaced=false
