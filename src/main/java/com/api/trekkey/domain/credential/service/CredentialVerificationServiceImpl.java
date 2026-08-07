@@ -42,7 +42,6 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -341,8 +340,10 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
                 && payload.credentialType() == credential.getCredentialType()
                 && payload.schemaProfileId().equals(credential.getSchemaProfileId())
                 && payload.issuerPublicId().equals(organizationPublicId)
-                && payload.issuedAt().equals(UtcTime.toInstant(credential.getIssuedAt()))
-                && Objects.equals(payload.expiresAt(), expiresAt)
+                && UtcTime.samePersistedInstant(
+                        payload.issuedAt(),
+                        UtcTime.toInstant(credential.getIssuedAt()))
+                && UtcTime.samePersistedInstant(payload.expiresAt(), expiresAt)
                 && payload.fileManifestHash().equals(Hash32.of(credential.getFileManifestHash()).hex())
                 && Hashing.schemaVersion(payload.schemaProfileId())
                         .equals(Hash32.of(credential.getSchemaVersionHash()));

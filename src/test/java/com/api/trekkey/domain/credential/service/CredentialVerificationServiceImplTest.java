@@ -39,6 +39,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,7 +54,7 @@ class CredentialVerificationServiceImplTest {
 
     private static final String CREDENTIAL_PUBLIC_ID = "credential-public-1";
     private static final String ORGANIZATION_PUBLIC_ID = "organization-public-1";
-    private static final Instant ISSUED_AT = Instant.parse("2026-07-24T01:05:00Z");
+    private static final Instant ISSUED_AT = Instant.parse("2026-07-24T01:05:00.123456789Z");
 
     @Mock private AncCredentialRepository credentialRepository;
     @Mock private AncBatchItemRepository batchItemRepository;
@@ -109,6 +110,19 @@ class CredentialVerificationServiceImplTest {
         assertThat(result.evidence().credentialIdHash()).startsWith("0x");
         assertThat(result.evidence().contentHash()).startsWith("0x");
         assertThat(result.evidence().fileManifestHash()).startsWith("0x");
+    }
+
+    @Test
+    void rejectsAStoredTimestampChangedByOneMicrosecond() {
+        ReflectionTestUtils.setField(
+                credential,
+                "issuedAt",
+                credential.getIssuedAt().plusNanos(1_000));
+
+        CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
+
+        assertThat(result.verificationStatus()).isEqualTo(CredentialVerificationStatus.TAMPERED);
+        assertThat(result.evidence().credentialClaimsMatch()).isFalse();
     }
 
     @Test
@@ -262,7 +276,7 @@ class CredentialVerificationServiceImplTest {
                 manifest.canonicalBytes(),
                 Hashing.sha256(canonicalBytes).bytes(),
                 manifest.hash().bytes(),
-                UtcTime.toLocalDateTime(ISSUED_AT),
+                UtcTime.toLocalDateTime(ISSUED_AT.truncatedTo(ChronoUnit.MICROS)),
                 null);
         ReflectionTestUtils.setField(value, "id", 10L);
         return value;
