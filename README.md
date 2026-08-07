@@ -88,10 +88,10 @@ src/main/java/com/api/trekkey
 
 | 환경변수 | 설명 | 기본값 |
 | --- | --- | --- |
-| `SPRING_DATASOURCE_URL` | MySQL JDBC URL | 없음 |
-| `SPRING_DATASOURCE_USERNAME` | DB 사용자명 | 없음 |
-| `SPRING_DATASOURCE_PASSWORD` | DB 비밀번호 | 없음 |
-| `JWT_SECRET` | Base64 인코딩된 64바이트 이상 JWT 서명 키 | 없음 |
+| `DATASOURCE_URL` | MySQL JDBC URL | 없음 |
+| `DATASOURCE_USERNAME` | DB 사용자명 | 없음 |
+| `DATASOURCE_PASSWORD` | DB 비밀번호 | 없음 |
+| `JWT_SECRET_KEY` | Base64 인코딩된 64바이트 이상 JWT 서명 키 | 없음 |
 | `JWT_ACCESS_EXPIRATION` | access token 유효기간(초) | `1800` |
 | `JWT_REFRESH_EXPIRATION` | refresh token 유효기간(초) | `1209600` |
 | `JWT_REFRESH_COOKIE_NAME` | refresh cookie 이름 | `refreshToken` |
@@ -101,19 +101,22 @@ src/main/java/com/api/trekkey
 | `BLOCKCHAIN_CHAIN_ID` | Kaia chain ID | `1001` |
 | `BLOCKCHAIN_RPC_URL` | EVM JSON-RPC URL | Kairos public RPC |
 | `BLOCKCHAIN_CONTRACT_ADDRESS` | 배포한 registry 주소 | 없음 |
+| `BLOCKCHAIN_RUNTIME_CODE_HASH` | 배포 manifest의 runtime bytecode Keccak-256 | 없음 |
 | `BLOCKCHAIN_WORKER_ENABLED` | Outbox/receipt worker 실행 | `false` |
 | `BLOCKCHAIN_OUTBOX_LEASE_TIMEOUT` | 중단된 worker 작업 회수 시간 | `1m` |
 | `BLOCKCHAIN_RELAYER_PRIVATE_KEY` | Kairos 개발용 relayer key | 없음 |
 
-> `JWT_SECRET`이 없거나 HS512 기준보다 짧으면 애플리케이션이 기동하지 않습니다. HTTPS 환경에서는 `JWT_REFRESH_COOKIE_SECURE=true`를 사용하세요.
+> `JWT_SECRET_KEY`가 없거나 HS512 기준보다 짧으면 애플리케이션이 기동하지 않습니다. HTTPS 환경에서는 `JWT_REFRESH_COOKIE_SECURE=true`를 사용하세요.
+
+운영 배포에서 공개 `BLOCKCHAIN_*` 설정은 GitHub `production` Environment Variables로 관리한다. `BLOCKCHAIN_RELAYER_PRIVATE_KEY`는 GitHub Secret이나 공용 `ENV_FILE`에 넣지 않고 EC2의 `/etc/trekkey/relayer.env`에만 `root:root`, 권한 `600`으로 저장한다.
 
 ## 로컬 실행
 
 ```bash
-export SPRING_DATASOURCE_URL='jdbc:mysql://localhost:3306/trekkey'
-export SPRING_DATASOURCE_USERNAME='root'
-export SPRING_DATASOURCE_PASSWORD='your-password'
-export JWT_SECRET="$(openssl rand -base64 64)"
+export DATASOURCE_URL='jdbc:mysql://localhost:3306/trekkey'
+export DATASOURCE_USERNAME='root'
+export DATASOURCE_PASSWORD='your-password'
+export JWT_SECRET_KEY="$(openssl rand -base64 64)"
 
 ./gradlew bootRun
 ```
