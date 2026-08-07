@@ -36,7 +36,7 @@ jobs:
           java-version: "21"
           cache: gradle
 
-      - name: Build JAR
+      - name: Build verified JAR
         run: ./gradlew clean bootJar --no-daemon -x test
 
       - name: Set image coordinates
@@ -45,6 +45,9 @@ jobs:
         run: |
           echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           echo "tag=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -61,6 +64,7 @@ jobs:
         with:
           context: .
           push: true
+          platforms: linux/arm64
           tags: |
             ${{ steps.image.outputs.name }}:${{ steps.image.outputs.tag }}
             ${{ steps.image.outputs.name }}:latest
@@ -76,6 +80,21 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           ENV_FILE: ${{ secrets.ENV_FILE }}
+          BLOCKCHAIN_ANCHORING_MODE: ${{ vars.BLOCKCHAIN_ANCHORING_MODE }}
+          BLOCKCHAIN_CHAIN_ID: ${{ vars.BLOCKCHAIN_CHAIN_ID }}
+          BLOCKCHAIN_RPC_URL: ${{ vars.BLOCKCHAIN_RPC_URL }}
+          BLOCKCHAIN_CONTRACT_ADDRESS: ${{ vars.BLOCKCHAIN_CONTRACT_ADDRESS }}
+          BLOCKCHAIN_RUNTIME_CODE_HASH: ${{ vars.BLOCKCHAIN_RUNTIME_CODE_HASH }}
+          BLOCKCHAIN_CONTRACT_VERSION: ${{ vars.BLOCKCHAIN_CONTRACT_VERSION }}
+          BLOCKCHAIN_TREE_VERSION: ${{ vars.BLOCKCHAIN_TREE_VERSION }}
+          BLOCKCHAIN_BATCH_SIZE: ${{ vars.BLOCKCHAIN_BATCH_SIZE }}
+          BLOCKCHAIN_APPROVAL_TTL: ${{ vars.BLOCKCHAIN_APPROVAL_TTL }}
+          BLOCKCHAIN_WORKER_ENABLED: ${{ vars.BLOCKCHAIN_WORKER_ENABLED }}
+          BLOCKCHAIN_WORKER_CLAIM_SIZE: ${{ vars.BLOCKCHAIN_WORKER_CLAIM_SIZE }}
+          BLOCKCHAIN_WORKER_MAX_ATTEMPTS: ${{ vars.BLOCKCHAIN_WORKER_MAX_ATTEMPTS }}
+          BLOCKCHAIN_OUTBOX_LEASE_TIMEOUT: ${{ vars.BLOCKCHAIN_OUTBOX_LEASE_TIMEOUT }}
+          BLOCKCHAIN_RECEIPT_POLLING_INTERVAL: ${{ vars.BLOCKCHAIN_RECEIPT_POLLING_INTERVAL }}
+          BLOCKCHAIN_RECEIPT_TIMEOUT: ${{ vars.BLOCKCHAIN_RECEIPT_TIMEOUT }}
         run: |
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$EC2_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_deploy"
@@ -95,6 +114,28 @@ jobs:
             fi
           done
 
+          if grep -q '^BLOCKCHAIN_' "$RUNNER_TEMP/trekkey.env"; then
+            echo "Public BLOCKCHAIN_* settings must use GitHub Environment Variables, not ENV_FILE"
+            exit 1
+          fi
+
+          for key in BLOCKCHAIN_ANCHORING_MODE BLOCKCHAIN_CHAIN_ID BLOCKCHAIN_RPC_URL \
+              BLOCKCHAIN_CONTRACT_ADDRESS BLOCKCHAIN_RUNTIME_CODE_HASH \
+              BLOCKCHAIN_CONTRACT_VERSION BLOCKCHAIN_TREE_VERSION BLOCKCHAIN_BATCH_SIZE \
+              BLOCKCHAIN_APPROVAL_TTL BLOCKCHAIN_WORKER_ENABLED BLOCKCHAIN_WORKER_CLAIM_SIZE \
+              BLOCKCHAIN_WORKER_MAX_ATTEMPTS BLOCKCHAIN_OUTBOX_LEASE_TIMEOUT \
+              BLOCKCHAIN_RECEIPT_POLLING_INTERVAL BLOCKCHAIN_RECEIPT_TIMEOUT; do
+            if [ -z "${!key:-}" ]; then
+              echo "GitHub production variable ${key} is missing"
+              exit 1
+            fi
+            printf '%s=%s\n' "$key" "${!key}" >> "$RUNNER_TEMP/trekkey.env"
+          done
+
+          grep -qx 'BLOCKCHAIN_ANCHORING_MODE=LOCAL_RELAYER' "$RUNNER_TEMP/trekkey.env"
+          grep -qx 'BLOCKCHAIN_CHAIN_ID=1001' "$RUNNER_TEMP/trekkey.env"
+          grep -qx 'BLOCKCHAIN_WORKER_ENABLED=true' "$RUNNER_TEMP/trekkey.env"
+
       - name: Prepare EC2 deployment directories
         shell: bash
         env:
@@ -103,6 +144,8 @@ jobs:
         run: |
           ssh -i "$HOME/.ssh/id_deploy" "${EC2_USER}@${EC2_HOST}" \
             'command -v docker >/dev/null && sudo docker compose version >/dev/null && command -v curl >/dev/null'
+          ssh -i "$HOME/.ssh/id_deploy" "${EC2_USER}@${EC2_HOST}" \
+            'sudo test -s /etc/trekkey/relayer.env && test "$(sudo stat -c "%a %U %G" /etc/trekkey/relayer.env)" = "600 root root" && sudo grep -Eq "^BLOCKCHAIN_RELAYER_PRIVATE_KEY=0x[[:xdigit:]]{64}$" /etc/trekkey/relayer.env'
           ssh -i "$HOME/.ssh/id_deploy" "${EC2_USER}@${EC2_HOST}" \
             'sudo install -d -m 755 /opt/trekkey && sudo install -d -m 700 /etc/trekkey && sudo install -d -o 10001 -g 10001 -m 750 /var/lib/trekkey/uploads'
           scp -i "$HOME/.ssh/id_deploy" docker-compose.prod.yml \
@@ -153,7 +196,7 @@ jobs:
           healthy=false
           for attempt in $(seq 1 30); do
             if curl --fail --silent --show-error \
-                'http://127.0.0.1:8080/api/organizations' >/dev/null; then
+                'http://127.0.0.1:8080/api/organizations?keyword=aa' >/dev/null; then
               healthy=true
               break
             fi
@@ -161,11 +204,7 @@ jobs:
           done
 
           if [ "$healthy" != true ]; then
-            sudo docker compose \
-              --project-name trekkey \
-              --env-file /etc/trekkey/trekkey.env \
-              -f /opt/trekkey/docker-compose.prod.yml \
-              logs --tail=100 backend
+            compose "$NEW_IMAGE" logs --tail=100 backend
 
             if [ -n "$previous_image" ]; then
               compose "$previous_image" up -d --remove-orphans
