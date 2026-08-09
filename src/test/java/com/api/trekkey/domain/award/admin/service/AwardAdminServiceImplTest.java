@@ -10,9 +10,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
+import com.api.trekkey.domain.award.admin.web.dto.AwardCandidateUpdateReq;
 import com.api.trekkey.domain.award.admin.web.dto.AwardRes;
 import com.api.trekkey.domain.award.entity.Award;
 import com.api.trekkey.domain.award.entity.AwardStatus;
+import com.api.trekkey.domain.award.entity.AwardType;
 import com.api.trekkey.domain.award.exception.AwardErrorResponseCode;
 import com.api.trekkey.domain.award.repository.AwardRepository;
 import com.api.trekkey.domain.contest.entity.Contest;
@@ -153,8 +155,58 @@ class AwardAdminServiceImplTest {
         assertThat(result.get(0).teamPublicId()).isEqualTo("team-팀A");
         assertThat(result.get(1).prize()).isEqualTo("최우수상");
         assertThat(result.get(1).teamName()).isEqualTo("팀B");
-        assertThat(result.get(0).certificateNo()).matches("\\d{4}-C200-001");
+        assertThat(result.get(0).certificateNo())
+                .matches("\\d{4}-CCONTESTPUB1-001");
         assertThat(result.get(0).status()).isEqualTo(AwardStatus.CANDIDATE);
+    }
+
+    @Test
+    @DisplayName("수상 컷에 걸린 공동 순위자는 계획 인원을 넘어도 함께 후보로 산출한다")
+    void calculateAwards_includesAllTiesAtCutoff() {
+        given(round.getStatus()).willReturn(ReviewRoundStatus.FINALIZED);
+        given(awardRepository.existsByTeamContestIdAndStatus(
+                200L, AwardStatus.CONFIRMED)).willReturn(false);
+        given(awardRepository.findAllByTeamContestIdOrderByAwardRankNoAsc(200L))
+                .willReturn(List.of());
+        ReviewRoundEntry first = entryFixture(1, "팀A");
+        ReviewRoundEntry tiedSecondA = entryFixture(2, "팀B");
+        ReviewRoundEntry tiedSecondB = entryFixture(2, "팀C");
+        given(entryRepository.findAllByReviewRoundIdAndStatus(
+                300L, ReviewRoundEntryStatus.SELECTED))
+                .willReturn(List.of(tiedSecondB, first, tiedSecondA));
+
+        List<AwardRes> result = awardAdminService.calculateAwards(100L, 300L);
+
+        assertThat(result)
+                .extracting(AwardRes::awardRankNo)
+                .containsExactly(1, 2, 2);
+        assertThat(result)
+                .extracting(AwardRes::prize)
+                .containsExactly("대상", "최우수상", "최우수상");
+        assertThat(result)
+                .extracting(AwardRes::certificateNo)
+                .doesNotHaveDuplicates();
+    }
+
+    @Test
+    @DisplayName("상장번호는 축약하지 않은 대회 공개 ID로 대회 간 충돌을 방지한다")
+    void calculateAwards_usesFullContestPublicIdInCertificateNumber() {
+        given(round.getStatus()).willReturn(ReviewRoundStatus.FINALIZED);
+        given(contest.getPublicId()).willReturn(
+                "725050e0-2a2f-48a8-a8b8-2e51e12524b7");
+        given(awardRepository.existsByTeamContestIdAndStatus(
+                200L, AwardStatus.CONFIRMED)).willReturn(false);
+        given(awardRepository.findAllByTeamContestIdOrderByAwardRankNoAsc(200L))
+                .willReturn(List.of());
+        ReviewRoundEntry first = entryFixture(1, "팀A");
+        given(entryRepository.findAllByReviewRoundIdAndStatus(
+                300L, ReviewRoundEntryStatus.SELECTED))
+                .willReturn(List.of(first));
+
+        List<AwardRes> result = awardAdminService.calculateAwards(100L, 300L);
+
+        assertThat(result.get(0).certificateNo()).isEqualTo(
+                "2026-C725050E02A2F48A8A8B82E51E12524B7-001");
     }
 
     @Test
@@ -282,6 +334,43 @@ class AwardAdminServiceImplTest {
     }
 
     @Test
+    @DisplayName("컷오프 공동 순위 후보를 모두 확정하고 Credential을 발급한다")
+    void confirmAwards_confirmsAllTiedCandidatesAtCutoff() {
+        ReviewRoundEntry first = entryFixture(1, "팀A");
+        ReviewRoundEntry tiedSecondA = entryFixture(2, "팀B");
+        ReviewRoundEntry tiedSecondB = entryFixture(2, "팀C");
+        Award firstCandidate = awardForEntry(first, 1, 1);
+        Award tiedCandidateA = awardForEntry(tiedSecondA, 2, 2);
+        Award tiedCandidateB = awardForEntry(tiedSecondB, 2, 3);
+        given(round.getStatus()).willReturn(ReviewRoundStatus.FINALIZED);
+        given(awardRepository.findAllByTeamContestIdOrderByAwardRankNoAsc(200L))
+                .willReturn(List.of(
+                        firstCandidate,
+                        tiedCandidateA,
+                        tiedCandidateB));
+        given(entryRepository.findAllByReviewRoundIdAndStatus(
+                300L,
+                ReviewRoundEntryStatus.SELECTED
+        )).willReturn(List.of(tiedSecondB, first, tiedSecondA));
+
+        List<AwardRes> result = awardAdminService.confirmAwards(
+                100L, "contest-pub-1");
+
+        assertThat(result)
+                .extracting(AwardRes::awardRankNo)
+                .containsExactly(1, 2, 2);
+        assertThat(result)
+                .extracting(AwardRes::status)
+                .containsOnly(AwardStatus.CONFIRMED);
+        verify(awardCredentialIssuer)
+                .issueForConfirmedAward(firstCandidate);
+        verify(awardCredentialIssuer)
+                .issueForConfirmedAward(tiedCandidateA);
+        verify(awardCredentialIssuer)
+                .issueForConfirmedAward(tiedCandidateB);
+    }
+
+    @Test
     @DisplayName("후보 산출 뒤 수상 인원이 바뀌면 재산출 전에는 확정할 수 없다")
     void confirmAwards_rejectsCandidatesStaleAfterAwardCountChange() {
         ReviewRoundEntry first = entryFixture(1, "팀A");
@@ -357,6 +446,92 @@ class AwardAdminServiceImplTest {
                                 .AWARD_FINAL_ROUND_REQUIRED);
     }
 
+    @Test
+    @DisplayName("확정 전 후보를 총장상으로 변경하고 보류할 수 있다")
+    void updateCandidate_changesPrizeTypeAndStatus() {
+        Award candidate = awardFixture(AwardStatus.CANDIDATE);
+        given(awardRepository.findByPublicId("award-pub-1"))
+                .willReturn(Optional.of(candidate));
+        given(awardRepository.findByPublicIdForUpdate("award-pub-1"))
+                .willReturn(Optional.of(candidate));
+
+        AwardRes result = awardAdminService.updateCandidate(
+                100L,
+                "award-pub-1",
+                new AwardCandidateUpdateReq(
+                        AwardType.PRESIDENT_AWARD,
+                        null,
+                        AwardStatus.HELD));
+
+        assertThat(result.prize()).isEqualTo("총장상");
+        assertThat(result.awardType()).isEqualTo(
+                AwardType.PRESIDENT_AWARD);
+        assertThat(result.status()).isEqualTo(AwardStatus.HELD);
+    }
+
+    @Test
+    @DisplayName("사용자 정의 상격은 이름이 있어야 한다")
+    void updateCandidate_requiresCustomPrizeName() {
+        Award candidate = awardFixture(AwardStatus.CANDIDATE);
+        given(awardRepository.findByPublicId("award-pub-1"))
+                .willReturn(Optional.of(candidate));
+        given(awardRepository.findByPublicIdForUpdate("award-pub-1"))
+                .willReturn(Optional.of(candidate));
+
+        assertThatThrownBy(() -> awardAdminService.updateCandidate(
+                100L,
+                "award-pub-1",
+                new AwardCandidateUpdateReq(
+                        AwardType.CUSTOM,
+                        " ",
+                        AwardStatus.CANDIDATE)))
+                .isInstanceOf(CustomException.class)
+                .extracting(error -> ((CustomException) error)
+                        .getBaseResponseCode())
+                .isEqualTo(
+                        AwardErrorResponseCode.AWARD_CUSTOM_PRIZE_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("보류된 후보가 있으면 수상 전체를 확정할 수 없다")
+    void confirmAwards_rejectsHeldCandidate() {
+        Award held = awardFixture(AwardStatus.HELD);
+        given(round.getStatus()).willReturn(ReviewRoundStatus.FINALIZED);
+        given(awardRepository.findAllByTeamContestIdOrderByAwardRankNoAsc(200L))
+                .willReturn(List.of(held));
+
+        assertThatThrownBy(() -> awardAdminService.confirmAwards(
+                100L, "contest-pub-1"))
+                .isInstanceOf(CustomException.class)
+                .extracting(error -> ((CustomException) error)
+                        .getBaseResponseCode())
+                .isEqualTo(AwardErrorResponseCode.AWARD_HELD_EXISTS);
+        verifyNoInteractions(awardCredentialIssuer);
+    }
+
+    @Test
+    @DisplayName("확정된 수상은 후보 편집으로 변경할 수 없다")
+    void updateCandidate_rejectsConfirmedAward() {
+        Award confirmed = awardFixture(AwardStatus.CONFIRMED);
+        given(awardRepository.findByPublicId("award-pub-1"))
+                .willReturn(Optional.of(confirmed));
+        given(awardRepository.findByPublicIdForUpdate("award-pub-1"))
+                .willReturn(Optional.of(confirmed));
+
+        assertThatThrownBy(() -> awardAdminService.updateCandidate(
+                100L,
+                "award-pub-1",
+                new AwardCandidateUpdateReq(
+                        AwardType.SPECIAL,
+                        null,
+                        AwardStatus.CANDIDATE)))
+                .isInstanceOf(CustomException.class)
+                .extracting(error -> ((CustomException) error)
+                        .getBaseResponseCode())
+                .isEqualTo(AwardErrorResponseCode
+                        .AWARD_CANDIDATE_UPDATE_NOT_ALLOWED);
+    }
+
     //======= 헬퍼 메서드 ==========
 
     private static final AtomicLong ID_SEQUENCE = new AtomicLong(400L);
@@ -428,6 +603,7 @@ class AwardAdminServiceImplTest {
                 .reviewRoundEntry(entry)
                 .team(entry.getSubmission().getTeam())
                 .awardRankNo(1)
+                .awardType(AwardType.GRAND_PRIZE)
                 .prize("대상")
                 .status(status)
                 .certificateNo("2026-C200-001")
@@ -438,17 +614,29 @@ class AwardAdminServiceImplTest {
             ReviewRoundEntry entry,
             int awardRankNo
     ) {
+        return awardForEntry(entry, awardRankNo, awardRankNo);
+    }
+
+    private Award awardForEntry(
+            ReviewRoundEntry entry,
+            int awardRankNo,
+            int certificateSequence
+    ) {
+        AwardType awardType = AwardType.forRank(awardRankNo);
         return Award.builder()
-                .publicId("award-pub-" + awardRankNo)
+                .publicId("award-pub-" + certificateSequence)
                 .reviewRoundEntry(entry)
                 .team(entry.getSubmission().getTeam())
                 .awardRankNo(awardRankNo)
-                .prize(awardRankNo + "위")
+                .awardType(awardType)
+                .prize(awardType == AwardType.CUSTOM
+                        ? awardRankNo + "위"
+                        : awardType.resolvePrize(null))
                 .status(AwardStatus.CANDIDATE)
                 .certificateNo(
                         "2026-C200-" + String.format(
                                 "%03d",
-                                awardRankNo))
+                                certificateSequence))
                 .build();
     }
 }

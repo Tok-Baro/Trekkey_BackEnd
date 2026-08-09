@@ -34,7 +34,23 @@ public enum AwardErrorResponseCode implements BaseResponseCode {
     AWARD_CANDIDATES_STALE(
             "AWARD_CANDIDATES_STALE",
             409,
-            "대회 설정 또는 최종 심사 결과가 후보 산출 이후 변경되었습니다. 수상 후보를 다시 산출해 주세요.");
+            "대회 설정 또는 최종 심사 결과가 후보 산출 이후 변경되었습니다. 수상 후보를 다시 산출해 주세요."),
+    AWARD_HELD_EXISTS(
+            "AWARD_HELD_EXISTS",
+            409,
+            "보류된 수상 후보가 있습니다. 모든 후보를 확정 대기 상태로 변경한 뒤 확정해 주세요."),
+    AWARD_CANDIDATE_UPDATE_NOT_ALLOWED(
+            "AWARD_CANDIDATE_UPDATE_NOT_ALLOWED",
+            409,
+            "확정된 수상 결과는 후보 편집으로 변경할 수 없습니다."),
+    AWARD_CUSTOM_PRIZE_REQUIRED(
+            "AWARD_CUSTOM_PRIZE_REQUIRED",
+            400,
+            "직접 입력 상격의 이름을 입력해주세요."),
+    AWARD_CANDIDATE_STATUS_INVALID(
+            "AWARD_CANDIDATE_STATUS_INVALID",
+            400,
+            "수상 후보 상태는 후보 또는 보류만 선택할 수 있습니다.");
 
     private final String code;
     private final int httpStatus;
