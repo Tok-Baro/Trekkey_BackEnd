@@ -197,6 +197,12 @@ content: BLOCKCHAIN_RELAYER_PRIVATE_KEY=<32-byte hex private key>
 
 키 값을 터미널 인자, 문서, Git 로그에 붙여 넣지 않는다. 로컬 Keychain에서 표준입력으로 EC2에 전송하고, 배포 워크플로는 파일 존재 여부·권한·형식만 검사한다. 컨테이너 환경변수 주입은 Kairos 통합 시험용이며, Kaia mainnet 전환 전에는 `BlockchainAnchorPort`의 KMS/HSM signer adapter로 교체한다.
 
+기존 MySQL DB에서 worker를 켜기 전에
+[`2026-08-10-expand-signed-raw-transaction.sql`](migrations/2026-08-10-expand-signed-raw-transaction.sql)을
+실행한다. `anc_chain_transaction.signed_raw_transaction`이 `TINYBLOB`이면
+255바이트를 넘는 실제 EVM raw transaction을 브로드캐스트 전에 저장할 수 없다.
+V1은 `BLOB`으로 고정하고 MySQL 통합 테스트에서 1 KiB 저장을 검증한다.
+
 모드:
 
 | 모드 | 동작 |

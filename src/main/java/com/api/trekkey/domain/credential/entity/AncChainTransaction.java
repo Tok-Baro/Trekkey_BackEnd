@@ -82,7 +82,7 @@ public class AncChainTransaction extends BaseEntity {
 
     @Getter(AccessLevel.NONE)
     @jakarta.persistence.Lob
-    @Column(name = "signed_raw_transaction")
+    @Column(name = "signed_raw_transaction", columnDefinition = "BLOB")
     private byte[] signedRawTransaction;
 
     @Column(name = "prepared_at")
