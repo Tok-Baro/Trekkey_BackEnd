@@ -8,6 +8,10 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum CredentialErrorResponseCode implements BaseResponseCode {
     CREDENTIAL_NOT_FOUND("CREDENTIAL_404", 404, "존재하지 않는 Credential입니다."),
+    PUBLIC_ACTIVITY_PROFILE_NOT_FOUND(
+            "PUBLIC_ACTIVITY_PROFILE_404",
+            404,
+            "공개된 활동 프로필을 찾을 수 없습니다."),
     CREDENTIAL_NUMBER_ALREADY_EXISTS(
             "CREDENTIAL_409_NUMBER",
             409,

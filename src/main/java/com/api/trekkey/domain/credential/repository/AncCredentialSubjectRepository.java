@@ -33,4 +33,26 @@ public interface AncCredentialSubjectRepository extends JpaRepository<AncCredent
             order by c.issued_at desc
             """, nativeQuery = true)
     List<CredentialHistoryRow> findHistoryRowsByUserId(@Param("userId") Long userId);
+
+    // Public profiles only expose explicitly public subjects backed by an on-chain state.
+    @Query(value = """
+            select c.id                      as credentialId,
+                   s.credential_id           as subjectCredentialId,
+                   c.issuer_organization_id  as issuerOrganizationId,
+                   c.public_id               as credentialPublicId,
+                   c.credential_no           as credentialNo,
+                   c.credential_type         as credentialType,
+                   c.status                  as status,
+                   s.role_code               as roleCode,
+                   s.display_name_snapshot   as displayName,
+                   json_unquote(json_extract(c.payload_json, '$.source.snapshot.contestTitle')) as contestTitle,
+                   c.issued_at               as issuedAt
+            from anc_credential_subject s
+            join anc_credential c on c.id = s.credential_id
+            where s.user_id = :userId
+              and s.disclosure_class = 'PUBLIC'
+              and c.status in ('ANCHORED', 'REVOKED', 'SUPERSEDED')
+            order by c.issued_at desc
+            """, nativeQuery = true)
+    List<CredentialHistoryRow> findPublicOnChainHistoryRowsByUserId(@Param("userId") Long userId);
 }
