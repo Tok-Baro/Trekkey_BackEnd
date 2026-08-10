@@ -268,6 +268,7 @@ erDiagram
         bigint reviewRoundEntryId FK "수상 근거 공식 결과"
         bigint teamId FK "수상 팀 및 조회용 FK"
         int awardRankNo "수상 순위"
+        string awardType "정형 상격 유형 또는 CUSTOM"
         string prize "상격"
         string status "CANDIDATE/CONFIRMED/HELD"
         string certificateNo UK "팀 단위 상장 번호"
@@ -625,6 +626,20 @@ erDiagram
 - 심사 없이 수동 선정하는 대회도 `targetType = MANUAL`, `decisionRule = MANUAL`인 Review Round 한 건을 생성한다. 이 조합은 평가 기준과 심사 배정을 만들지 않으며, 관리자는 모든 ENTRY의 판정 사유와 중복 없는 1..N 수동 순위를 함께 확정한다.
 - `AWARD.teamId`는 조회용 비정규화 FK이며 `ENTRY -> SUBMISSION -> TEAM`과 항상 같아야 한다.
 - `AWARD.awardRankNo`는 라운드 순위가 아니라 상장에 표시할 수상 순위다.
+- 자동 채점 라운드는 경기식 순위(`1, 2, 2, 4`)를 사용한다. `TOP_N`과
+  수상 `awardCount`의 경계에 동점이 있으면 해당 공동 순위 전원을
+  포함하므로 실제 선정·수상 건수는 설정값을 넘을 수 있다.
+- 공동 순위 수상자는 같은 `awardRankNo`와 기본 상격을 사용하되,
+  `certificateNo`는 각 팀에 고유하게 발급한다.
+- `certificateNo`의 대회 구간에는 하이픈을 제거한 전체
+  `CONTEST.publicId`를 사용한다. 공동 순위도 별도 일련번호를 받으며,
+  공개 ID를 축약하지 않아 서로 다른 대회 간 번호 충돌을 피한다.
+- `AWARD.awardType`은 `GRAND_PRIZE`, `EXCELLENCE`, `MERIT`,
+  `ENCOURAGEMENT`, `HONORABLE_MENTION`, `SPECIAL`,
+  `PRESIDENT_AWARD`, `CUSTOM` 중 하나다. `CUSTOM`은 `prize` 직접
+  입력값을 사용한다.
+- 확정 전에는 상격과 `CANDIDATE/HELD` 상태를 변경할 수 있다.
+  `HELD`가 하나라도 있으면 대회 단위 수상 확정을 거부한다.
 - 후보 산출 후 `awardCount` 또는 마지막 라운드의 선정 결과가 바뀌면
   확정을 거부하고 후보 재산출을 요구한다.
 - AWARD가 하나라도 `CONFIRMED`된 뒤에는 Review Round를 추가, 삭제, 재정렬할 수 없다.

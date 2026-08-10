@@ -222,8 +222,8 @@ class ReviewRoundFinalizationAdminServiceImplTest {
     }
 
     @Test
-    @DisplayName("평균 점수가 같으면 엔트리 ID가 작은 대상을 먼저 순위와 TOP_N에 반영한다")
-    void finalizeRound_breaksScoreTieByLowerEntryId() {
+    @DisplayName("평균 점수가 같으면 공동 순위로 처리하고 TOP_N 컷의 동점자를 함께 선정한다")
+    void finalizeRound_assignsCompetitionRankForScoreTies() {
         ReviewRound round = round(
                 ReviewRoundDecisionRule.TOP_N,
                 1,
@@ -233,23 +233,30 @@ class ReviewRoundFinalizationAdminServiceImplTest {
                 entry(100L, round, "submission-a", "A팀");
         ReviewRoundEntry higherIdEntry =
                 entry(101L, round, "submission-b", "B팀");
+        ReviewRoundEntry lowerScoreEntry =
+                entry(102L, round, "submission-c", "C팀");
         ReviewAssignment lowerIdAssignment =
                 completedAssignment(1000L, lowerIdEntry);
         ReviewAssignment higherIdAssignment =
                 completedAssignment(1001L, higherIdEntry);
-        stubCommon(round, List.of(lowerIdEntry, higherIdEntry));
+        ReviewAssignment lowerScoreAssignment =
+                completedAssignment(1002L, lowerScoreEntry);
+        stubCommon(round, List.of(
+                lowerIdEntry, higherIdEntry, lowerScoreEntry));
         given(reviewAssignmentRepository
                 .findAllForShareByReviewRoundEntryIdInOrderByEntryIdAscIdAsc(
-                        List.of(100L, 101L)))
+                        List.of(100L, 101L, 102L)))
                 .willReturn(List.of(
                         lowerIdAssignment,
-                        higherIdAssignment
+                        higherIdAssignment,
+                        lowerScoreAssignment
                 ));
         given(reviewRepository.findAllByAssignmentIdIn(
-                List.of(1000L, 1001L)))
+                List.of(1000L, 1001L, 1002L)))
                 .willReturn(List.of(
                         review(lowerIdAssignment, "85.00"),
-                        review(higherIdAssignment, "85.00")
+                        review(higherIdAssignment, "85.00"),
+                        review(lowerScoreAssignment, "80.00")
                 ));
 
         ReviewRoundFinalizeRes response = service.finalizeRound(
@@ -271,7 +278,11 @@ class ReviewRoundFinalizationAdminServiceImplTest {
                                 ReviewRoundEntryStatus.SELECTED),
                         org.assertj.core.groups.Tuple.tuple(
                                 101L,
-                                2,
+                                1,
+                                ReviewRoundEntryStatus.SELECTED),
+                        org.assertj.core.groups.Tuple.tuple(
+                                102L,
+                                3,
                                 ReviewRoundEntryStatus.NOT_SELECTED)
                 );
     }

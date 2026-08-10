@@ -2,9 +2,11 @@ package com.api.trekkey.domain.award.admin.service;
 
 import com.api.trekkey.domain.audit.entity.AuditAction;
 import com.api.trekkey.domain.audit.support.AdminAuditLogger;
+import com.api.trekkey.domain.award.admin.web.dto.AwardCandidateUpdateReq;
 import com.api.trekkey.domain.award.admin.web.dto.AwardRes;
 import com.api.trekkey.domain.award.entity.Award;
 import com.api.trekkey.domain.award.entity.AwardStatus;
+import com.api.trekkey.domain.award.entity.AwardType;
 import com.api.trekkey.domain.award.exception.AwardErrorResponseCode;
 import com.api.trekkey.domain.award.repository.AwardRepository;
 import com.api.trekkey.domain.contest.entity.Contest;
@@ -33,7 +35,9 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
+import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,8 +47,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AwardAdminServiceImpl implements AwardAdminService {
 
-    private static final List<String> PRIZE_LABELS = List.of("대상", "최우수상", "우수상", "장려상", "입선");
     private static final String TARGET_TYPE_CONTEST = "CONTEST";
+    private static final String TARGET_TYPE_AWARD = "AWARD";
     private static final String TARGET_TYPE_REVIEW_ROUND = "REVIEW_ROUND";
 
     private final UserRepository userRepository;
@@ -112,19 +116,29 @@ public class AwardAdminServiceImpl implements AwardAdminService {
         awardRepository.deleteAll(awardRepository.findAllByTeamContestIdOrderByAwardRankNoAsc(contest.getId()));
         awardRepository.flush();
 
-        int awardLimit = Math.min(contest.getAwardCount(), selectedEntries.size());
-        int year = nowUtc().getYear();
+        List<ReviewRoundEntry> awardEntries = selectAwardEntries(
+                contest.getAwardCount(), selectedEntries);
+        int year = round.getFinalizedAt() == null
+                ? nowUtc().getYear()
+                : round.getFinalizedAt().getYear();
+        String contestCode = contestCode(contest);
         List<Award> awards = new ArrayList<>();
-        for (int i = 0; i < awardLimit; i++) {
-            ReviewRoundEntry entry = selectedEntries.get(i);
-            int rank = i + 1;
+        for (int index = 0; index < awardEntries.size(); index++) {
+            ReviewRoundEntry entry = awardEntries.get(index);
+            int rank = entry.getRankNo();
+            AwardType awardType = AwardType.forRank(rank);
+            String prize = awardType == AwardType.CUSTOM
+                    ? rank + "위"
+                    : awardType.resolvePrize(null);
             awards.add(awardRepository.save(Award.builder()
                     .reviewRoundEntry(entry)
                     .team(entry.getSubmission().getTeam())
                     .awardRankNo(rank)
-                    .prize(rank <= PRIZE_LABELS.size() ? PRIZE_LABELS.get(rank - 1) : rank + "위")
+                    .awardType(awardType)
+                    .prize(prize)
                     .status(AwardStatus.CANDIDATE)
-                    .certificateNo(String.format("%d-C%d-%03d", year, contest.getId(), rank))
+                    .certificateNo(String.format(
+                            "%d-%s-%03d", year, contestCode, index + 1))
                     .build()));
         }
 
@@ -147,6 +161,51 @@ public class AwardAdminServiceImpl implements AwardAdminService {
 
     @Override
     @Transactional
+    public AwardRes updateCandidate(
+            Long adminUserId,
+            String awardPublicId,
+            AwardCandidateUpdateReq request
+    ) {
+        User admin = findAdmin(adminUserId);
+        Award current = awardRepository.findByPublicId(awardPublicId)
+                .orElseThrow(() -> new CustomException(
+                        AwardErrorResponseCode.AWARD_NOT_FOUND));
+        Contest contest = current.getTeam().getContest();
+        validateSameOrganization(contest, admin);
+
+        // 수상 확정과 후보 편집이 교차하지 않도록 같은 대회 잠금을 사용한다.
+        entityManager.refresh(contest, LockModeType.PESSIMISTIC_WRITE);
+        Award award = awardRepository.findByPublicIdForUpdate(awardPublicId)
+                .orElseThrow(() -> new CustomException(
+                        AwardErrorResponseCode.AWARD_NOT_FOUND));
+        if (award.getStatus() == AwardStatus.CONFIRMED) {
+            throw new CustomException(
+                    AwardErrorResponseCode.AWARD_CANDIDATE_UPDATE_NOT_ALLOWED);
+        }
+        if (request.status() != AwardStatus.CANDIDATE
+                && request.status() != AwardStatus.HELD) {
+            throw new CustomException(
+                    AwardErrorResponseCode.AWARD_CANDIDATE_STATUS_INVALID);
+        }
+        String prize = resolvePrize(request);
+        if (!award.updateCandidate(
+                request.awardType(), prize, request.status())) {
+            throw new CustomException(
+                    AwardErrorResponseCode.AWARD_CANDIDATE_UPDATE_NOT_ALLOWED);
+        }
+
+        adminAuditLogger.log(
+                admin.getId(),
+                admin.getOrganization().getId(),
+                AuditAction.AWARD_STATUS_CHANGE,
+                TARGET_TYPE_AWARD,
+                award.getId(),
+                "prize: " + prize + ", status: " + request.status());
+        return AwardRes.from(award);
+    }
+
+    @Override
+    @Transactional
     public List<AwardRes> confirmAwards(Long adminUserId, String contestPublicId) {
         User admin = findAdmin(adminUserId);
         Contest contest = findContestInOrganization(contestPublicId, admin);
@@ -158,6 +217,14 @@ public class AwardAdminServiceImpl implements AwardAdminService {
         }
 
         List<Award> awards = awardRepository.findAllByTeamContestIdOrderByAwardRankNoAsc(contest.getId());
+        if (awards.stream().anyMatch(award -> award.getStatus() == AwardStatus.CONFIRMED)) {
+            throw new CustomException(
+                    AwardErrorResponseCode.AWARD_ALREADY_CONFIRMED);
+        }
+        if (awards.stream().anyMatch(award -> award.getStatus() == AwardStatus.HELD)) {
+            throw new CustomException(
+                    AwardErrorResponseCode.AWARD_HELD_EXISTS);
+        }
         List<Award> candidates = awards.stream()
                 .filter(award -> award.getStatus() == AwardStatus.CANDIDATE)
                 .toList();
@@ -179,7 +246,12 @@ public class AwardAdminServiceImpl implements AwardAdminService {
                 candidates);
 
         LocalDateTime now = nowUtc();
-        candidates.forEach(award -> award.confirm(now));
+        candidates.forEach(award -> {
+            if (!award.confirm(now)) {
+                throw new CustomException(
+                        AwardErrorResponseCode.AWARD_CANDIDATE_UPDATE_NOT_ALLOWED);
+            }
+        });
         //수상 확정 → 대회 종결 상태 (Credential 발급 원천 완성, erd-mvp §6)
         contest.changeStatus(ContestStatus.AWARDED);
         //확정과 수상 Credential 발급을 한 트랜잭션으로 — 발급 실패 시 확정도 롤백 (erd-mvp §6 원자성)
@@ -263,33 +335,59 @@ public class AwardAdminServiceImpl implements AwardAdminService {
                                         Integer::compareTo))
                         .thenComparing(ReviewRoundEntry::getId))
                 .toList();
-        int expectedCount = Math.min(
-                contest.getAwardCount(),
-                selectedEntries.size());
-        List<Award> orderedCandidates = candidates.stream()
-                .sorted(Comparator
-                        .comparingInt(Award::getAwardRankNo)
-                        .thenComparing(Award::getId,
-                                Comparator.nullsLast(Long::compareTo)))
-                .toList();
+        List<ReviewRoundEntry> expectedEntries = selectAwardEntries(
+                contest.getAwardCount(), selectedEntries);
+        int expectedCount = expectedEntries.size();
 
-        if (orderedCandidates.size() != expectedCount) {
+        if (candidates.size() != expectedCount) {
             throw new CustomException(
                     AwardErrorResponseCode.AWARD_CANDIDATES_STALE);
         }
-        for (int index = 0; index < expectedCount; index++) {
-            Award candidate = orderedCandidates.get(index);
-            ReviewRoundEntry expectedEntry =
-                    selectedEntries.get(index);
-            if (candidate.getAwardRankNo() != index + 1
-                    || !Objects.equals(
-                    candidate.getReviewRoundEntry().getId(),
-                    expectedEntry.getId())) {
+        Map<Long, Integer> expectedRankByEntryId = expectedEntries.stream()
+                .collect(Collectors.toMap(
+                        ReviewRoundEntry::getId,
+                        ReviewRoundEntry::getRankNo));
+        for (Award candidate : candidates) {
+            Integer expectedRank = expectedRankByEntryId.get(
+                    candidate.getReviewRoundEntry().getId());
+            if (expectedRank == null
+                    || candidate.getAwardRankNo() != expectedRank) {
                 throw new CustomException(
                         AwardErrorResponseCode
                                 .AWARD_CANDIDATES_STALE);
             }
         }
+    }
+
+    private List<ReviewRoundEntry> selectAwardEntries(
+            int awardCount,
+            List<ReviewRoundEntry> selectedEntries
+    ) {
+        if (awardCount <= 0 || selectedEntries.isEmpty()) {
+            return List.of();
+        }
+        int cutoffIndex = Math.min(awardCount, selectedEntries.size()) - 1;
+        int cutoffRank = selectedEntries.get(cutoffIndex).getRankNo();
+        return selectedEntries.stream()
+                .filter(entry -> entry.getRankNo() <= cutoffRank)
+                .toList();
+    }
+
+    private String resolvePrize(AwardCandidateUpdateReq request) {
+        if (request.awardType() == AwardType.CUSTOM
+                && (request.customPrize() == null
+                || request.customPrize().isBlank())) {
+            throw new CustomException(
+                    AwardErrorResponseCode.AWARD_CUSTOM_PRIZE_REQUIRED);
+        }
+        return request.awardType().resolvePrize(request.customPrize());
+    }
+
+    private String contestCode(Contest contest) {
+        String compact = contest.getPublicId()
+                .replace("-", "")
+                .toUpperCase(Locale.ROOT);
+        return "C" + compact;
     }
 
     private LocalDateTime nowUtc() {

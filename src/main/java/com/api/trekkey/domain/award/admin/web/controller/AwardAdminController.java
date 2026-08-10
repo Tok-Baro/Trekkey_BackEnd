@@ -1,20 +1,24 @@
 package com.api.trekkey.domain.award.admin.web.controller;
 
 import com.api.trekkey.domain.award.admin.service.AwardAdminService;
+import com.api.trekkey.domain.award.admin.web.dto.AwardCandidateUpdateReq;
 import com.api.trekkey.domain.award.admin.web.dto.AwardRes;
 import com.api.trekkey.domain.award.exception.AwardErrorResponseCode;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.global.response.SuccessResponse;
 import com.api.trekkey.global.security.AuthPrincipal;
 import com.api.trekkey.global.swagger.ApiErrorCodeExamples;
+import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -47,9 +51,27 @@ public class AwardAdminController {
     }
 
     @ApiErrorCodeExamples(value = AwardErrorResponseCode.class, codes = {
+            "AWARD_NOT_FOUND",
+            "AWARD_CANDIDATE_UPDATE_NOT_ALLOWED",
+            "AWARD_CUSTOM_PRIZE_REQUIRED",
+            "AWARD_CANDIDATE_STATUS_INVALID"
+    })
+    @PatchMapping("/api/admin/awards/{awardPublicId}")
+    public ResponseEntity<SuccessResponse<AwardRes>> updateCandidate(
+            @AuthenticationPrincipal AuthPrincipal authPrincipal,
+            @PathVariable String awardPublicId,
+            @RequestBody @Valid AwardCandidateUpdateReq request) {
+        return ResponseEntity.ok(SuccessResponse.okCustom(
+                awardAdminService.updateCandidate(
+                        authPrincipal.getId(), awardPublicId, request),
+                "수상 후보를 변경했습니다."));
+    }
+
+    @ApiErrorCodeExamples(value = AwardErrorResponseCode.class, codes = {
             "AWARD_FINAL_ROUND_REQUIRED",
             "AWARD_ROUND_NOT_FINALIZED",
             "AWARD_NO_CANDIDATE",
+            "AWARD_HELD_EXISTS",
             "AWARD_CANDIDATES_STALE"
     })
     @PostMapping("/api/admin/contests/{contestPublicId}/awards/confirm")

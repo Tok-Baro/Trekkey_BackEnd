@@ -268,6 +268,7 @@ erDiagram
         bigint reviewRoundEntryId FK "수상 근거 공식 결과"
         bigint teamId FK "수상 팀 및 조회용 FK"
         int awardRankNo "수상 순위"
+        string awardType "정형 상격 유형 또는 CUSTOM"
         string prize "상격"
         string status "CANDIDATE/CONFIRMED/HELD"
         string certificateNo UK "팀 단위 상장 번호"

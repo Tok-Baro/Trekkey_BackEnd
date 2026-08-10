@@ -62,11 +62,16 @@ public class Award extends BaseEntity {
     private String prize;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "award_type", length = 30)
+    // 정형 상격 유형. 기존 데이터는 prize를 기준으로 호환 조회한다.
+    private AwardType awardType;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     // 수상 상태
     private AwardStatus status;
 
-    @Column(name = "certificate_no", nullable = false, unique = true, length = 40)
+    @Column(name = "certificate_no", nullable = false, unique = true, length = 64)
     // 팀 단위 상장 번호 — 팀원들이 공유한다
     private String certificateNo;
 
@@ -82,13 +87,36 @@ public class Award extends BaseEntity {
     }
 
     // 수상 확정 — 이후 Credential 발급 원천이 된다
-    public void confirm(LocalDateTime now) {
+    public boolean confirm(LocalDateTime now) {
+        if (status != AwardStatus.CANDIDATE || now == null) {
+            return false;
+        }
         this.status = AwardStatus.CONFIRMED;
         this.confirmedAt = now;
+        return true;
     }
 
-    // 후보/보류 전환 (확정 전 운영 조정)
-    public void changeStatus(AwardStatus status) {
+    // 확정 전 상격 편집과 후보/보류 전환
+    public AwardType getAwardType() {
+        return awardType == null ? AwardType.fromPrize(prize) : awardType;
+    }
+
+    public boolean updateCandidate(
+            AwardType awardType,
+            String prize,
+            AwardStatus status
+    ) {
+        if (this.status == AwardStatus.CONFIRMED
+                || awardType == null
+                || status == null
+                || status == AwardStatus.CONFIRMED
+                || prize == null
+                || prize.isBlank()) {
+            return false;
+        }
+        this.awardType = awardType;
+        this.prize = prize;
         this.status = status;
+        return true;
     }
 }

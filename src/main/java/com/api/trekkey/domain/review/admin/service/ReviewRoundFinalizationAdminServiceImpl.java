@@ -278,12 +278,20 @@ public class ReviewRoundFinalizationAdminServiceImpl
                         .thenComparing(ReviewRoundEntry::getId))
                 .toList();
         List<RankedEntry> ranked = new ArrayList<>();
+        BigDecimal previousScore = null;
+        int currentRank = 0;
         for (int index = 0; index < sorted.size(); index++) {
             ReviewRoundEntry entry = sorted.get(index);
+            BigDecimal score = averageByEntryId.get(entry.getId());
+            if (previousScore == null
+                    || previousScore.compareTo(score) != 0) {
+                currentRank = index + 1;
+                previousScore = score;
+            }
             ranked.add(new RankedEntry(
                     entry,
-                    averageByEntryId.get(entry.getId()),
-                    index + 1
+                    score,
+                    currentRank
             ));
         }
         return ranked;

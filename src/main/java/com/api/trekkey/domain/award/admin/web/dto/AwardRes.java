@@ -2,6 +2,7 @@ package com.api.trekkey.domain.award.admin.web.dto;
 
 import com.api.trekkey.domain.award.entity.Award;
 import com.api.trekkey.domain.award.entity.AwardStatus;
+import com.api.trekkey.domain.award.entity.AwardType;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -12,6 +13,7 @@ public record AwardRes(
         String teamPublicId,
         int awardRankNo,
         String prize,
+        AwardType awardType,
         String teamName,
         String submissionTitle,
         BigDecimal finalScore,
@@ -26,6 +28,7 @@ public record AwardRes(
                 award.getTeam().getPublicId(),
                 award.getAwardRankNo(),
                 award.getPrize(),
+                award.getAwardType(),
                 award.getTeam().getName(),
                 award.getReviewRoundEntry().getSubmission().getTitle(),
                 award.getReviewRoundEntry().getFinalScore(),
