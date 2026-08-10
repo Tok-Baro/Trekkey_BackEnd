@@ -101,6 +101,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**").hasRole("ADMIN") //관리자 콘솔 (RoleHierarchy로 ROOT 포함)
                         .requestMatchers("/api/root/**").hasRole("ROOT_ADMIN") //초대 발급·가입 승인 등 ROOT_ADMIN 전용
                         .requestMatchers(HttpMethod.GET, "/api/public/credentials/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/public/activity-profiles/**").permitAll()
                         .requestMatchers("/api/admin/blockchain/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
