@@ -16,6 +16,7 @@ import com.api.trekkey.domain.credential.entity.AncIssuerKey;
 import com.api.trekkey.domain.credential.entity.BatchStatus;
 import com.api.trekkey.domain.credential.entity.ChainOperationType;
 import com.api.trekkey.domain.credential.entity.CredentialStatus;
+import com.api.trekkey.domain.credential.entity.CredentialSourceType;
 import com.api.trekkey.domain.credential.entity.CredentialSubjectType;
 import com.api.trekkey.domain.credential.entity.CredentialType;
 import com.api.trekkey.domain.credential.entity.DisclosureClass;
@@ -285,6 +286,22 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
             String issuerPublicId = requiredText(issuer, "publicId");
             String issuerName = requiredText(issuer, "name");
 
+            JsonNode source = requiredObject(root, "source");
+            String sourceType = CredentialSourceType.valueOf(requiredText(source, "type")).name();
+            String sourcePublicId = requiredText(source, "publicId");
+            Instant sourceFinalizedAt = instant(source, "finalizedAt", false);
+            JsonNode snapshot = requiredObject(source, "snapshot");
+            CredentialVerificationView.PublicDetails publicDetails =
+                    new CredentialVerificationView.PublicDetails(
+                            sourceType,
+                            sourcePublicId,
+                            sourceFinalizedAt,
+                            nullableText(snapshot, "contestTitle"),
+                            nullableText(snapshot, "teamName"),
+                            nullableText(snapshot, "submissionTitle"),
+                            nullableText(snapshot, "prize"),
+                            nullableInteger(snapshot, "awardRankNo"));
+
             JsonNode subjects = root.get("subjects");
             if (subjects == null || !subjects.isArray() || subjects.isEmpty()) {
                 throw new CryptoValidationException("Credential subjects must be a non-empty array");
@@ -320,6 +337,7 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
                     issuedAt,
                     expiresAt,
                     fileManifestHash,
+                    publicDetails,
                     List.copyOf(publicSubjects));
         } catch (CryptoValidationException | DateTimeParseException exception) {
             throw exception;
@@ -454,6 +472,7 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
                 payload == null ? null : payload.issuerName(),
                 payload == null ? null : payload.issuedAt(),
                 payload == null ? null : payload.expiresAt(),
+                payload == null ? null : payload.publicDetails(),
                 payload == null ? List.of() : payload.publicSubjects(),
                 evidence,
                 replacementPublicId,
@@ -485,6 +504,17 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
             throw new CryptoValidationException(fieldName + " must be null or a non-blank string");
         }
         return value.textValue();
+    }
+
+    private Integer nullableInteger(JsonNode parent, String fieldName) {
+        JsonNode value = parent.get(fieldName);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (!value.canConvertToInt()) {
+            throw new CryptoValidationException(fieldName + " must be null or an integer");
+        }
+        return value.intValue();
     }
 
     private Instant instant(JsonNode parent, String fieldName, boolean nullable) {
@@ -522,6 +552,7 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
             Instant issuedAt,
             Instant expiresAt,
             String fileManifestHash,
+            CredentialVerificationView.PublicDetails publicDetails,
             List<CredentialVerificationView.PublicSubject> publicSubjects) {
     }
 
