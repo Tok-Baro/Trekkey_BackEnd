@@ -11,7 +11,8 @@ UPDATE contest
 SET max_team_members = CASE
     WHEN participation_type = 'INDIVIDUAL' THEN 1
     ELSE 5
-END;
+END
+WHERE id > 0;
 
 ALTER TABLE contest
     MODIFY COLUMN max_team_members INT NOT NULL,
