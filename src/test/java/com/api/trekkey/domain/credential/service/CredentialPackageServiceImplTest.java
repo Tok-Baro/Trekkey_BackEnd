@@ -115,6 +115,7 @@ class CredentialPackageServiceImplTest {
                 "한성대학교",
                 Instant.parse("2026-07-27T04:00:00Z"),
                 null,
+                null,
                 List.of(),
                 new CredentialVerificationView.Evidence(
                         true, true, true, true, true, true,

@@ -102,6 +102,10 @@ class CredentialVerificationServiceImplTest {
         assertThat(result.verificationStatus()).isEqualTo(CredentialVerificationStatus.PENDING);
         assertThat(result.credentialNo()).isEqualTo("AWARD-2026-001");
         assertThat(result.issuerName()).isEqualTo("발급 당시 학교 이름");
+        assertThat(result.publicDetails().contestTitle()).isEqualTo("2026 캡스톤 경진대회");
+        assertThat(result.publicDetails().submissionTitle()).isEqualTo("트레키 작품");
+        assertThat(result.publicDetails().prize()).isEqualTo("대상");
+        assertThat(result.publicDetails().awardRankNo()).isEqualTo(1);
         assertThat(result.publicSubjects())
                 .extracting(CredentialVerificationView.PublicSubject::displayName)
                 .containsExactly("공개 학생");
@@ -296,7 +300,14 @@ class CredentialVerificationServiceImplTest {
                         30L,
                         "award-public-30",
                         Instant.parse("2026-07-24T01:00:00Z"),
-                        mapper.readTree("{\"awardName\":\"대상\"}")),
+                        mapper.readTree("""
+                                {
+                                  "contestTitle": "2026 캡스톤 경진대회",
+                                  "submissionTitle": "트레키 작품",
+                                  "prize": "대상",
+                                  "awardRankNo": 1
+                                }
+                                """)),
                 List.of(
                         new CredentialIssueCommand.Subject(
                                 null,

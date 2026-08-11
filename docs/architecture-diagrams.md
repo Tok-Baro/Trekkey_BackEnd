@@ -412,6 +412,11 @@ sequenceDiagram
 
 ## 13. 공개 검증
 
+공개 검증 페이지는 `/verify`와 `/verify/{credentialPublicId}`로 제공하며
+로그인이나 지갑을 요구하지 않는다. 일반 사용자는 발급기관, 발급 내용과
+현재 효력을 먼저 확인하고, Kaia transaction과 Merkle proof는 필요할 때
+기술 상세에서 확인한다.
+
 ```mermaid
 sequenceDiagram
     autonumber

@@ -14,6 +14,7 @@ public record CredentialVerificationView(
         String issuerName,
         Instant issuedAt,
         Instant expiresAt,
+        PublicDetails publicDetails,
         List<PublicSubject> publicSubjects,
         Evidence evidence,
         String replacementCredentialPublicId,
@@ -29,6 +30,17 @@ public record CredentialVerificationView(
             String displayName,
             String major,
             String roleCode) {
+    }
+
+    public record PublicDetails(
+            String sourceType,
+            String sourcePublicId,
+            Instant finalizedAt,
+            String contestTitle,
+            String teamName,
+            String submissionTitle,
+            String prize,
+            Integer awardRankNo) {
     }
 
     public record Evidence(
