@@ -48,6 +48,12 @@
    - 성적표·비교과 증빙과 `SATISFIED/UNSATISFIED/UNKNOWN` 판정
    - 한성대학교 공통 졸업요건 파일럿 규칙
 
+8. 한성대학교 졸업요건 MVP 문서 세트
+   - [기능 설계서](./hansung-graduation-requirement-design.md)
+   - [ERD 및 테이블 명세](./hansung-graduation-erd.md)
+   - [API 및 프론트 계약](./hansung-graduation-api-spec.md)
+   - 한성대 공식 학사기준과 현재 백엔드·프론트 구조를 연결한 구현 기준
+
 ## 현재 구현 범위
 
 MVP 설계는 공모전 참여, 최종 제출 작품, 0..N개의 Review Round, 팀 수상 Credential을 대상으로 한다. 현재 코드는 대회·팀·제출·심사·수상과 Credential·Merkle·Solidity·Kaia adapter가 함께 있고, 수상 확정에서 Credential 발급까지 연결돼 있다. 팀원 등록·학번 검색 API도 포함됐다. 리뷰 실행 원장은 `REVIEW_ROUND`/`REVIEW_ROUND_ENTRY`로 전환됐고, 신청·제출 같은 비리뷰 일정만 `CONTEST_STAGE`에 남아 있다. `origin/develop`의 구형 리뷰 stage 구조는 기존 DB 마이그레이션 기준이다. 졸업요건, 학적 이력, 공모전 외 독립 작품, 제출 버전은 실제 업무 요구가 확정될 때 확장한다.
