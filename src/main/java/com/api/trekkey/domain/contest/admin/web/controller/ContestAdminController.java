@@ -46,6 +46,7 @@ public class ContestAdminController {
     @ApiErrorCodeExamples(
             value = ContestErrorResponseCode.class,
             codes = {
+                    "CONTEST_MAX_TEAM_MEMBERS_INVALID",
                     "INVALID_STAGE_STATUS_TRANSITION"
             })
     @ApiErrorCodeExamples(
@@ -70,6 +71,7 @@ public class ContestAdminController {
                     "STAGE_NOT_FOUND",
                     "STAGE_DUPLICATED",
                     "STAGE_CONFIGURATION_LOCKED",
+                    "CONTEST_MAX_TEAM_MEMBERS_INVALID",
                     "INVALID_STAGE_STATUS_TRANSITION"
             })
     @ApiErrorCodeExamples(

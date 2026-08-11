@@ -5,6 +5,7 @@ import com.api.trekkey.domain.audit.support.AdminAuditLogger;
 import com.api.trekkey.domain.contest.entity.Contest;
 import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.ContestStatus;
+import com.api.trekkey.domain.contest.entity.ParticipationType;
 import com.api.trekkey.domain.contest.entity.StageStatus;
 import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
@@ -56,6 +57,7 @@ public class ContestCommandServiceImpl implements ContestCommandService {
     ) {
         User user = findUser(userId);
         rejectDirectAwardedStatus(null, req.status());
+        validateMaxTeamMembers(req);
         List<StageReq> orderedStages = sortBySequenceNo(req.stages());
         validateSubmissionStageCount(orderedStages);
         orderedStages.forEach(this::validateNewStage);
@@ -67,6 +69,7 @@ public class ContestCommandServiceImpl implements ContestCommandService {
                 .department(req.department())
                 .status(req.status())
                 .participationType(req.participationType())
+                .maxTeamMembers(req.maxTeamMembers())
                 .awardCount(req.awardCount())
                 .posterUrl(req.posterUrl())
                 .summary(req.summary())
@@ -110,6 +113,7 @@ public class ContestCommandServiceImpl implements ContestCommandService {
                         ContestErrorResponseCode.CONTEST_NOT_FOUND));
         validateSameOrganization(contest, user);
         rejectDirectAwardedStatus(contest.getStatus(), req.status());
+        validateMaxTeamMembers(req);
 
         List<ContestStage> allExistingStages = contestStageRepository
                 .findAllForUpdateByContestIdOrderBySequenceNoAsc(
@@ -158,6 +162,7 @@ public class ContestCommandServiceImpl implements ContestCommandService {
                 req.department(),
                 req.status(),
                 req.participationType(),
+                req.maxTeamMembers(),
                 req.awardCount(),
                 req.posterUrl(),
                 req.summary(),
@@ -280,6 +285,18 @@ public class ContestCommandServiceImpl implements ContestCommandService {
                 != (requestedStatus == ContestStatus.AWARDED)) {
             throw new CustomException(
                     ContestErrorResponseCode.CONTEST_STATUS_LOCKED);
+        }
+    }
+
+    private void validateMaxTeamMembers(ContestCreateReq req) {
+        Integer maxTeamMembers = req.maxTeamMembers();
+        if (maxTeamMembers == null
+                || maxTeamMembers < 1
+                || (req.participationType() == ParticipationType.INDIVIDUAL
+                && maxTeamMembers != 1)) {
+            throw new CustomException(
+                    ContestErrorResponseCode
+                            .CONTEST_MAX_TEAM_MEMBERS_INVALID);
         }
     }
 

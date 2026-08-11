@@ -25,6 +25,10 @@ public record ContestCreateReq(
         @NotNull(message = "참가 방식은 반드시 선택해야합니다")
         ParticipationType participationType,
 
+        @NotNull(message = "팀당 최대 참가 인원은 반드시 입력해야합니다")
+        @Min(value = 1, message = "팀당 최대 참가 인원은 1명 이상이어야 합니다")
+        Integer maxTeamMembers,
+
         @NotNull(message = "시상 수는 반드시 입력해야합니다")
         @Min(value = 0, message = "시상 수는 0 이상이어야 합니다")
         Integer awardCount,
