@@ -10,6 +10,11 @@
 - 학기: `yyyy-1`, `yyyy-2`, `yyyy-S`, `yyyy-W`
 - 학점: JSON number, 소수점 1자리 허용
 - 모든 응답은 기존 `SuccessResponse<T>` 또는 `ErrorResponse`를 사용
+- 학교 학사시스템 외부 API 호출은 없다. 학생 데이터는 수기·CSV·관리자 확인으로만 생성한다.
+- 공식 홈페이지 URL은 정책 근거 메타데이터이며 평가 요청 중 네트워크로 조회하지 않는다.
+- 학생 repository 조회는 `publicId` 단독이 아니라 항상 로그인 `userId`를 함께 조건으로 사용한다.
+- 관리자 repository 조회는 `publicId` 단독이 아니라 항상 관리자 `organizationId`를 함께 조건으로 사용한다.
+- URL 권한과 별도로 학생 controller는 `@PreAuthorize("hasRole('PARTICIPANT')")`, 관리자 controller는 `@PreAuthorize("hasRole('ADMIN')")`를 적용한다.
 
 성공 응답 예시:
 
@@ -55,6 +60,10 @@
   "activityPoints": 720,
   "internationalStudent": false,
   "teachingProgram": false,
+  "inputMode": "COURSE_DETAIL",
+  "recordCompleteness": "COMPLETE",
+  "summaryAsOfTerm": "2026-1",
+  "failHistoryStatus": "NONE",
   "academicUnits": [
     {
       "publicId": "unit-uuid-1",
@@ -93,6 +102,10 @@
   "activityPoints": 720,
   "internationalStudent": false,
   "teachingProgram": false,
+  "inputMode": "COURSE_DETAIL",
+  "recordCompleteness": "COMPLETE",
+  "summaryAsOfTerm": "2026-1",
+  "failHistoryStatus": "NONE",
   "academicUnits": [
     {"academicUnitPublicId": "unit-uuid-1", "roleType": "PRIMARY"},
     {"academicUnitPublicId": "unit-uuid-2", "roleType": "SECONDARY"}
@@ -109,11 +122,13 @@
 - 학점·포인트·학기 0 이상
 - GPA는 scale 이하
 - 전공 이수유형에 필요한 academic unit 역할 수 검증
+- `recordCompleteness=COMPLETE` 전환은 확인 checkbox를 포함한 명시적 사용자 동작으로만 허용
+- `SUMMARY_ONLY`에서는 상세 과목 기반 규칙이 `UNKNOWN`이 됨을 응답 warning으로 안내
 - version 불일치 시 409
 
 ### 2.3 한성대 학사조직 검색
 
-`GET /api/graduation/hansung/academic-units?keyword=소프트웨어&admissionYear=2021&unitType=TRACK`
+`GET /api/me/graduation/academic-units?keyword=소프트웨어&admissionYear=2021&unitType=TRACK`
 
 ```json
 [
@@ -229,6 +244,8 @@
 
 중복·재수강·카탈로그 불일치는 400 대신 저장 가능한 범위는 저장하고 warning으로 돌려준다. 학점이 음수거나 필수값이 없으면 전체 요청을 400으로 거절한다.
 
+저장 후 서버는 신입학이면 summary 총학점과 완료 과목 합계를 비교한다. 편입이면 본교학점과 본교 완료 과목 합계, 그리고 `총학점 = 본교학점 + 전적대 인정학점`을 각각 비교한다. 불일치가 있더라도 학생 입력을 임의 수정하지 않으며 `INPUT_TOTAL_MISMATCH` warning을 반환하고 다음 평가를 `INDETERMINATE`로 제한한다.
+
 ### 2.7 CSV import 미리보기
 
 `POST /api/me/graduation/courses/import-preview`
@@ -236,6 +253,7 @@
 - Content-Type: `multipart/form-data`
 - field: `file`
 - 허용: CSV, 최대 2MB
+- 최대 5,000행, UTF-8. 초과·잘못된 인코딩은 전체 요청 거절
 - 서버 저장 없음
 
 ```json
@@ -307,6 +325,13 @@ preview 결과는 자동 저장하지 않는다. 사용자가 확인 후 2.6 API
 ```
 
 `policyAsOf` 생략 시 서버 현재 날짜다. 과거 정책 재현 목적 외에는 미래 날짜를 금지한다.
+
+판정 상태의 보수적 규칙:
+
+- 입력이 있고 `recordCompleteness=COMPLETE`일 때만 상세데이터의 부족을 `UNSATISFIED`로 판정
+- `PARTIAL`, `UNKNOWN`, summary/detail 불일치면 영향받는 규칙은 `UNKNOWN`
+- 학교 확인이 필요한 항목의 `SELF_REPORTED`는 `UNKNOWN`
+- 평가 시작 시 profile version을 읽고, 저장 직전 다시 비교해 변경됐으면 전체 transaction을 rollback
 
 응답 `201 Created`:
 
@@ -393,10 +418,11 @@ preview 결과는 자동 저장하지 않는다. 사용자가 확인 후 2.6 API
 - 자기 자신이 작성한 정책을 혼자 발행하지 못하도록 작성자/검수자 분리 권장
 - 조건이 겹치는 발행 정책이 있으면 409
 - source hash와 rule validation이 완료되지 않으면 400
+- organization row 비관적 잠금 안에서 겹침 조회와 발행을 한 transaction으로 수행
 
 ### 3.6 학생 수동요건 검증
 
-`PATCH /api/admin/graduation/students/{studentId}/non-course-records/{recordPublicId}`
+`PATCH /api/admin/graduation/profiles/{profilePublicId}/non-course-records/{recordPublicId}`
 
 ```json
 {
@@ -406,8 +432,9 @@ preview 결과는 자동 저장하지 않는다. 사용자가 확인 후 2.6 API
 ```
 
 관리자의 organization과 학생 organization이 다르면 403이다.
+내부 숫자 USER ID나 학번을 URL 식별자로 노출하지 않는다.
 
-## 4. 오류 코드
+## 4. 오류 및 warning 코드
 
 | 코드 | HTTP | 설명 |
 | --- | --- | --- |
@@ -422,6 +449,8 @@ preview 결과는 자동 저장하지 않는다. 사용자가 확인 후 2.6 API
 | `GRADUATION_POLICY_SOURCE_REQUIRED` | 400 | 출처 없는 정책 발행 |
 | `GRADUATION_COURSE_DUPLICATED` | 409 | 동일 학기·코드 중복 |
 | `GRADUATION_COURSE_MAPPING_REQUIRED` | 400 | 평가에 필수인 과목 매핑 미확정 |
+| `GRADUATION_INPUT_INCOMPLETE` | 200 warning | 상세 입력이 완전하지 않아 일부 규칙 확인 필요 |
+| `GRADUATION_INPUT_TOTAL_MISMATCH` | 200 warning | 프로필 누계와 상세 과목 합계 불일치 |
 | `GRADUATION_IMPORT_FILE_INVALID` | 400 | CSV 형식·크기 오류 |
 | `GRADUATION_EVALUATION_NOT_FOUND` | 404 | 결과 없음 또는 타인 결과 |
 | `GRADUATION_EVALUATION_INPUT_CHANGED` | 409 | 검사 중 입력 변경 |
@@ -457,7 +486,7 @@ portal 내부 분기:
 ```text
 getGraduationProfile
 saveGraduationProfile
-searchHansungAcademicUnits
+searchGraduationAcademicUnits
 resolveGraduationPolicies
 listGraduationCourses
 saveGraduationCourses
@@ -533,8 +562,11 @@ const requirementStatus = {
 - 조기졸업 GPA/F 조건
 - 학석사 7·8학기 GPA와 대학원 과목 조건
 - 제2트랙 수동요건 UNKNOWN 전파
+- `SUMMARY_ONLY`, `PARTIAL`, `UNKNOWN` 입력의 보수적 UNKNOWN 전파
+- summary 누계/과목 합계 불일치 시 ELIGIBLE 차단
 - 발행 정책 불변성과 정책 충돌
 - 타 사용자/타 학교 접근 차단
+- profile public ID 추측과 교차 조직 관리자 검증 차단
 
 ### 프론트
 

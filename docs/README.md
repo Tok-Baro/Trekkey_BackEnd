@@ -52,6 +52,7 @@
    - [기능 설계서](./hansung-graduation-requirement-design.md)
    - [ERD 및 테이블 명세](./hansung-graduation-erd.md)
    - [API 및 프론트 계약](./hansung-graduation-api-spec.md)
+   - [3-cycle QA 보고서](./hansung-graduation-qa-report.md)
    - 한성대 공식 학사기준과 현재 백엔드·프론트 구조를 연결한 구현 기준
 
 ## 현재 구현 범위
