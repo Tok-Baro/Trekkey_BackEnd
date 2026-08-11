@@ -111,6 +111,7 @@ class TeamApplicationControllerTest {
                 .andExpect(jsonPath("$.data[0].contestTitle").value("AI 창의 경진대회"))
                 .andExpect(jsonPath("$.data[0].department").value("SW중심대학사업단"))
                 .andExpect(jsonPath("$.data[0].participationType").value("TEAM"))
+                .andExpect(jsonPath("$.data[0].maxTeamMembers").value(7))
                 .andExpect(jsonPath("$.data[0].teamName").value("트랙키 팀"))
                 .andExpect(jsonPath("$.data[0].leaderName").value("홍길동"))
                 .andExpect(jsonPath("$.data[0].major").value("컴퓨터공학부"))
@@ -223,7 +224,7 @@ class TeamApplicationControllerTest {
 
         mockMvc.perform(patch("/api/me/applications/{contestPublicId}", contestPublicId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(validRequest()))
+                        .content(requestWithFiveMembers()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.code").value("SUCCESS_200"))
@@ -237,7 +238,7 @@ class TeamApplicationControllerTest {
                         "트랙키 팀",
                         "홍길동",
                         "컴퓨터공학부",
-                        List.of(11L, 12L),
+                        List.of(11L, 12L, 13L, 14L, 15L),
                         "hong@example.com",
                         "010-1234-5678",
                         "AI 아이디어를 구현하고 싶습니다."));
@@ -261,8 +262,8 @@ class TeamApplicationControllerTest {
     }
 
     @Test
-    @DisplayName("대표자를 제외한 팀원이 4명을 초과하면 400을 반환한다")
-    void createApplication_returnsBadRequestWhenTooManyMembersAreRequested() throws Exception {
+    @DisplayName("고정된 DTO 상한 없이 팀원 목록을 서비스로 전달한다")
+    void createApplication_delegatesMemberCountValidationToService() throws Exception {
         mockMvc.perform(post("/api/contests/{publicId}/applications", "public-id")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -276,12 +277,14 @@ class TeamApplicationControllerTest {
                                   "motivation": "AI 아이디어를 구현하고 싶습니다."
                                 }
                                 """))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.isSuccess").value(false))
-                .andExpect(jsonPath("$.code").value("GLOBAL_400_BODY"))
-                .andExpect(jsonPath("$.httpStatus").value(400));
+                .andExpect(status().isCreated());
 
-        verifyNoInteractions(teamApplicationService);
+        ArgumentCaptor<TeamApplicationCreateReq> requestCaptor =
+                ArgumentCaptor.forClass(TeamApplicationCreateReq.class);
+        verify(teamApplicationService)
+                .createApplication(eq(10L), eq("public-id"), requestCaptor.capture());
+        assertThat(requestCaptor.getValue().memberUserIds())
+                .containsExactly(11L, 12L, 13L, 14L, 15L);
     }
 
     @Test
@@ -379,12 +382,27 @@ class TeamApplicationControllerTest {
                 """;
     }
 
+    private String requestWithFiveMembers() {
+        return """
+                {
+                  "teamName": "트랙키 팀",
+                  "leaderName": "홍길동",
+                  "major": "컴퓨터공학부",
+                  "memberUserIds": [11, 12, 13, 14, 15],
+                  "contactEmail": "hong@example.com",
+                  "phone": "010-1234-5678",
+                  "motivation": "AI 아이디어를 구현하고 싶습니다."
+                }
+                """;
+    }
+
     private TeamApplicationRes applicationResponse() {
         return new TeamApplicationRes(
                 "contest-public-id",
                 "AI 창의 경진대회",
                 "SW중심대학사업단",
                 ParticipationType.TEAM,
+                7,
                 "트랙키 팀",
                 "홍길동",
                 "컴퓨터공학부",

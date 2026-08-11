@@ -111,6 +111,7 @@ class TeamApplicationServiceImplTest {
                 "AI 창의 경진대회",
                 "SW중심대학사업단",
                 ParticipationType.TEAM,
+                7,
                 "트랙키 팀",
                 TeamStatus.PENDING,
                 newerCreatedAt,
@@ -120,6 +121,7 @@ class TeamApplicationServiceImplTest {
                 "캠퍼스 아이디어톤",
                 "학생지원처",
                 ParticipationType.INDIVIDUAL,
+                1,
                 "김참가",
                 TeamStatus.APPROVED,
                 olderCreatedAt,
@@ -138,6 +140,7 @@ class TeamApplicationServiceImplTest {
                         "AI 창의 경진대회",
                         "SW중심대학사업단",
                         ParticipationType.TEAM,
+                        7,
                         "트랙키 팀",
                         "김참가",
                         "컴퓨터공학부",
@@ -153,6 +156,7 @@ class TeamApplicationServiceImplTest {
                         "캠퍼스 아이디어톤",
                         "학생지원처",
                         ParticipationType.INDIVIDUAL,
+                        1,
                         "김참가",
                         "김참가",
                         "컴퓨터공학부",
@@ -421,6 +425,7 @@ class TeamApplicationServiceImplTest {
                 "AI 창의 경진대회",
                 "SW중심대학사업단",
                 ParticipationType.TEAM,
+                5,
                 "트랙키 팀",
                 TeamStatus.APPROVED,
                 LocalDateTime.of(2026, 7, 24, 15, 30),
@@ -547,6 +552,45 @@ class TeamApplicationServiceImplTest {
     }
 
     @Test
+    @DisplayName("팀원 상한이 6명인 대회에는 대표자 외 5명으로 신청할 수 있다")
+    void createApplication_allowsConfiguredMemberCountAboveLegacyLimit() {
+        User user = givenParticipant(10L, 2L);
+        given(user.getId()).willReturn(10L);
+        Contest contest = contest(
+                20L,
+                ContestStatus.APPLICATION_OPEN,
+                ParticipationType.TEAM,
+                6);
+        List<Long> memberUserIds = List.of(11L, 12L, 13L, 14L, 15L);
+        List<User> members = memberUserIds.stream()
+                .map(id -> User.builder().id(id).build())
+                .toList();
+        given(contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
+                "contest-public-id",
+                2L,
+                PUBLIC_STATUSES))
+                .willReturn(Optional.of(contest));
+        given(userRepository.findAllByIdInAndOrganizationIdAndRoleAndStatus(
+                memberUserIds,
+                2L,
+                UserRole.PARTICIPANT,
+                UserStatus.ACTIVE))
+                .willReturn(members);
+        given(teamRepository.save(any(Team.class)))
+                .willAnswer(invocation -> invocation.getArgument(0));
+
+        teamApplicationService.createApplication(
+                10L,
+                "contest-public-id",
+                applicationRequest(memberUserIds));
+
+        ArgumentCaptor<Team> teamCaptor = ArgumentCaptor.forClass(Team.class);
+        verify(teamRepository).save(teamCaptor.capture());
+        assertThat(teamCaptor.getValue().getMemberCount()).isEqualTo(6);
+        verify(teamMemberRepository).saveAll(any());
+    }
+
+    @Test
     @DisplayName("사용자를 찾을 수 없으면 사용자 없음으로 처리한다")
     void createApplication_throwsWhenUserDoesNotExist() {
         given(userRepository.findById(10L)).willReturn(Optional.empty());
@@ -628,10 +672,14 @@ class TeamApplicationServiceImplTest {
     }
 
     @Test
-    @DisplayName("대표자를 제외한 팀원이 4명을 초과하면 참가 인원 오류로 처리한다")
+    @DisplayName("대표자를 포함한 인원이 대회의 설정 상한을 초과하면 거부한다")
     void createApplication_throwsWhenMemberCountExceedsLimit() {
         givenParticipant(10L, 2L);
-        Contest contest = contest(20L, ContestStatus.APPLICATION_OPEN, ParticipationType.TEAM);
+        Contest contest = contest(
+                20L,
+                ContestStatus.APPLICATION_OPEN,
+                ParticipationType.TEAM,
+                3);
         given(contestRepository.findByPublicIdAndOrganizationIdAndStatusIn(
                 "contest-public-id",
                 2L,
@@ -641,7 +689,7 @@ class TeamApplicationServiceImplTest {
         assertThatThrownBy(() -> teamApplicationService.createApplication(
                 10L,
                 "contest-public-id",
-                applicationRequest(List.of(11L, 12L, 13L, 14L, 15L))))
+                applicationRequest(List.of(11L, 12L, 13L))))
                 .isInstanceOf(CustomException.class)
                 .extracting("baseResponseCode")
                 .isEqualTo(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_COUNT_INVALID);
@@ -885,11 +933,20 @@ class TeamApplicationServiceImplTest {
     }
 
     private Contest contest(Long id, ContestStatus status, ParticipationType participationType) {
+        return contest(id, status, participationType, 5);
+    }
+
+    private Contest contest(
+            Long id,
+            ContestStatus status,
+            ParticipationType participationType,
+            int maxTeamMembers) {
         return Contest.builder()
                 .id(id)
                 .publicId("contest-public-id")
                 .status(status)
                 .participationType(participationType)
+                .maxTeamMembers(maxTeamMembers)
                 .build();
     }
 
@@ -909,6 +966,7 @@ class TeamApplicationServiceImplTest {
             String contestTitle,
             String department,
             ParticipationType participationType,
+            int maxTeamMembers,
             String teamName,
             TeamStatus status,
             LocalDateTime createdAt,
@@ -918,6 +976,7 @@ class TeamApplicationServiceImplTest {
                 .title(contestTitle)
                 .department(department)
                 .participationType(participationType)
+                .maxTeamMembers(maxTeamMembers)
                 .build();
         Team team = Team.builder()
                 .contest(contest)
