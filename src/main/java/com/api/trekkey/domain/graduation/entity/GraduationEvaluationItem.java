@@ -8,7 +8,7 @@ import lombok.*;
 
 @Entity
 @Table(name = "graduation_evaluation_item", uniqueConstraints = @UniqueConstraint(
-        name = "uk_evaluation_requirement_code", columnNames = {"evaluation_id", "requirement_code"}),
+        name = "uk_evaluation_requirement", columnNames = {"evaluation_id", "requirement_id"}),
         indexes = @Index(name = "idx_evaluation_item_status_sequence", columnList = "evaluation_id,status,sequence_no"))
 @Getter
 @Builder

@@ -340,7 +340,7 @@ CREATE TABLE graduation_evaluation_item (
     created_at DATETIME(6) NULL,
     updated_at DATETIME(6) NULL,
     PRIMARY KEY (id),
-    CONSTRAINT uk_evaluation_requirement_code UNIQUE (evaluation_id, requirement_code),
+    CONSTRAINT uk_evaluation_requirement UNIQUE (evaluation_id, requirement_id),
     CONSTRAINT fk_evaluation_item_evaluation FOREIGN KEY (evaluation_id) REFERENCES graduation_evaluation(id) ON DELETE RESTRICT,
     CONSTRAINT fk_evaluation_item_requirement FOREIGN KEY (requirement_id) REFERENCES graduation_requirement(id) ON DELETE RESTRICT,
     CONSTRAINT ck_evaluation_item_sequence CHECK (sequence_no >= 1),

@@ -424,7 +424,7 @@ MANUAL_REVIEW
 | `source_locator` | VARCHAR(300) | Y | 표/절 위치 snapshot |
 | `sequence_no` | INT | N | 표시 순서 |
 
-- `(evaluation_id, requirement_code)` unique
+- `(evaluation_id, requirement_id)` unique. 서로 다른 정책은 같은 `requirement_code`를 사용할 수 있다.
 - 과거 결과는 정책 폐기 후에도 조회 가능
 
 ## 16. 주요 불변조건
