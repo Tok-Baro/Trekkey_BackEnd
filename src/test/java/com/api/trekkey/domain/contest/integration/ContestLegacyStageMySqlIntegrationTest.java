@@ -249,6 +249,7 @@ class ContestLegacyStageMySqlIntegrationTest {
                 contest.getDepartment(),
                 ContestStatus.APPLICATION_OPEN,
                 contest.getParticipationType(),
+                contest.getMaxTeamMembers(),
                 contest.getAwardCount(),
                 contest.getPosterUrl(),
                 contest.getSummary(),

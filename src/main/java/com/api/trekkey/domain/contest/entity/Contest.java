@@ -72,6 +72,11 @@ public class Contest extends BaseEntity {
     private ParticipationType participationType;
 
     @Builder.Default
+    @Column(name = "max_team_members", nullable = false)
+    // 대표자를 포함한 팀당 최대 참가 인원
+    private int maxTeamMembers = 5;
+
+    @Builder.Default
     @Column(nullable = false)
     // 예정 시상 수
     private int awardCount = 0;
@@ -127,6 +132,7 @@ public class Contest extends BaseEntity {
             String department,
             ContestStatus status,
             ParticipationType participationType,
+            int maxTeamMembers,
             int awardCount,
             String posterUrl,
             String summary,
@@ -140,6 +146,7 @@ public class Contest extends BaseEntity {
         this.department = department;
         this.status = status;
         this.participationType = participationType;
+        this.maxTeamMembers = maxTeamMembers;
         this.awardCount = awardCount;
         this.posterUrl = posterUrl;
         this.summary = summary;

@@ -3,8 +3,10 @@ package com.api.trekkey.domain.contest.admin.web.controller;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -32,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
@@ -149,6 +152,7 @@ class ContestAdminControllerTest {
                         .value("contest-public-id"))
                 .andExpect(jsonPath("$.data.status")
                         .value("PREPARING"))
+                .andExpect(jsonPath("$.data.maxTeamMembers").value(5))
                 .andExpect(jsonPath("$.data.department")
                         .value("SW중심대학사업단"))
                 .andExpect(jsonPath("$.data.applicationStartsAt")
@@ -165,6 +169,43 @@ class ContestAdminControllerTest {
 
         verify(contestAdminQueryService)
                 .getContest(10L, "contest-public-id");
+    }
+
+    @Test
+    @DisplayName("팀당 최대 참가 인원이 1명 미만이면 400을 반환한다")
+    void createContest_rejectsMaxTeamMembersBelowOne() throws Exception {
+        mockMvc.perform(post("/api/contests")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "AI 창의 경진대회",
+                                  "department": "SW중심대학사업단",
+                                  "status": "PREPARING",
+                                  "participationType": "TEAM",
+                                  "maxTeamMembers": 0,
+                                  "awardCount": 3,
+                                  "summary": "AI로 해결하는 캠퍼스 문제",
+                                  "target": "전체 재학생",
+                                  "applicationMethod": "온라인 신청",
+                                  "benefits": "우수팀 시상",
+                                  "detailHtml": "<p>상세 안내</p>",
+                                  "stages": [
+                                    {
+                                      "name": "참가 신청",
+                                      "stageType": "APPLICATION",
+                                      "sequenceNo": 1,
+                                      "status": "PREPARING"
+                                    }
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("GLOBAL_400_BODY"))
+                .andExpect(jsonPath("$.data[0].field")
+                        .value("maxTeamMembers"));
+
+        verify(contestCommandService, never())
+                .createContest(any(), any());
     }
 
     @Test
@@ -198,6 +239,7 @@ class ContestAdminControllerTest {
                 "SW중심대학사업단",
                 ContestStatus.PREPARING,
                 ParticipationType.BOTH,
+                5,
                 3,
                 "https://example.com/poster.png",
                 "AI로 해결하는 캠퍼스 문제",
