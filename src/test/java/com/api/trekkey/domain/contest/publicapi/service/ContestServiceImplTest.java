@@ -196,6 +196,7 @@ class ContestServiceImplTest {
                 "AI 창의 경진대회",
                 ContestStatus.APPLICATION_OPEN,
                 ParticipationType.BOTH,
+                7,
                 "https://example.com/poster.png",
                 "AI로 해결하는 캠퍼스 문제",
                 List.of("AI", "캠퍼스"),
@@ -387,6 +388,7 @@ class ContestServiceImplTest {
                 .department("SW중심대학사업단")
                 .status(ContestStatus.APPLICATION_OPEN)
                 .participationType(ParticipationType.BOTH)
+                .maxTeamMembers(7)
                 .awardCount(3)
                 .posterUrl("https://example.com/poster.png")
                 .summary("AI로 해결하는 캠퍼스 문제")

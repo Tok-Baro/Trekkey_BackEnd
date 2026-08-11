@@ -94,15 +94,19 @@ class ContestCommandServiceImplTest {
                 .willReturn(Optional.of(admin));
         stubSaveWithIds();
 
-        ContestCreateReq req = createReq(List.of(
-                stageReq(null, "제출", StageType.SUBMISSION, 8),
-                stageReq(null, "참가 신청", StageType.APPLICATION, 3)
-        ));
+        ContestCreateReq req = createReq(
+                ParticipationType.TEAM,
+                1,
+                List.of(
+                        stageReq(null, "제출", StageType.SUBMISSION, 8),
+                        stageReq(null, "참가 신청", StageType.APPLICATION, 3)
+                ));
 
         ContestDetailRes res =
                 contestCommandService.createContest(10L, req);
 
         assertThat(res.id()).isEqualTo("pub-100");
+        assertThat(res.maxTeamMembers()).isEqualTo(1);
         assertThat(res.stages())
                 .extracting(StageRes::name)
                 .containsExactly("참가 신청", "제출");
@@ -115,6 +119,32 @@ class ContestCommandServiceImplTest {
         verify(contestRepository).save(any(Contest.class));
         verify(contestStageRepository, times(2))
                 .save(any(ContestStage.class));
+    }
+
+    @Test
+    @DisplayName("개인전의 최대 참가 인원은 1명이어야 한다")
+    void createContest_rejectsIndividualMaxAboveOne() {
+        given(userRepository.findById(10L))
+                .willReturn(Optional.of(admin));
+
+        assertThatThrownBy(() -> contestCommandService.createContest(
+                10L,
+                createReq(
+                        ParticipationType.INDIVIDUAL,
+                        2,
+                        List.of(stageReq(
+                                null,
+                                "참가 신청",
+                                StageType.APPLICATION,
+                                1)))
+        ))
+                .isInstanceOf(CustomException.class)
+                .extracting(error ->
+                        ((CustomException) error).getBaseResponseCode())
+                .isEqualTo(ContestErrorResponseCode
+                        .CONTEST_MAX_TEAM_MEMBERS_INVALID);
+
+        verify(contestRepository, never()).save(any(Contest.class));
     }
 
     @Test
@@ -434,23 +464,28 @@ class ContestCommandServiceImplTest {
         ContestDetailRes res = contestCommandService.updateContest(
                 10L,
                 "pub-1",
-                createReq(List.of(
-                        stageReq(
-                                201L,
-                                "참가 접수",
-                                StageType.APPLICATION,
-                                1
-                        ),
-                        stageReq(
-                                null,
-                                "시상",
-                                StageType.AWARD,
-                                2
-                        )
-                ))
+                createReq(
+                        ParticipationType.BOTH,
+                        3,
+                        List.of(
+                                stageReq(
+                                        201L,
+                                        "참가 접수",
+                                        StageType.APPLICATION,
+                                        1
+                                ),
+                                stageReq(
+                                        null,
+                                        "시상",
+                                        StageType.AWARD,
+                                        2
+                                )
+                        ))
         );
 
         assertThat(application.getName()).isEqualTo("참가 접수");
+        assertThat(contest.getMaxTeamMembers()).isEqualTo(3);
+        assertThat(res.maxTeamMembers()).isEqualTo(3);
         assertThat(res.stages())
                 .extracting(StageRes::name)
                 .containsExactly("참가 접수", "시상");
@@ -978,11 +1013,42 @@ class ContestCommandServiceImplTest {
             ContestStatus status,
             List<StageReq> stages
     ) {
+        return createReq(
+                status,
+                ParticipationType.BOTH,
+                5,
+                "<p>본문</p>",
+                stages
+        );
+    }
+
+    private ContestCreateReq createReq(
+            ParticipationType participationType,
+            int maxTeamMembers,
+            List<StageReq> stages
+    ) {
+        return createReq(
+                ContestStatus.APPLICATION_OPEN,
+                participationType,
+                maxTeamMembers,
+                "<p>본문</p>",
+                stages
+        );
+    }
+
+    private ContestCreateReq createReq(
+            ContestStatus status,
+            ParticipationType participationType,
+            int maxTeamMembers,
+            String detailHtml,
+            List<StageReq> stages
+    ) {
         return new ContestCreateReq(
                 "2026 AI 공모전",
                 "교무처",
                 status,
-                ParticipationType.BOTH,
+                participationType,
+                maxTeamMembers,
                 3,
                 null,
                 "AI 공모전",
@@ -990,7 +1056,7 @@ class ContestCommandServiceImplTest {
                 "온라인 접수",
                 "상장 수여",
                 "AI,공모전",
-                "<p>본문</p>",
+                detailHtml,
                 stages
         );
     }
@@ -999,18 +1065,10 @@ class ContestCommandServiceImplTest {
             String detailHtml,
             List<StageReq> stages
     ) {
-        return new ContestCreateReq(
-                "2026 AI 공모전",
-                "교무처",
+        return createReq(
                 ContestStatus.APPLICATION_OPEN,
                 ParticipationType.BOTH,
-                3,
-                null,
-                "AI 공모전",
-                "재학생",
-                "온라인 접수",
-                "상장 수여",
-                "AI,공모전",
+                5,
                 detailHtml,
                 stages
         );

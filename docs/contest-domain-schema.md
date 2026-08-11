@@ -34,6 +34,7 @@
 | `department` | `VARCHAR(100)` | N | 주관 부서 |
 | `status` | `VARCHAR(30)` | N | `ContestStatus` |
 | `participation_type` | `VARCHAR(30)` | N | `ParticipationType` |
+| `max_team_members` | `INT` | N | 대표자 포함 팀당 최대 참가 인원 |
 | `award_count` | `INT` | N | 예정 시상 수, 기본값 0 |
 | `poster_url` | `VARCHAR(500)` | Y | 대표 포스터 URL |
 | `summary` | `VARCHAR(300)` | N | 공개 페이지 한 줄 소개 |
@@ -62,6 +63,8 @@ ParticipationType
 ### 제약 및 검증
 
 - `award_count >= 0`
+- `max_team_members >= 1`
+- `participation_type = INDIVIDUAL`이면 `max_team_members = 1`
 - `public_id` unique
 - `owner_user_id`는 관리자이며 `organization_id`와 같은 기관 소속이어야 합니다. 이 규칙은 서비스에서 검증합니다.
 - 대회명/주관부서/담당자 검색은 `CONTEST`와 `USER`를 조인한 조회 DTO로 처리합니다.

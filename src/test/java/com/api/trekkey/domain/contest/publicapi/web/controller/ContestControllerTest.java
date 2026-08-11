@@ -122,6 +122,7 @@ class ContestControllerTest {
                 .andExpect(jsonPath("$.data.publicId").value(publicId))
                 .andExpect(jsonPath("$.data.status").value("APPLICATION_OPEN"))
                 .andExpect(jsonPath("$.data.participationType").value("BOTH"))
+                .andExpect(jsonPath("$.data.maxTeamMembers").value(5))
                 .andExpect(jsonPath("$.data.department").value("SW중심대학사업단"))
                 .andExpect(jsonPath("$.data.applicationStartsAt").exists())
                 .andExpect(jsonPath("$.data.applicationEndsAt").exists())
@@ -200,6 +201,7 @@ class ContestControllerTest {
                 "AI 창의 경진대회",
                 ContestStatus.APPLICATION_OPEN,
                 ParticipationType.BOTH,
+                5,
                 "https://example.com/poster.png",
                 "AI로 해결하는 캠퍼스 문제",
                 List.of("AI", "캠퍼스"),
