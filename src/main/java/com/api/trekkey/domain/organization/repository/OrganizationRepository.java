@@ -23,6 +23,8 @@ public interface OrganizationRepository extends JpaRepository<Organization, Long
 
     Optional<Organization> findByIdAndStatus(Long id, OrganizationStatus status);
 
+    Optional<Organization> findByCode(String code);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from Organization o where o.id = :id")
     Optional<Organization> findByIdForUpdate(@Param("id") Long id);

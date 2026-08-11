@@ -17,4 +17,15 @@ class OrganizationTest {
         assertThat(publicId).isNotBlank();
         assertThat(organization.ensurePublicId()).isEqualTo(publicId);
     }
+
+    @Test
+    @DisplayName("기관 코드는 최초 생성 후 변경되지 않는다")
+    void ensureCode_returnsStableValue() {
+        Organization organization = new Organization();
+
+        String code = organization.ensureCode();
+
+        assertThat(code).startsWith("ORG_");
+        assertThat(organization.ensureCode()).isEqualTo(code);
+    }
 }
