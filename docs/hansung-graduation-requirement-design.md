@@ -18,6 +18,7 @@ DB와 API의 상세 계약은 다음 문서를 따른다.
 
 - [한성대학교 졸업요건 ERD](./hansung-graduation-erd.md)
 - [한성대학교 졸업요건 API·프론트 명세](./hansung-graduation-api-spec.md)
+- [실제 공지·서류 기반 Gap QA](./hansung-actual-document-gap-qa.md)
 
 ## 2. 제품 정의
 

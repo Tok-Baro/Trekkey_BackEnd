@@ -58,6 +58,25 @@ class EvidenceControllerSecurityTest {
     }
 
     @Test
+    void frontendCanSubmitMultipleFilesAsOneEvidenceBundle() throws Exception {
+        MockMultipartFile request = new MockMultipartFile("request", "", MediaType.APPLICATION_JSON_VALUE,
+                """
+                {"evidenceType":"GRADUATION_WORK","targetRecordType":"GRADUATION_WORK",
+                 "title":"캡스톤 졸업작품","issuerName":"한성대학교"}
+                """.getBytes());
+        MockMultipartFile transcript = new MockMultipartFile("files", "transcript.pdf", "application/pdf",
+                "%PDF-1.7 transcript".getBytes());
+        MockMultipartFile report = new MockMultipartFile("files", "report.pdf", "application/pdf",
+                "%PDF-1.7 report".getBytes());
+
+        mockMvc.perform(multipart("/api/me/evidence-submissions").file(request).file(transcript).file(report)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken("PARTICIPANT")))
+                .andExpect(status().isCreated());
+
+        verify(submissionService).submit(eq(10L), any(), argThat(files -> files.size() == 2));
+    }
+
+    @Test
     void anonymousCannotSubmitEvidence() throws Exception {
         mockMvc.perform(multipart("/api/me/evidence-submissions"))
                 .andExpect(status().isUnauthorized());

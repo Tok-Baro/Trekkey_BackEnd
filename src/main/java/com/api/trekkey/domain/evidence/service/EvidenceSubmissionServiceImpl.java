@@ -15,8 +15,14 @@ import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
 import java.io.*;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +34,8 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class EvidenceSubmissionServiceImpl implements EvidenceSubmissionService {
+    private static final int MAX_FILES = 5;
+    private static final long MAX_BUNDLE_SIZE = 25L * 1024 * 1024;
     private final UserRepository userRepository;
     private final StudentAcademicProfileRepository profileRepository;
     private final EvidenceSubmissionRepository submissionRepository;
@@ -40,7 +48,7 @@ public class EvidenceSubmissionServiceImpl implements EvidenceSubmissionService 
 
     @Override
     @Transactional
-    public EvidenceSubmissionRes submit(Long userId, EvidenceSubmissionCreateReq request, MultipartFile file) {
+    public EvidenceSubmissionRes submit(Long userId, EvidenceSubmissionCreateReq request, List<MultipartFile> files) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(UserErrorResponseCode.USER_NOT_FOUND));
         if (!profileRepository.findByUserId(userId).isPresent()) {
@@ -51,8 +59,7 @@ public class EvidenceSubmissionServiceImpl implements EvidenceSubmissionService 
                 && request.expiresAt().isBefore(request.issuedAt())) {
             throw new CustomException(EvidenceErrorResponseCode.EVIDENCE_INVALID_DATE);
         }
-        byte[] bytes = read(file);
-        String detectedContentType = fileInspector.inspect(bytes);
+        List<InspectedFile> inspectedFiles = inspect(files);
         String credential = normalize(request.credentialNumber());
         LocalDateTime now = LocalDateTime.now();
 
@@ -65,24 +72,27 @@ public class EvidenceSubmissionServiceImpl implements EvidenceSubmissionService 
                 .credentialNumberLast4(last4(credential)).numericValue(request.numericValue())
                 .issuedAt(request.issuedAt()).expiresAt(request.expiresAt()).submittedAt(now).build());
 
-        String storageKey = null;
+        List<String> storageKeys = new ArrayList<>();
         try {
-            StoredFile stored = fileStoragePort.store(
-                    "evidence/" + submission.getPublicId(), safeName(file.getOriginalFilename()),
-                    new ByteArrayInputStream(bytes));
-            storageKey = stored.storageKey();
-            EvidenceFile evidenceFile = fileRepository.save(EvidenceFile.builder()
-                    .submission(submission).originalName(safeName(file.getOriginalFilename()))
-                    .contentType(detectedContentType).sizeBytes(stored.sizeBytes())
-                    .storageKey(stored.storageKey()).sha256(stored.sha256())
-                    .safetyStatus(FileSafetyStatus.FORMAT_VALIDATED).build());
+            List<EvidenceFile> evidenceFiles = new ArrayList<>();
+            for (InspectedFile inspected : inspectedFiles) {
+                StoredFile stored = fileStoragePort.store(
+                        "evidence/" + submission.getPublicId(), inspected.name(),
+                        new ByteArrayInputStream(inspected.bytes()));
+                storageKeys.add(stored.storageKey());
+                evidenceFiles.add(fileRepository.save(EvidenceFile.builder()
+                        .submission(submission).originalName(inspected.name())
+                        .contentType(inspected.contentType()).sizeBytes(stored.sizeBytes())
+                        .storageKey(stored.storageKey()).sha256(stored.sha256())
+                        .safetyStatus(FileSafetyStatus.FORMAT_VALIDATED).build()));
+            }
             VerificationCase verificationCase = caseRepository.save(VerificationCase.builder()
                     .submission(submission).status(VerificationCaseStatus.MANUAL_REVIEW)
                     .requiredAssuranceLevel(AssuranceLevel.L2).openedAt(now).build());
-            registerRollbackCleanup(storageKey);
-            return EvidenceSubmissionRes.from(submission, verificationCase, List.of(evidenceFile), 0);
+            storageKeys.forEach(this::registerRollbackCleanup);
+            return EvidenceSubmissionRes.from(submission, verificationCase, evidenceFiles, 0);
         } catch (RuntimeException exception) {
-            if (storageKey != null) fileStoragePort.delete(storageKey);
+            storageKeys.forEach(fileStoragePort::delete);
             throw exception;
         }
     }
@@ -120,9 +130,35 @@ public class EvidenceSubmissionServiceImpl implements EvidenceSubmissionService 
             case LANGUAGE_SCORE -> recordType == NonCourseRecordType.TOPIK || recordType == NonCourseRecordType.OTHER;
             case COMPLETION -> recordType == NonCourseRecordType.TEACHING_COMPLETION || recordType == NonCourseRecordType.OTHER;
             case ENROLLMENT -> recordType == NonCourseRecordType.GRADUATE_ENROLLMENT || recordType == NonCourseRecordType.OTHER;
-            case CONTEST_AWARD, QUALIFICATION, EMPLOYMENT, OTHER -> recordType == NonCourseRecordType.OTHER;
+            case THESIS -> recordType == NonCourseRecordType.THESIS;
+            case GRADUATION_WORK -> recordType == NonCourseRecordType.GRADUATION_WORK;
+            case GRADUATION_EXAM -> recordType == NonCourseRecordType.GRADUATION_EXAM;
+            case RESEARCH_PLAN -> recordType == NonCourseRecordType.RESEARCH_PLAN;
+            case CONTEST_AWARD -> recordType == NonCourseRecordType.GRADUATION_WORK || recordType == NonCourseRecordType.OTHER;
+            case QUALIFICATION, EMPLOYMENT, OTHER -> recordType == NonCourseRecordType.OTHER;
         };
         if (!valid) throw new CustomException(EvidenceErrorResponseCode.EVIDENCE_RECORD_TYPE_INVALID);
+    }
+
+    private List<InspectedFile> inspect(List<MultipartFile> files) {
+        if (files == null || files.isEmpty() || files.stream().allMatch(file -> file == null || file.isEmpty())) {
+            throw new CustomException(EvidenceErrorResponseCode.EVIDENCE_FILE_REQUIRED);
+        }
+        List<MultipartFile> submitted = files.stream().filter(file -> file != null && !file.isEmpty()).toList();
+        long totalSize = submitted.stream().mapToLong(MultipartFile::getSize).sum();
+        if (submitted.size() > MAX_FILES || totalSize > MAX_BUNDLE_SIZE) {
+            throw new CustomException(EvidenceErrorResponseCode.EVIDENCE_FILE_BUNDLE_TOO_LARGE);
+        }
+        Set<String> hashes = new HashSet<>();
+        List<InspectedFile> result = new ArrayList<>();
+        for (MultipartFile file : submitted) {
+            byte[] bytes = read(file);
+            if (!hashes.add(sha256(bytes))) {
+                throw new CustomException(EvidenceErrorResponseCode.EVIDENCE_FILE_DUPLICATE);
+            }
+            result.add(new InspectedFile(safeName(file.getOriginalFilename()), bytes, fileInspector.inspect(bytes)));
+        }
+        return result;
     }
 
     private byte[] read(MultipartFile file) {
@@ -145,6 +181,10 @@ public class EvidenceSubmissionServiceImpl implements EvidenceSubmissionService 
     }
     private String trimToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
     private String last4(String value) { return value == null ? null : value.substring(Math.max(0, value.length() - 4)); }
+    private String sha256(byte[] bytes) {
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
+        catch (NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
+    }
     private void registerRollbackCleanup(String storageKey) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -153,4 +193,6 @@ public class EvidenceSubmissionServiceImpl implements EvidenceSubmissionService 
             }
         });
     }
+
+    private record InspectedFile(String name, byte[] bytes, String contentType) {}
 }

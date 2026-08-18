@@ -4,7 +4,8 @@ public final class EvidenceTypes {
     private EvidenceTypes() {}
 
     public enum EvidenceType {
-        QUALIFICATION, LANGUAGE_SCORE, CONTEST_AWARD, COMPLETION, ENROLLMENT, EMPLOYMENT, OTHER
+        QUALIFICATION, LANGUAGE_SCORE, CONTEST_AWARD, COMPLETION, ENROLLMENT, EMPLOYMENT,
+        THESIS, GRADUATION_WORK, GRADUATION_EXAM, RESEARCH_PLAN, OTHER
     }
 
     public enum EvidenceStatus {

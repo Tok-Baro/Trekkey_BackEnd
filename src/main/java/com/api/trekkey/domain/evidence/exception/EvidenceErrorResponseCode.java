@@ -12,6 +12,8 @@ public enum EvidenceErrorResponseCode implements BaseResponseCode {
     EVIDENCE_FILE_NOT_FOUND("EVIDENCE_FILE_NOT_FOUND", 404, "증빙 파일을 찾을 수 없습니다."),
     EVIDENCE_FILE_REQUIRED("EVIDENCE_FILE_REQUIRED", 400, "증빙 파일을 첨부해주세요."),
     EVIDENCE_FILE_TOO_LARGE("EVIDENCE_FILE_TOO_LARGE", 400, "증빙 파일은 10MB 이하여야 합니다."),
+    EVIDENCE_FILE_BUNDLE_TOO_LARGE("EVIDENCE_FILE_BUNDLE_TOO_LARGE", 400, "증빙은 최대 5개, 합계 25MB까지 제출할 수 있습니다."),
+    EVIDENCE_FILE_DUPLICATE("EVIDENCE_FILE_DUPLICATE", 400, "같은 증빙 파일을 중복 제출할 수 없습니다."),
     EVIDENCE_FILE_TYPE_INVALID("EVIDENCE_FILE_TYPE_INVALID", 400, "PDF, JPEG, PNG 원본만 제출할 수 있습니다."),
     EVIDENCE_STORAGE_ERROR("EVIDENCE_STORAGE_ERROR", 500, "증빙 파일 저장 중 오류가 발생했습니다."),
     EVIDENCE_RECORD_TYPE_INVALID("EVIDENCE_RECORD_TYPE_INVALID", 400, "증빙 유형과 졸업 비교과 항목이 맞지 않습니다."),

@@ -363,6 +363,7 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
 
     private boolean isVerified(StudentNonCourseRecord record, JsonNode parameters) {
         if (!isVerified(record.getVerificationStatus())) return false;
+        if (record.getExpiresAt() != null && record.getExpiresAt().isBefore(LocalDate.now())) return false;
         int required = assuranceRank(parameters.hasNonNull("minimumAssuranceLevel")
                 ? parameters.get("minimumAssuranceLevel").asText() : "L0");
         int achieved;

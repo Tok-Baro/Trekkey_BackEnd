@@ -7,6 +7,7 @@ import com.api.trekkey.global.response.SuccessResponse;
 import com.api.trekkey.global.security.AuthPrincipal;
 import jakarta.validation.Valid;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.InputStreamResource;
@@ -28,9 +29,13 @@ public class EvidenceSubmissionController {
     public ResponseEntity<SuccessResponse<EvidenceSubmissionRes>> submit(
             @AuthenticationPrincipal AuthPrincipal principal,
             @RequestPart("request") @Valid EvidenceSubmissionCreateReq request,
-            @RequestPart("file") MultipartFile file) {
+            @RequestPart(value = "file", required = false) MultipartFile legacyFile,
+            @RequestPart(value = "files", required = false) List<MultipartFile> files) {
+        List<MultipartFile> bundle = new ArrayList<>();
+        if (legacyFile != null) bundle.add(legacyFile);
+        if (files != null) bundle.addAll(files);
         return ResponseEntity.status(HttpStatus.CREATED).body(SuccessResponse.create(
-                evidenceSubmissionService.submit(principal.getId(), request, file)));
+                evidenceSubmissionService.submit(principal.getId(), request, bundle)));
     }
 
     @GetMapping("/evidence-submissions")

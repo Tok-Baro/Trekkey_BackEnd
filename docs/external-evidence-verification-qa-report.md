@@ -8,12 +8,13 @@
 
 | cycle | 실행 | 결과 |
 | --- | --- | --- |
-| 1 | 파일 magic byte/크기, 2인 합의, 동일 관리자 재검수 단위 테스트 | 통과 |
+| 1 | PDF/이미지 구조 파싱·bundle 제한, 2인 합의, 동일 관리자 재검수 단위 테스트 | 통과 |
 | 2 | assurance 최소값 및 `OTHER` 안의 자격증/공모전 유형 오인정 회귀 테스트 | 통과 |
 | 3 | 실제 multipart MockMvc, 참가자/관리자 역할 분리, 전체 Gradle 회귀 테스트 | 통과 |
 
 - 대상 테스트: evidence 도메인 + `GraduationEvaluationServiceImplTest`
-- 전체 회귀: duplicate `* 2.java`를 source set에서 제외하고 651개 실행, 25개 외부 MySQL 조건부 skip, 실패 0
+- 전체 회귀: duplicate `* 2.java`를 source set에서 제외하고 662개 실행, 25개 외부 MySQL 및 1개 실제파일 환경변수 조건부 skip, 실패 0
+- 실제파일 smoke: 한성대 공식 4쪽 PDF(`517e4b...31c58`)를 `EVIDENCE_SMOKE_FILE`로 주입해 별도 통과
 - 전체 테스트에는 기존 프로젝트가 요구하는 JWT expiration, front URL, CORS, upload directory 환경값을 명시했다.
 - 프론트는 학생 제출·상태 화면과 관리자 1·2차 검수 화면을 추가하고 `npm test`, `npm run build`를 통과했다.
 

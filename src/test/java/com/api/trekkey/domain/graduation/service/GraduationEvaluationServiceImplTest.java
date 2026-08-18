@@ -184,6 +184,20 @@ class GraduationEvaluationServiceImplTest {
                 .containsExactly(RequirementStatus.UNKNOWN);
     }
 
+    @Test
+    void expiredVerifiedDocumentDoesNotSatisfyGraduationRule() {
+        StudentNonCourseRecord expiredTopik = nonCourse(profile, NonCourseRecordType.TOPIK, new BigDecimal("6"), 132L);
+        ReflectionTestUtils.setField(expiredTopik, "verificationAssuranceLevel", "L2");
+        ReflectionTestUtils.setField(expiredTopik, "expiresAt", LocalDate.now().minusDays(1));
+        given(nonCourseRepository.findAllByProfileUserIdOrderById(10L)).willReturn(List.of(expiredTopik));
+
+        GraduationEvaluationRes result = service.evaluate(10L, LocalDate.of(2026, 8, 11));
+
+        assertThat(result.requirements()).filteredOn(item -> item.code().equals("TOPIK_LEVEL_MIN"))
+                .extracting(GraduationEvaluationRes.RequirementResult::status)
+                .containsExactly(RequirementStatus.UNKNOWN);
+    }
+
     private Fixture fixture() {
         Organization organization = BeanUtils.instantiateClass(Organization.class);
         ReflectionTestUtils.setField(organization, "id", 1L);

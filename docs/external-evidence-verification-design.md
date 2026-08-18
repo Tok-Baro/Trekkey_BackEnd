@@ -157,7 +157,9 @@ attempt는 실행 중 `PENDING`에서 종료 결과로 한 번 완성할 수 있
 
 ### 1단계: 한성대 운영 MVP
 
-- PDF/JPG/PNG 업로드, 해시·악성코드·OCR 보조
+- PDF/JPG/PNG 최대 5개 bundle 업로드, 파일당 10MB·합계 25MB, 구조 파싱·해시
+- 논문·졸업작품·졸업시험·연구활동계획서 전용 유형
+- 악성코드·OCR은 후속 보조 단계이며 현재 `FORMAT_VALIDATED`에는 포함하지 않음
 - 기관·증빙 유형 registry
 - Q-Net 등 공식 확인 화면을 이용하는 2인 수동검수
 - 공모전 주최기관 email challenge
