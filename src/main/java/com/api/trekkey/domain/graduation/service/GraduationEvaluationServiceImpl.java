@@ -396,7 +396,14 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
 
     private JsonNode parameters(GraduationRequirement requirement) {
         try {
-            return objectMapper.readTree(requirement.getParametersJson());
+            JsonNode node = objectMapper.readTree(requirement.getParametersJson());
+            if (node != null && node.isTextual()) {
+                node = objectMapper.readTree(node.textValue());
+            }
+            if (node == null || !node.isObject()) {
+                throw new CustomException(GraduationErrorResponseCode.GRADUATION_RULE_INVALID);
+            }
+            return node;
         } catch (JsonProcessingException e) {
             throw new CustomException(GraduationErrorResponseCode.GRADUATION_RULE_INVALID);
         }

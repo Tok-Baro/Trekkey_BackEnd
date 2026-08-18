@@ -59,7 +59,9 @@
 
 - 서로 다른 관리자 2인 합의, 동일 관리자 재검수 차단, 불일치 `INCONCLUSIVE`를 재검증했다.
 - 승인된 `DOCUMENT_VERIFIED/L2` 자료만 규칙에 반영하며, 만료 문서는 다시 `UNKNOWN`으로 떨어지는 테스트를 추가했다.
-- 백엔드 전체 662개 중 실패 0(외부 MySQL 25개와 환경변수 기반 실제파일 1개 조건부 skip), 실제 한성대 PDF smoke 별도 통과, 프론트 14개 통과 및 production build 성공을 확인했다.
+- 백엔드 전체 664개 중 실패 0(외부 MySQL 25개와 환경변수 기반 실제파일 2개 조건부 skip), 실제 한성대 PDF smoke 및 실제 HTTP workflow를 별도 통과했고 프론트 14개와 production build도 성공했다.
+- 실제 HTTP workflow 결과: multipart 제출 `201 CREATED` → 제출 직후 `INDETERMINATE` → 1차 관리자 승인 `AWAITING_SECOND_REVIEW` → 2차 독립 승인 `VERIFIED` → 졸업판정 `ELIGIBLE`.
+- 이 과정에서 H2 JSON 컬럼이 정책 JSON을 문자열로 반환하는 DB 왕복 문제를 발견했다. 평가기가 JSON 객체와 이중 인코딩된 기존 JSON 문자열을 모두 안전하게 읽도록 보완했다.
 
 ## 5. 운영 판정 기준
 

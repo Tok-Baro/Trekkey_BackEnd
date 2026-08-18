@@ -198,6 +198,21 @@ class GraduationEvaluationServiceImplTest {
                 .containsExactly(RequirementStatus.UNKNOWN);
     }
 
+    @Test
+    void readsJsonParametersReturnedAsAJsonStringAfterDatabaseRoundTrip() throws Exception {
+        GraduationRequirement totalCredits = requirements.stream()
+                .filter(item -> item.getRuleType() == GraduationRuleType.TOTAL_CREDITS_MIN)
+                .findFirst().orElseThrow();
+        ReflectionTestUtils.setField(totalCredits, "parametersJson",
+                new ObjectMapper().writeValueAsString("{\"min\":130}"));
+
+        GraduationEvaluationRes result = service.evaluate(10L, LocalDate.of(2026, 8, 11));
+
+        assertThat(result.requirements()).filteredOn(item -> item.code().equals("TOTAL_CREDITS_MIN"))
+                .extracting(GraduationEvaluationRes.RequirementResult::status)
+                .containsExactly(RequirementStatus.SATISFIED);
+    }
+
     private Fixture fixture() {
         Organization organization = BeanUtils.instantiateClass(Organization.class);
         ReflectionTestUtils.setField(organization, "id", 1L);
