@@ -21,10 +21,10 @@ public class PublicCredentialPackageController {
     private final CredentialPackageService credentialPackageService;
     private final CredentialCertificateService credentialCertificateService;
 
-    // Portable Credential Package 다운로드 — 무작위 publicId만 알면 누구나 (공개 검증과 동일 접근 규칙, erd-mvp §12·§13)
+    // 공개 검증 package — canonical 원문·file manifest는 제외하고 공개 허용 요약과 proof만 제공한다.
     @GetMapping("/{credentialPublicId}/package")
     public ResponseEntity<byte[]> downloadPackage(@PathVariable String credentialPublicId) {
-        CredentialPackageFile packageFile = credentialPackageService.buildPackage(credentialPublicId);
+        CredentialPackageFile packageFile = credentialPackageService.buildPublicPackage(credentialPublicId);
 
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
