@@ -1,14 +1,11 @@
 package com.api.trekkey.domain.credential.service;
 
 import com.api.trekkey.domain.credential.entity.AncBatch;
-import com.api.trekkey.domain.credential.entity.AncCredential;
-import com.api.trekkey.domain.credential.exception.CredentialErrorResponseCode;
 import com.api.trekkey.domain.credential.repository.AncBatchRepository;
-import com.api.trekkey.domain.credential.repository.AncCredentialRepository;
 import com.api.trekkey.domain.credential.service.dto.CredentialPackageFile;
 import com.api.trekkey.domain.credential.service.dto.CredentialVerificationView;
-import com.api.trekkey.global.exception.CustomException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -21,10 +18,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Portable Credential Package (erd-mvp §12·§13).
- * 학생이 학교 시스템과 무관하게 보관·재검증할 수 있는 증빙 묶음 —
- * canonical 원문, file manifest, Merkle proof, 앵커링 좌표, 발급자 승인, 현재 상태를 zip으로 담는다.
- * PDF 표시물은 §12 정의상 cryptographic source of truth가 아니므로 후속(상장 템플릿 확정 후)으로 둔다.
+ * 익명 공개 검증용 package.
+ *
+ * <p>공개 검증 응답과 같은 disclosure boundary를 유지한다. canonical Credential과 file manifest는
+ * 비공개 subject·원본 파일 메타데이터를 포함할 수 있으므로 이 package에 넣지 않는다. 학생 본인이
+ * 소유하는 전체 Portable Credential Package는 별도의 인증·소유권 경계로 제공해야 한다.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -32,23 +30,18 @@ import org.springframework.transaction.annotation.Transactional;
 public class CredentialPackageServiceImpl implements CredentialPackageService {
 
     private final CredentialVerificationService credentialVerificationService;
-    private final AncCredentialRepository credentialRepository;
     private final AncBatchRepository batchRepository;
     private final CredentialCertificateService credentialCertificateService;
     private final ObjectMapper objectMapper;
 
     @Override
-    public CredentialPackageFile buildPackage(String credentialPublicId) {
-        AncCredential credential = credentialRepository.findByPublicId(credentialPublicId)
-                .orElseThrow(() -> new CustomException(CredentialErrorResponseCode.CREDENTIAL_NOT_FOUND));
-        //검증 서비스가 hash·proof 재계산까지 끝낸 상태를 그대로 담는다 (§9와 동일 근거)
+    public CredentialPackageFile buildPublicPackage(String credentialPublicId) {
+        // 검증 서비스가 존재 여부와 hash·proof 재계산을 확인하고 공개 허용 필드만 반환한다.
         CredentialVerificationView view = credentialVerificationService.verify(credentialPublicId);
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         try (ZipOutputStream zip = new ZipOutputStream(buffer)) {
-            //§12 구성 파일 — credential.json은 발급 시점 canonical 원문 그대로
-            addEntry(zip, "credential.json", credential.getCanonicalBytes());
-            addEntry(zip, "file-manifest.json", credential.getFileManifestCanonicalBytes());
+            addEntry(zip, "public-credential.json", writeJson(publicCredentialJson(view)));
             addEntry(zip, "merkle-proof.json", writeJson(merkleProofJson(view)));
             addEntry(zip, "anchor.json", writeJson(anchorJson(view)));
             addEntry(zip, "issuer-approval.json", writeJson(issuerApprovalJson(view)));
@@ -61,11 +54,62 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
         }
 
         return new CredentialPackageFile(
-                "trekkey-credential-" + view.credentialNo() + ".zip",
+                "trekkey-public-verification-" + view.credentialNo() + ".zip",
                 buffer.toByteArray());
     }
 
     //======= 헬퍼 메서드 ==========
+
+    private ObjectNode publicCredentialJson(CredentialVerificationView view) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("disclosure", "CONSENTED_PUBLIC_SUMMARY");
+        node.put("credentialPublicId", view.credentialPublicId());
+        node.put("credentialNo", view.credentialNo());
+        node.put("credentialType", view.credentialType().name());
+        node.put("schemaProfileId", view.schemaProfileId());
+        node.put("issuerPublicId", view.issuerPublicId());
+        node.put("issuerName", view.issuerName());
+        node.put("issuedAt", view.issuedAt().toString());
+        node.put("expiresAt", view.expiresAt() == null ? null : view.expiresAt().toString());
+        node.set("publicDetails", publicDetailsJson(view.publicDetails()));
+
+        ArrayNode subjects = node.putArray("publicSubjects");
+        view.publicSubjects().forEach(subject -> subjects.add(publicSubjectJson(subject)));
+        node.put("verificationStatus", view.verificationStatus().name());
+        node.put("replacementCredentialPublicId", view.replacementCredentialPublicId());
+        node.put("notice", "공개 동의된 요약이며 canonical Credential 원문 또는 contentHash의 preimage가 아닙니다.");
+        return node;
+    }
+
+    private ObjectNode publicDetailsJson(CredentialVerificationView.PublicDetails details) {
+        ObjectNode node = objectMapper.createObjectNode();
+        if (details == null) {
+            return node;
+        }
+        node.put("sourceType", details.sourceType());
+        node.put("sourcePublicId", details.sourcePublicId());
+        node.put("finalizedAt", details.finalizedAt() == null ? null : details.finalizedAt().toString());
+        node.put("contestTitle", details.contestTitle());
+        node.put("teamName", details.teamName());
+        node.put("submissionTitle", details.submissionTitle());
+        node.put("prize", details.prize());
+        if (details.awardRankNo() == null) {
+            node.putNull("awardRankNo");
+        } else {
+            node.put("awardRankNo", details.awardRankNo());
+        }
+        return node;
+    }
+
+    private ObjectNode publicSubjectJson(CredentialVerificationView.PublicSubject subject) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("subjectRef", subject.subjectRef());
+        node.put("subjectType", subject.subjectType());
+        node.put("displayName", subject.displayName());
+        node.put("major", subject.major());
+        node.put("roleCode", subject.roleCode());
+        return node;
+    }
 
     private ObjectNode merkleProofJson(CredentialVerificationView view) {
         ObjectNode node = objectMapper.createObjectNode();
@@ -130,23 +174,24 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
 
     private String readme(CredentialVerificationView view) {
         return """
-                Trekkey Portable Credential Package
-                ===================================
+                Trekkey Public Verification Package
+                ====================================
                 credentialNo: %s
 
-                이 패키지는 학교 시스템과 무관하게 Credential을 재검증할 수 있는 증빙 묶음입니다.
+                이 패키지는 익명 공개 검증 페이지에 표시되는 범위의 요약과 암호학적 근거를 보관합니다.
+                개인정보가 포함될 수 있는 canonical Credential 원문과 file manifest는 포함하지 않습니다.
 
-                - credential.json      발급 시점에 고정된 canonical 원문 (RFC 8785 JCS)
-                - file-manifest.json   제출 파일 SHA-256 목록의 canonical 원문
+                - public-credential.json 공개 동의된 최소 요약 (canonical 원문 아님)
                 - merkle-proof.json    Merkle leaf·proof·root (OpenZeppelin StandardMerkleTree 호환)
                 - anchor.json          Kaia 앵커링 좌표 (chainId, contract, tx)
                 - issuer-approval.json 발급 학교의 EIP-712 배치 승인 서명
                 - status.json          패키지 생성 시점의 검증 상태
                 - rendered-certificate.pdf 사람용 표시물 (cryptographic source of truth 아님)
 
-                검증 방법: credential.json을 SHA-256 해시하면 merkle-proof.json의 contentHash와
-                일치해야 하고, leaf 재계산 후 proof를 따라가면 merkleRoot가 나오며,
-                그 root는 anchor.json의 컨트랙트에 기록된 값과 같아야 합니다.
+                이 공개 package만으로는 숨겨진 canonical 원문을 재구성하거나 contentHash를 다시 계산할 수
+                없습니다. 제공된 leaf와 proof로 batch 포함 여부를 확인하고, anchor.json의 컨트랙트에서
+                root·issuer·폐기·대체 상태를 조회할 수 있습니다. 전체 원문 독립 검증 package는 본인 인증과
+                소유권 확인이 적용된 별도 경계에서 제공해야 합니다.
                 """.formatted(view.credentialNo());
     }
 

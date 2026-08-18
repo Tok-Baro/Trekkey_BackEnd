@@ -72,10 +72,12 @@ src/main/java/com/api/trekkey
 | `POST` | `/api/admin/blockchain/status-events/{id}/approval/renew` | 만료·실패한 상태 승인 갱신 | `ADMIN` |
 | `POST` | `/api/admin/blockchain/status-events/{id}/reconcile` | 온체인 성공·로컬 실패 상태 수렴 | `ADMIN` |
 
-상세 요청·응답 스키마는 애플리케이션 실행 후 Swagger UI에서 확인할 수 있습니다.
+상세 요청·응답 스키마는 API 문서를 명시적으로 활성화한 개발 환경에서 확인할 수 있습니다.
+운영 기본값은 공개 공격 표면을 줄이기 위해 API 문서와 Swagger UI 모두 비활성화입니다.
 
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 - OpenAPI JSON: `http://localhost:8080/v3/api-docs`
+- 로컬 활성화: `SPRINGDOC_API_DOCS_ENABLED=true`, `SPRINGDOC_SWAGGER_UI_ENABLED=true`
 
 ## 실행 환경
 
@@ -94,9 +96,11 @@ src/main/java/com/api/trekkey
 | `JWT_SECRET_KEY` | Base64 인코딩된 64바이트 이상 JWT 서명 키 | 없음 |
 | `JWT_ACCESS_EXPIRATION` | access token 유효기간(초) | `1800` |
 | `JWT_REFRESH_EXPIRATION` | refresh token 유효기간(초) | `1209600` |
-| `JWT_REFRESH_COOKIE_NAME` | refresh cookie 이름 | `refreshToken` |
-| `JWT_REFRESH_COOKIE_SECURE` | HTTPS 전용 쿠키 여부 | `false` |
+| `JWT_REFRESH_COOKIE_NAME` | refresh cookie 이름 | `refresh` |
+| `JWT_REFRESH_COOKIE_SECURE` | HTTPS 전용 쿠키 여부 | `true` |
 | `JWT_REFRESH_COOKIE_SAME_SITE` | SameSite 정책 | `Lax` |
+| `SPRINGDOC_API_DOCS_ENABLED` | OpenAPI JSON 활성화 여부 | `false` |
+| `SPRINGDOC_SWAGGER_UI_ENABLED` | Swagger UI 활성화 여부 | `false` |
 | `BLOCKCHAIN_ANCHORING_MODE` | `DISABLED`, `READ_ONLY`, Kairos 전용 `LOCAL_RELAYER` | `DISABLED` |
 | `BLOCKCHAIN_CHAIN_ID` | Kaia chain ID | `1001` |
 | `BLOCKCHAIN_RPC_URL` | EVM JSON-RPC URL | Kairos public RPC |
