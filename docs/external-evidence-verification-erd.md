@@ -205,6 +205,7 @@ target type과 일치하는 FK가 정확히 하나여야 한다. `(decision_id, 
 
 - `verification_status`는 외부 요청으로 갱신하지 않고 binding service만 갱신한다.
 - `verification_assurance_level VARCHAR(5) NULL`과 `active_evidence_binding_id BIGINT NULL`을 추가한다.
+- MVP 구현은 `external_evidence_type VARCHAR(40)`과 `external_issuer_code VARCHAR(100)`도 저장한다. `OTHER` 비교과 안에서 자격증과 공모전 상장이 서로의 규칙을 충족하는 것을 막는다.
 - 외부 decision이 유효하면 현재 enum의 `DOCUMENT_VERIFIED`, 학교 원장 직접 확인은 `UNIVERSITY_VERIFIED`로 매핑한다.
 - `EXPIRED`, `REVOKED` decision이면 허위라는 뜻의 `REJECTED`로 덮지 않는다. 1차 구현에서는 binding을 해제하고 `SELF_REPORTED`로 낮추며 만료/철회 사유는 decision에 보존한다. 이후 enum을 확장하면 `EXPIRED`, `REVOKED`를 직접 노출할 수 있다.
 

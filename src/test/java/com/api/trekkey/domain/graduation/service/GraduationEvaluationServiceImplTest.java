@@ -152,6 +152,38 @@ class GraduationEvaluationServiceImplTest {
                         .isEqualTo("GRADUATION_EVALUATION_INPUT_CHANGED"));
     }
 
+    @Test
+    void minimumAssuranceLevelPreventsWeakDocumentFromSatisfyingRule() {
+        GraduationRequirement topik = requirements.stream()
+                .filter(item -> item.getRuleType() == GraduationRuleType.TOPIK_LEVEL_MIN).findFirst().orElseThrow();
+        ReflectionTestUtils.setField(topik, "parametersJson", "{\"min\":4,\"minimumAssuranceLevel\":\"L3\"}");
+
+        GraduationEvaluationRes result = service.evaluate(10L, LocalDate.of(2026, 8, 11));
+
+        assertThat(result.requirements()).filteredOn(item -> item.code().equals("TOPIK_LEVEL_MIN"))
+                .extracting(GraduationEvaluationRes.RequirementResult::status)
+                .containsExactly(RequirementStatus.UNKNOWN);
+    }
+
+    @Test
+    void contestAwardCannotSatisfyQualificationRequirementStoredAsOther() {
+        StudentNonCourseRecord qualification = nonCourse(profile, NonCourseRecordType.OTHER, null, 131L);
+        ReflectionTestUtils.setField(qualification, "verificationAssuranceLevel", "L2");
+        ReflectionTestUtils.setField(qualification, "externalEvidenceType", "QUALIFICATION");
+        ReflectionTestUtils.setField(qualification, "externalIssuerCode", "HRDK_QNET");
+        given(nonCourseRepository.findAllByProfileUserIdOrderById(10L)).willReturn(List.of(qualification));
+        GraduationRequirement evidence = requirements.stream()
+                .filter(item -> item.getRuleType() == GraduationRuleType.EVIDENCE_VERIFIED).findFirst().orElseThrow();
+        ReflectionTestUtils.setField(evidence, "parametersJson",
+                "{\"recordType\":\"OTHER\",\"evidenceType\":\"CONTEST_AWARD\",\"minimumAssuranceLevel\":\"L2\"}");
+
+        GraduationEvaluationRes result = service.evaluate(10L, LocalDate.of(2026, 8, 11));
+
+        assertThat(result.requirements()).filteredOn(item -> item.code().equals("EVIDENCE_VERIFIED"))
+                .extracting(GraduationEvaluationRes.RequirementResult::status)
+                .containsExactly(RequirementStatus.UNKNOWN);
+    }
+
     private Fixture fixture() {
         Organization organization = BeanUtils.instantiateClass(Organization.class);
         ReflectionTestUtils.setField(organization, "id", 1L);

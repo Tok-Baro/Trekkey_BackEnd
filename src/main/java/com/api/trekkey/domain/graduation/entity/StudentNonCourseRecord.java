@@ -44,6 +44,15 @@ public class StudentNonCourseRecord extends GraduationPublicEntity {
     @Column(name = "verification_status", nullable = false, length = 30)
     private VerificationStatus verificationStatus;
 
+    @Column(name = "verification_assurance_level", length = 5)
+    private String verificationAssuranceLevel;
+
+    @Column(name = "external_evidence_type", length = 40)
+    private String externalEvidenceType;
+
+    @Column(name = "external_issuer_code", length = 100)
+    private String externalIssuerCode;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "verified_by")
     private User verifiedBy;

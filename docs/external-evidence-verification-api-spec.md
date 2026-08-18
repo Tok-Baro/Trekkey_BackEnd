@@ -1,5 +1,21 @@
 # 외부 증빙 검증 API 및 프론트 계약
 
+## 구현 상태 (2026-08-18)
+
+수동 검증 MVP는 다음 API로 구현됐다.
+
+- `POST /api/me/evidence-submissions`: `request` JSON part와 `file` part를 받는 multipart 제출
+- `GET /api/me/evidence-submissions`, `GET /api/me/evidence-submissions/{publicId}`
+- `GET /api/me/evidence-files/{filePublicId}/download`
+- `GET /api/admin/evidence-verifications?status=...`
+- `GET /api/admin/evidence-verifications/{casePublicId}`
+- `POST /api/admin/evidence-verifications/{casePublicId}/reviews`
+- `GET /api/admin/evidence-verifications/files/{filePublicId}/download`
+
+현재 로컬 `FileStoragePort` 특성상 아래 2.2~2.3의 presigned upload 대신 10MB 이하 PDF/JPEG/PNG 한 파일을 애플리케이션 서버로 전송한다. 운영 object storage adapter가 도입되면 설계된 3단계 upload로 전환한다. 현재 `FORMAT_VALIDATED`는 magic byte·크기·해시 검사를 뜻하며 악성코드 검사를 뜻하지 않는다.
+
+모든 수동 검증은 `L2`이며 서로 다른 두 관리자의 판정이 일치해야 한다. 두 승인은 `VERIFIED`, 두 반려는 `REJECTED`, 의견 불일치는 `INCONCLUSIVE`다. 최종 승인 시에만 `StudentNonCourseRecord(DOCUMENT_VERIFIED, L2)`와 binding을 생성한다.
+
 ## 1. 공통 원칙
 
 - Base URL: `/api`
@@ -11,6 +27,29 @@
 - 상태 변경 API는 idempotency key와 optimistic version을 사용한다.
 
 ## 2. 학생 API
+
+### 2.0 현재 MVP multipart 제출
+
+`POST /api/me/evidence-submissions`
+
+- `request`: `application/json`
+- `file`: `application/pdf`, `image/jpeg`, `image/png`, 최대 10MB
+
+```json
+{
+  "evidenceType": "QUALIFICATION",
+  "targetRecordType": "OTHER",
+  "title": "정보처리기사",
+  "issuerName": "한국산업인력공단",
+  "issuerCode": "HRDK_QNET",
+  "credentialNumber": "CERT-1234",
+  "numericValue": null,
+  "issuedAt": "2026-06-12",
+  "expiresAt": null
+}
+```
+
+자격번호 원문은 저장하지 않는다. 정규화 값의 HMAC-SHA256과 마지막 네 자리만 저장하며 운영 환경에는 32자 이상의 `EVIDENCE_LOOKUP_HMAC_SECRET`을 별도로 설정한다.
 
 ### 2.1 제출 초안 생성
 

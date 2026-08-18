@@ -2,7 +2,20 @@
 
 ## 1. 범위와 결과
 
-검증 대상은 신뢰 모델, ERD, API/프론트 계약과 기존 졸업요건·Credential 구조의 연결이다. 구현 전 설계 QA이므로 실제 외부 기관 응답과 부하 수치는 검증 대상이 아니다.
+검증 대상은 신뢰 모델, ERD, API/프론트 계약과 기존 졸업요건·Credential 구조의 연결이다. 2026-08-18 수동검증 MVP 구현 후 코드·HTTP 계약·회귀 테스트를 같은 세 관점으로 다시 수행했다. 실제 외부 기관 응답과 부하 수치는 아직 검증 대상이 아니다.
+
+### 구현 QA 결과
+
+| cycle | 실행 | 결과 |
+| --- | --- | --- |
+| 1 | 파일 magic byte/크기, 2인 합의, 동일 관리자 재검수 단위 테스트 | 통과 |
+| 2 | assurance 최소값 및 `OTHER` 안의 자격증/공모전 유형 오인정 회귀 테스트 | 통과 |
+| 3 | 실제 multipart MockMvc, 참가자/관리자 역할 분리, 전체 Gradle 회귀 테스트 | 통과 |
+
+- 대상 테스트: evidence 도메인 + `GraduationEvaluationServiceImplTest`
+- 전체 회귀: duplicate `* 2.java`를 source set에서 제외하고 651개 실행, 25개 외부 MySQL 조건부 skip, 실패 0
+- 전체 테스트에는 기존 프로젝트가 요구하는 JWT expiration, front URL, CORS, upload directory 환경값을 명시했다.
+- 프론트는 학생 제출·상태 화면과 관리자 1·2차 검수 화면을 추가하고 `npm test`, `npm run build`를 통과했다.
 
 | cycle | 관점 | 발견 | 조치 | 결과 |
 | --- | --- | --- | --- | --- |

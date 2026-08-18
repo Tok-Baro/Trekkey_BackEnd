@@ -281,7 +281,7 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
     private Outcome topik(GraduationRequirement r, JsonNode p, List<StudentNonCourseRecord> records) {
         BigDecimal min = decimal(p, "min");
         List<StudentNonCourseRecord> topik = records.stream().filter(record -> record.getRecordType() == NonCourseRecordType.TOPIK).toList();
-        Optional<BigDecimal> verified = topik.stream().filter(record -> isVerified(record.getVerificationStatus()))
+        Optional<BigDecimal> verified = topik.stream().filter(record -> isVerified(record, p))
                 .map(StudentNonCourseRecord::getNumericValue).filter(Objects::nonNull).max(BigDecimal::compareTo);
         if (verified.isPresent()) return minimum(r, verified.get(), min, "TOPIK 급수");
         return outcome(r, RequirementStatus.UNKNOWN, topik.stream().map(StudentNonCourseRecord::getNumericValue)
@@ -299,8 +299,17 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
             return outcome(r, RequirementStatus.UNKNOWN, "UNVERIFIED", "VERIFIED", null, "학교 확인이 필요합니다.");
         }
         NonCourseRecordType recordType = NonCourseRecordType.valueOf(text(p, "recordType"));
-        List<StudentNonCourseRecord> matched = records.stream().filter(record -> record.getRecordType() == recordType).toList();
-        if (matched.stream().anyMatch(record -> isVerified(record.getVerificationStatus())))
+        if (p.has("issuerCodes") && !p.get("issuerCodes").isArray()) {
+            throw new CustomException(GraduationErrorResponseCode.GRADUATION_RULE_INVALID);
+        }
+        List<StudentNonCourseRecord> matched = records.stream()
+                .filter(record -> record.getRecordType() == recordType)
+                .filter(record -> !p.hasNonNull("evidenceType")
+                        || p.get("evidenceType").asText().equals(record.getExternalEvidenceType()))
+                .filter(record -> !p.has("issuerCodes")
+                        || containsText(p.get("issuerCodes"), record.getExternalIssuerCode()))
+                .toList();
+        if (matched.stream().anyMatch(record -> isVerified(record, p)))
             return outcome(r, RequirementStatus.SATISFIED, "VERIFIED", "VERIFIED", "0", "증빙 확인이 완료됐습니다.");
         if (matched.stream().anyMatch(record -> record.getVerificationStatus() == VerificationStatus.REJECTED))
             return outcome(r, RequirementStatus.UNSATISFIED, "REJECTED", "VERIFIED", "1", "증빙이 반려됐습니다.");
@@ -350,6 +359,38 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
 
     private boolean isVerified(VerificationStatus status) {
         return status == VerificationStatus.DOCUMENT_VERIFIED || status == VerificationStatus.UNIVERSITY_VERIFIED;
+    }
+
+    private boolean isVerified(StudentNonCourseRecord record, JsonNode parameters) {
+        if (!isVerified(record.getVerificationStatus())) return false;
+        int required = assuranceRank(parameters.hasNonNull("minimumAssuranceLevel")
+                ? parameters.get("minimumAssuranceLevel").asText() : "L0");
+        int achieved;
+        if (record.getVerificationStatus() == VerificationStatus.UNIVERSITY_VERIFIED) {
+            achieved = 3;
+        } else if (record.getVerificationAssuranceLevel() == null) {
+            achieved = 1;
+        } else {
+            achieved = assuranceRank(record.getVerificationAssuranceLevel());
+        }
+        return achieved >= required;
+    }
+
+    private int assuranceRank(String level) {
+        return switch (level) {
+            case "L0" -> 0;
+            case "L1" -> 1;
+            case "L2" -> 2;
+            case "L3" -> 3;
+            case "L4" -> 4;
+            default -> throw new CustomException(GraduationErrorResponseCode.GRADUATION_RULE_INVALID);
+        };
+    }
+
+    private boolean containsText(JsonNode array, String value) {
+        if (value == null) return false;
+        for (JsonNode item : array) if (value.equals(item.asText())) return true;
+        return false;
     }
 
     private JsonNode parameters(GraduationRequirement requirement) {

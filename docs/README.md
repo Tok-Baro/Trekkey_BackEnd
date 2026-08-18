@@ -64,6 +64,6 @@
 
 ## 현재 구현 범위
 
-공모전 참여, 최종 제출 작품, 0..N개의 Review Round, 팀 수상 Credential과 한성대학교 졸업요건 검사가 구현돼 있다. 현재 코드는 대회·팀·제출·심사·수상과 Credential·Merkle·Solidity·Kaia adapter가 함께 있고, 수상 확정에서 Credential 발급까지 연결돼 있다. 팀원 등록·학번 검색 API도 포함됐다. 리뷰 실행 원장은 `REVIEW_ROUND`/`REVIEW_ROUND_ENTRY`로 전환됐고, 신청·제출 같은 비리뷰 일정만 `CONTEST_STAGE`에 남아 있다. 외부 증빙 검증은 이번 문서 세트의 설계 범위이며 아직 구현되지 않았다. `origin/develop`의 구형 리뷰 stage 구조는 기존 DB 마이그레이션 기준이다.
+공모전 참여, 최종 제출 작품, 0..N개의 Review Round, 팀 수상 Credential과 한성대학교 졸업요건 검사가 구현돼 있다. 외부 증빙은 학생 multipart 제출, 파일 시그니처·크기·SHA-256 확인, 조직 범위 관리자 queue, 서로 다른 관리자 2인 검수, `L2/DOCUMENT_VERIFIED` 비교과 기록 연결까지 구현됐다. 공식기관 API·전자서명·악성코드 엔진·OCR·만료 후 자동 철회는 후속 단계다. 현재 코드는 대회·팀·제출·심사·수상과 Credential·Merkle·Solidity·Kaia adapter가 함께 있고, 수상 확정에서 Credential 발급까지 연결돼 있다. 리뷰 실행 원장은 `REVIEW_ROUND`/`REVIEW_ROUND_ENTRY`로 전환됐고, 신청·제출 같은 비리뷰 일정만 `CONTEST_STAGE`에 남아 있다. `origin/develop`의 구형 리뷰 stage 구조는 기존 DB 마이그레이션 기준이다.
 
 문서와 구현이 충돌하면 임의로 해석하지 말고 ERD 결정사항을 먼저 갱신한다. 특히 hash 입력, schema profile, Merkle tree version은 배포 후 조용히 변경하면 안 된다.
