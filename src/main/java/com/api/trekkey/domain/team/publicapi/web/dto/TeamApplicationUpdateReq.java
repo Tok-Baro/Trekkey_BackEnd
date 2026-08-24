@@ -21,7 +21,6 @@ public record TeamApplicationUpdateReq(
         String major,
 
         @NotNull(message = "팀원 목록을 입력해주세요.")
-        @Size(max = 4, message = "팀원은 대표자를 제외하고 4명 이하여야 합니다.")
         List<
                 @NotNull(message = "팀원 식별자는 비어 있을 수 없습니다.")
                 @Positive(message = "팀원 식별자는 양수여야 합니다.")

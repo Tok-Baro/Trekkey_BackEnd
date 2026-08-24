@@ -401,7 +401,7 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
     }
 
     private void validateMemberCount(Contest contest, List<Long> memberUserIds) {
-        if (memberUserIds.size() > 4
+        if (memberUserIds.size() + 1 > contest.getMaxTeamMembers()
                 || (contest.getParticipationType() == ParticipationType.INDIVIDUAL
                         && !memberUserIds.isEmpty())) {
             throw new CustomException(TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_COUNT_INVALID);
@@ -437,7 +437,7 @@ public class TeamApplicationServiceImpl implements TeamApplicationService {
         Set<Long> finalMemberUserIds = new HashSet<>();
         currentMembers.forEach(member -> finalMemberUserIds.add(member.getUser().getId()));
         requestedMembers.forEach(member -> finalMemberUserIds.add(member.getId()));
-        if (finalMemberUserIds.size() > 4) {
+        if (finalMemberUserIds.size() + 1 > team.getContest().getMaxTeamMembers()) {
             throw new CustomException(
                     TeamErrorResponseCode.TEAM_APPLICATION_MEMBER_COUNT_INVALID);
         }
