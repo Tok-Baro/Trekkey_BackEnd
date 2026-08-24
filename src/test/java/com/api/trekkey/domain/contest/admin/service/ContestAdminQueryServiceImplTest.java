@@ -253,6 +253,7 @@ class ContestAdminQueryServiceImplTest {
 
         assertThat(response.id()).isEqualTo("contest-public-id");
         assertThat(response.status()).isEqualTo(ContestStatus.PREPARING);
+        assertThat(response.maxTeamMembers()).isEqualTo(7);
         assertThat(response.detailHtml()).isEqualTo("<p>상세 안내</p>");
         assertThat(response.applicationStartsAt())
                 .isEqualTo(application.getStartsAt());
@@ -380,6 +381,7 @@ class ContestAdminQueryServiceImplTest {
                 .department("SW중심대학사업단")
                 .status(ContestStatus.PREPARING)
                 .participationType(ParticipationType.BOTH)
+                .maxTeamMembers(7)
                 .awardCount(3)
                 .posterUrl("https://example.com/poster.png")
                 .summary("AI로 해결하는 캠퍼스 문제")

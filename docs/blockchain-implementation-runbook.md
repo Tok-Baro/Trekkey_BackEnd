@@ -371,6 +371,25 @@ curl -sS \
 
 응답의 `issuerId`, `credentialIdHash`, `schemaVersionHash`, `contentHash`, `fileManifestHash`, `leafHash`, `batchIdHash`, `merkleRoot`, `treeVersion`, `merkleProof`로 제3자가 Merkle membership을 재검산할 수 있다. 비공개 subject가 포함된 canonical 원문 전체는 공개 API에 노출하지 않는다.
 
+외부 사용자는 Trekkey 계정이나 Kaia 지갑 없이 프론트의 공개 경로로
+검증한다.
+
+```text
+/verify                         검증 코드 또는 QR 링크 입력
+/verify/{credentialPublicId}    QR에서 바로 여는 검증 결과
+```
+
+결과 화면은 먼저 발급기관, 증명 종류, 대회, 팀, 작품, 상격, 공개 대상자와
+현재 효력을 일반 용어로 보여준다. 이 표시는 검증을 통과한 canonical
+Credential의 `source.snapshot`과 `subjects`에서만 만들며, 현재 업무
+테이블을 다시 조회해 덮어쓰지 않는다. 따라서 화면에 보이는 수상 내용도
+`contentHash`와 Merkle root로 보호된다. 해시, proof, chain ID, contract와
+transaction hash는 제3자 재검산을 위한 기술 상세로 접어서 제공한다.
+
+공개 API와 화면에는 학번, 이메일, 비공개 subject, canonical 원문 전체를
+노출하지 않는다. 학번 기반 전체 이력 조회는 본인 또는 학교 관리자 인증이
+필요한 별도 기능으로 유지한다.
+
 ## 11. 폐기와 대체
 
 폐기 요청:

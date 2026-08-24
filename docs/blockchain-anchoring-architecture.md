@@ -629,9 +629,27 @@ QR에는 학번이나 전체 proof를 넣지 않는다. 기본 QR은 HTTPS URL�
 
 replacement Credential ID hash는 0일 수 없고, 이미 `REVOKED` 또는 `SUPERSEDED`인 Credential에 상태를 덮어쓰지 않는다.
 
-## 21. Portable Credential Package
+## 21. 공개 검증 Package와 학생 소유 Portable Package
 
-장기 검증을 위해 학생이 소유할 수 있는 package를 제공한다.
+익명 공개 경로와 학생 본인 소유 경로의 disclosure boundary를 분리한다.
+
+현재 익명 공개 경로는 공개 동의된 최소 요약과 암호학적 근거만 제공한다.
+
+```text
+public-credential.json
+merkle-proof.json
+anchor.json
+issuer-approval.json
+status.json
+rendered-certificate.pdf
+```
+
+`public-credential.json`은 canonical Credential 원문이나 `contentHash`의 preimage가 아니다.
+공개 package만으로는 숨겨진 원문을 복구하거나 content hash를 재계산할 수 없지만, 제공된
+leaf·proof의 batch 포함 여부와 온체인 issuer·폐기·대체 상태는 확인할 수 있다.
+
+장기 독립 검증을 위한 학생 소유 Portable Package는 본인 인증과 Credential 소유권 확인 뒤
+별도 경로로 제공해야 한다. 이 package에는 다음 파일이 포함된다.
 
 ```text
 credential.json
@@ -653,7 +671,9 @@ rendered-certificate.pdf
 - EIP-712 typed data와 issuer signature
 - schema profile ID와 hash
 
-PDF는 사람이 보는 표시물이며 cryptographic source of truth가 아니다. 원본 파일은 크기와 공개 정책에 따라 package에 포함하거나 SHA-256 manifest만 포함한다.
+canonical Credential과 file manifest는 익명 공개 package에 절대 포함하지 않는다. 학생 소유
+package의 PDF는 사람이 보는 표시물이며 cryptographic source of truth가 아니다. 원본 파일은
+크기와 공개 정책에 따라 소유자 package에 포함하거나 SHA-256 manifest만 포함한다.
 
 ## 22. 학교별 서버와 중앙 서버
 

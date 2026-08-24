@@ -53,6 +53,15 @@ class PublicCredentialControllerTest {
                         "Trekkey University",
                         Instant.parse("2026-07-20T00:00:00Z"),
                         null,
+                        new CredentialVerificationView.PublicDetails(
+                                "AWARD",
+                                "award-public-1",
+                                Instant.parse("2026-07-20T00:00:00Z"),
+                                "2026 Trekkey Contest",
+                                null,
+                                "Verification Service",
+                                "Grand Prize",
+                                1),
                         List.of(),
                         new CredentialVerificationView.Evidence(
                                 true,
@@ -85,6 +94,8 @@ class PublicCredentialControllerTest {
                 .andExpect(jsonPath("$.code").value("SUCCESS_200"))
                 .andExpect(jsonPath("$.httpStatus").value(200))
                 .andExpect(jsonPath("$.data.verificationStatus").value("VALID"))
+                .andExpect(jsonPath("$.data.publicDetails.contestTitle").value("2026 Trekkey Contest"))
+                .andExpect(jsonPath("$.data.publicDetails.prize").value("Grand Prize"))
                 .andExpect(jsonPath("$.data.credentialPublicId").value("cred-public-1"));
     }
 

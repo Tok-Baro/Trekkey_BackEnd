@@ -13,6 +13,10 @@ public enum ContestErrorResponseCode implements BaseResponseCode {
             "CONTEST_STATUS_LOCKED",
             409,
             "수상 확정 상태는 수상 확정 절차에서만 변경할 수 있습니다."),
+    CONTEST_MAX_TEAM_MEMBERS_INVALID(
+            "CONTEST_MAX_TEAM_MEMBERS_INVALID",
+            400,
+            "개인전은 최대 참가 인원을 1명으로, 그 외 유형은 1명 이상으로 설정해야 합니다."),
     STAGE_NOT_FOUND("STAGE_NOT_FOUND", 404, "평가 단계를 찾을 수 없습니다."),
     STAGE_DUPLICATED("STAGE_DUPLICATED", 409, "같은 단계가 요청에 중복되어 있습니다."),
     SUBMISSION_STAGE_DUPLICATED(

@@ -533,9 +533,23 @@ stateDiagram-v2
 - contract allowlist, function selector, value zero, gas cap, 전송 전 eth_call을 검사한다.
 - 운영 RPC는 두 provider 이상을 사용하고 receipt, event, block hash를 교차 확인할 수 있게 한다.
 - SQL 백업 복구 훈련과 객체 저장소 versioning을 운영한다.
-- 학생이 소유할 Portable Credential Package를 제공한다.
+- 익명 공개 검증 package와 학생 본인 소유 Portable Credential Package를 분리한다.
 
-### Portable Credential Package
+### 공개 검증 Package
+
+```text
+public-credential.json
+merkle-proof.json
+anchor.json
+issuer-approval.json
+status.json
+rendered-certificate.pdf
+```
+
+공개 package는 공개 동의된 요약과 proof만 포함하며 canonical Credential과 file manifest를
+포함하지 않는다.
+
+### 학생 소유 Portable Credential Package
 
 ```
 credential.json
@@ -547,14 +561,17 @@ status.json
 rendered-certificate.pdf
 ```
 
-PDF는 사람이 읽는 표시물이고 cryptographic source of truth가 아니다. canonical bytes, proof, chain ID, contract address, schema profile을 함께 보존해야 한다.
+학생 본인 인증과 Credential 소유권 확인이 필수다. PDF는 사람이 읽는 표시물이고 cryptographic
+source of truth가 아니다. canonical bytes, proof, chain ID, contract address, schema profile을 함께
+보존해야 한다.
 
 ## 13. API 경계
 
 ```
 GET /api/v1/credentials/{publicId}
 GET /api/v1/credentials/{publicId}/verify
-GET /api/v1/credentials/{publicId}/package
+GET /api/public/credentials/{publicId}/package
+GET /api/me/credentials/{publicId}/portable-package  # 후속: 본인 인증·소유권 확인
 
 GET /api/v1/organizations/{organizationId}/students/{studentId}/credentials
 GET /api/v1/contests/{contestPublicId}/credentials
