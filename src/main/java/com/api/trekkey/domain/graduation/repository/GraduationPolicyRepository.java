@@ -8,5 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface GraduationPolicyRepository extends JpaRepository<GraduationPolicy, Long> {
     Optional<GraduationPolicy> findByPublicIdAndOrganizationId(String publicId, Long organizationId);
+    Optional<GraduationPolicy> findByOrganizationIdAndPolicyCodeAndVersionNo(Long organizationId, String policyCode, int versionNo);
     List<GraduationPolicy> findAllByOrganizationIdAndStatus(Long organizationId, PolicyStatus status);
 }

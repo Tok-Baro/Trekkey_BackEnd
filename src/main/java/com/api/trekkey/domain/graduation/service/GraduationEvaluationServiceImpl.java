@@ -21,6 +21,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -28,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class GraduationEvaluationServiceImpl implements GraduationEvaluationService {
     private static final String HANSUNG_CODE = "HANSUNG_UNIVERSITY";
+    private static final int TOPIK_GRADUATION_REQUIREMENT_FROM_ADMISSION_YEAR = 2012;
     private static final String DISCLAIMER = "자가점검 결과이며 한성대학교의 공식 졸업사정을 대체하지 않습니다.";
     private static final String EVALUATOR_VERSION = "hansung-v1";
 
@@ -42,6 +44,12 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
     private final GraduationEvaluationItemRepository evaluationItemRepository;
     private final ObjectMapper objectMapper;
 
+    @Autowired(required = false)
+    private TrekkeyGraduationEvidenceSyncService trekkeyEvidenceSyncService;
+
+    @Autowired(required = false)
+    private HansungGraduationPolicyBootstrapService policyBootstrapService;
+
     @Override
     public GraduationEvaluationRes evaluate(Long userId, LocalDate requestedAsOf) {
         LocalDate asOf = requestedAsOf == null ? LocalDate.now() : requestedAsOf;
@@ -53,6 +61,14 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
                         GraduationErrorResponseCode.GRADUATION_PROFILE_NOT_CONFIGURED));
         if (!HANSUNG_CODE.equals(profile.getUser().getOrganization().getCode())) {
             throw new CustomException(GraduationErrorResponseCode.GRADUATION_UNSUPPORTED_ORGANIZATION);
+        }
+
+        if (policyBootstrapService != null) {
+            policyBootstrapService.ensure(profile.getUser());
+        }
+
+        if (trekkeyEvidenceSyncService != null) {
+            trekkeyEvidenceSyncService.sync(userId);
         }
 
         List<StudentAcademicUnit> units = academicUnitRepository.findAllByProfileIdOrderBySequenceNo(profile.getId());
@@ -124,6 +140,9 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
     private List<GraduationPolicy> resolvePolicies(
             StudentAcademicProfile profile, List<StudentAcademicUnit> units, LocalDate asOf) {
         Set<Long> selectedUnitIds = units.stream().map(unit -> unit.getAcademicUnit().getId()).collect(Collectors.toSet());
+        LocalDate expectedGraduation = profile.getExpectedGraduationYear() == null
+                || profile.getExpectedGraduationMonth() == null ? null
+                : LocalDate.of(profile.getExpectedGraduationYear(), profile.getExpectedGraduationMonth(), 1);
         List<GraduationPolicy> policies = policyRepository
                 .findAllByOrganizationIdAndStatus(profile.getUser().getOrganization().getId(), PolicyStatus.PUBLISHED)
                 .stream()
@@ -134,6 +153,10 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
                 .filter(policy -> policy.getMajorPlanType() == null || policy.getMajorPlanType() == profile.getMajorPlanType())
                 .filter(policy -> !policy.getEffectiveFrom().isAfter(asOf))
                 .filter(policy -> policy.getEffectiveTo() == null || !policy.getEffectiveTo().isBefore(asOf))
+                .filter(policy -> policy.getExpectedGraduationFrom() == null
+                        || expectedGraduation != null && !expectedGraduation.isBefore(policy.getExpectedGraduationFrom()))
+                .filter(policy -> policy.getExpectedGraduationTo() == null
+                        || expectedGraduation != null && !expectedGraduation.isAfter(policy.getExpectedGraduationTo()))
                 .filter(policy -> policy.getAcademicUnit() == null || selectedUnitIds.contains(policy.getAcademicUnit().getId()))
                 .sorted(Comparator.comparing(GraduationPolicy::getPolicyCode).thenComparingInt(GraduationPolicy::getVersionNo))
                 .toList();
@@ -173,11 +196,19 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
         if (children.isEmpty() || requirement.getOperatorType() == null) {
             throw new CustomException(GraduationErrorResponseCode.GRADUATION_RULE_INVALID);
         }
-        long sat = children.stream().filter(child -> child.status == RequirementStatus.SATISFIED).count();
-        long unknown = children.stream().filter(child -> child.status == RequirementStatus.UNKNOWN).count();
+        List<Outcome> applicable = children.stream()
+                .filter(child -> child.status != RequirementStatus.NOT_APPLICABLE)
+                .toList();
+        if (applicable.isEmpty()) {
+            return new Outcome(requirement, RequirementStatus.NOT_APPLICABLE, "0",
+                    requirement.getOperatorType().name(), null,
+                    requirement.getTitle() + " 그룹은 현재 학생에게 적용되지 않습니다.", null);
+        }
+        long sat = applicable.stream().filter(child -> child.status == RequirementStatus.SATISFIED).count();
+        long unknown = applicable.stream().filter(child -> child.status == RequirementStatus.UNKNOWN).count();
         RequirementStatus status = switch (requirement.getOperatorType()) {
-            case ALL -> sat == children.size() ? RequirementStatus.SATISFIED
-                    : unknown > 0 && sat + unknown == children.size() ? RequirementStatus.UNKNOWN
+            case ALL -> sat == applicable.size() ? RequirementStatus.SATISFIED
+                    : unknown > 0 && sat + unknown == applicable.size() ? RequirementStatus.UNKNOWN
                     : RequirementStatus.UNSATISFIED;
             case ANY -> sat > 0 ? RequirementStatus.SATISFIED
                     : unknown > 0 ? RequirementStatus.UNKNOWN : RequirementStatus.UNSATISFIED;
@@ -222,10 +253,12 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
             case ACADEMIC_UNIT_CREDITS_MIN -> academicUnitCredits(requirement, p, units, courses);
             case COURSE_ALL -> coursesRequired(requirement, p, courses, true);
             case COURSE_ANY -> coursesRequired(requirement, p, courses, false);
+            case COURSE_NAME_ANY -> courseNameAny(requirement, p, courses);
             case DISTRIBUTION_AREAS_MIN -> distributionAreas(requirement, p, courses);
             case GRADUATE_COURSE_CREDITS_MIN -> categoryCredits(requirement, courses, CourseCategory.GRADUATE_COURSE, decimal(p, "min"));
             case NO_FAIL_GRADE -> noFail(requirement, profile);
-            case TOPIK_LEVEL_MIN -> topik(requirement, p, nonCourses);
+            case TOPIK_LEVEL_MIN -> topik(requirement, p, profile, nonCourses);
+            case NON_COURSE_VALUE_MIN -> nonCourseValueMinimum(requirement, p, nonCourses);
             case EVIDENCE_VERIFIED -> evidence(requirement, p, units, nonCourses);
             case MANUAL_REVIEW -> outcome(requirement, RequirementStatus.UNKNOWN, null, null, null, "학교 담당자의 확인이 필요한 항목입니다.");
         };
@@ -263,6 +296,29 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
                 String.valueOf(matched), all ? String.valueOf(required.size()) : "1", satisfied ? "0" : "1", satisfied ? "필수과목 조건을 충족했습니다." : "필수과목 조건을 충족하지 못했습니다.");
     }
 
+    private Outcome courseNameAny(GraduationRequirement r, JsonNode p, List<StudentCourseRecord> courses) {
+        Set<String> required = strings(p, "courseNames").stream().map(this::normalizeCourseName).collect(Collectors.toSet());
+        Optional<String> matched = completed(courses).map(StudentCourseRecord::getCourseName)
+                .filter(Objects::nonNull).filter(name -> required.contains(normalizeCourseName(name))).findFirst();
+        return outcome(r, matched.isPresent() ? RequirementStatus.SATISFIED : RequirementStatus.UNSATISFIED,
+                matched.orElse("미이수"), "지정 교과목 1개", matched.isPresent() ? "0" : "1",
+                matched.isPresent() ? "지정 교과목을 이수했습니다." : "지정 교과목 이수가 필요합니다.");
+    }
+
+    private Outcome nonCourseValueMinimum(
+            GraduationRequirement r, JsonNode p, List<StudentNonCourseRecord> records) {
+        NonCourseRecordType type = NonCourseRecordType.valueOf(text(p, "recordType"));
+        BigDecimal min = decimal(p, "min");
+        List<StudentNonCourseRecord> matched = records.stream().filter(record -> record.getRecordType() == type).toList();
+        Optional<BigDecimal> verified = matched.stream().filter(record -> isVerified(record, p))
+                .map(StudentNonCourseRecord::getNumericValue).filter(Objects::nonNull).max(BigDecimal::compareTo);
+        if (verified.isPresent()) return minimum(r, verified.get(), min, type.name());
+        Optional<BigDecimal> reported = matched.stream().map(StudentNonCourseRecord::getNumericValue)
+                .filter(Objects::nonNull).max(BigDecimal::compareTo);
+        return outcome(r, RequirementStatus.UNKNOWN, reported.map(this::format).orElse(null), format(min), null,
+                "검증된 기록이 필요합니다.");
+    }
+
     private Outcome distributionAreas(GraduationRequirement r, JsonNode p, List<StudentCourseRecord> courses) {
         long current = completed(courses).filter(course -> course.getCategory() == CourseCategory.GENERAL_DISTRIBUTION)
                 .map(StudentCourseRecord::getAcademicCourse).filter(Objects::nonNull)
@@ -278,7 +334,21 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
         };
     }
 
-    private Outcome topik(GraduationRequirement r, JsonNode p, List<StudentNonCourseRecord> records) {
+    private Outcome topik(
+            GraduationRequirement r,
+            JsonNode p,
+            StudentAcademicProfile profile,
+            List<StudentNonCourseRecord> records) {
+        if (!profile.isInternationalStudent()
+                || profile.getAdmissionYear() < TOPIK_GRADUATION_REQUIREMENT_FROM_ADMISSION_YEAR) {
+            return outcome(
+                    r,
+                    RequirementStatus.NOT_APPLICABLE,
+                    null,
+                    null,
+                    null,
+                    "2012학년도 이후 신·편입 순수외국인 유학생에게만 적용되는 요건입니다.");
+        }
         BigDecimal min = decimal(p, "min");
         List<StudentNonCourseRecord> topik = records.stream().filter(record -> record.getRecordType() == NonCourseRecordType.TOPIK).toList();
         Optional<BigDecimal> verified = topik.stream().filter(record -> isVerified(record, p))
@@ -332,9 +402,13 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
     private boolean requiresCompleteDetails(GraduationRuleType type) {
         return switch (type) {
             case CATEGORY_CREDITS_MIN, ACADEMIC_UNIT_CREDITS_MIN, COURSE_ALL, COURSE_ANY,
-                    DISTRIBUTION_AREAS_MIN, GRADUATE_COURSE_CREDITS_MIN -> true;
+                    COURSE_NAME_ANY, DISTRIBUTION_AREAS_MIN, GRADUATE_COURSE_CREDITS_MIN -> true;
             default -> false;
         };
+    }
+
+    private String normalizeCourseName(String value) {
+        return value == null ? "" : value.replaceAll("[\\s·_-]", "").toLowerCase(Locale.ROOT);
     }
 
     private boolean hasCreditTotalMismatch(StudentAcademicProfile profile, List<StudentCourseRecord> courses) {

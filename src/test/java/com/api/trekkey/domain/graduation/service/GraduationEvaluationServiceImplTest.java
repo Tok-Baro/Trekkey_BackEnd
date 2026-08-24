@@ -76,15 +76,15 @@ class GraduationEvaluationServiceImplTest {
         GraduationEvaluationRes result = service.evaluate(10L, LocalDate.of(2026, 8, 11));
 
         assertThat(result.status()).isEqualTo(EvaluationStatus.ELIGIBLE);
-        assertThat(result.summary()).isEqualTo(new GraduationEvaluationRes.Summary(15, 0, 0));
-        assertThat(result.requirements()).hasSize(16);
+        assertThat(result.summary()).isEqualTo(new GraduationEvaluationRes.Summary(16, 0, 0));
+        assertThat(result.requirements()).hasSize(18);
         assertThat(result.requirements()).extracting(GraduationEvaluationRes.RequirementResult::code)
                 .containsExactlyInAnyOrder(requirements.stream().map(GraduationRequirement::getRequirementCode).toArray(String[]::new));
         assertThat(result.requirements()).filteredOn(item -> item.code().equals("MANUAL_REVIEW"))
                 .extracting(GraduationEvaluationRes.RequirementResult::status).containsExactly(RequirementStatus.UNKNOWN);
 
         ArgumentCaptor<GraduationEvaluationItem> itemCaptor = ArgumentCaptor.forClass(GraduationEvaluationItem.class);
-        verify(evaluationItemRepository, org.mockito.Mockito.times(16)).save(itemCaptor.capture());
+        verify(evaluationItemRepository, org.mockito.Mockito.times(18)).save(itemCaptor.capture());
         assertThat(itemCaptor.getAllValues()).extracting(GraduationEvaluationItem::getRuleTypeSnapshot)
                 .containsExactlyInAnyOrder(GraduationRuleType.values());
         verify(evaluationPolicyRepository).save(any());
@@ -98,7 +98,7 @@ class GraduationEvaluationServiceImplTest {
 
         assertThat(result.status()).isEqualTo(EvaluationStatus.INDETERMINATE);
         assertThat(result.requirements()).filteredOn(item -> Set.of(
-                        "CATEGORY_CREDITS_MIN", "ACADEMIC_UNIT_CREDITS_MIN", "COURSE_ALL", "COURSE_ANY",
+                        "CATEGORY_CREDITS_MIN", "ACADEMIC_UNIT_CREDITS_MIN", "COURSE_ALL", "COURSE_ANY", "COURSE_NAME_ANY",
                         "DISTRIBUTION_AREAS_MIN", "GRADUATE_COURSE_CREDITS_MIN").contains(item.code()))
                 .allMatch(item -> item.status() == RequirementStatus.UNKNOWN);
     }
@@ -143,6 +143,32 @@ class GraduationEvaluationServiceImplTest {
     }
 
     @Test
+    void notApplicableTopikDoesNotFailAnAllGroupForDomesticStudents() {
+        GraduationPolicy policy = requirements.getFirst().getPolicy();
+        AtomicLong id = new AtomicLong(3100);
+        GraduationRequirement group = group(policy, id.getAndIncrement(), "COMMON_ALL",
+                RequirementOperatorType.ALL, "{}", 1);
+        List<GraduationRequirement> grouped = List.of(
+                group,
+                rule(policy, group, id.getAndIncrement(), "COMMON_TOTAL",
+                        GraduationRuleType.TOTAL_CREDITS_MIN, "{\"min\":130}", 1),
+                rule(policy, group, id.getAndIncrement(), "COMMON_TOPIK",
+                        GraduationRuleType.TOPIK_LEVEL_MIN, "{\"min\":4}", 2));
+        given(requirementRepository.findAllByPolicyIdOrderBySequenceNo(200L)).willReturn(grouped);
+        ReflectionTestUtils.setField(profile, "internationalStudent", false);
+
+        GraduationEvaluationRes result = service.evaluate(10L, LocalDate.of(2026, 8, 11));
+
+        assertThat(result.status()).isEqualTo(EvaluationStatus.ELIGIBLE);
+        assertThat(result.requirements()).filteredOn(item -> item.code().equals("COMMON_ALL"))
+                .extracting(GraduationEvaluationRes.RequirementResult::status)
+                .containsExactly(RequirementStatus.SATISFIED);
+        assertThat(result.requirements()).filteredOn(item -> item.code().equals("COMMON_TOPIK"))
+                .extracting(GraduationEvaluationRes.RequirementResult::status)
+                .containsExactly(RequirementStatus.NOT_APPLICABLE);
+    }
+
+    @Test
     void inputVersionChangeAbortsTheEvaluation() {
         given(profileRepository.findVersionById(100L)).willReturn(Optional.of(1L));
 
@@ -154,6 +180,7 @@ class GraduationEvaluationServiceImplTest {
 
     @Test
     void minimumAssuranceLevelPreventsWeakDocumentFromSatisfyingRule() {
+        ReflectionTestUtils.setField(profile, "internationalStudent", true);
         GraduationRequirement topik = requirements.stream()
                 .filter(item -> item.getRuleType() == GraduationRuleType.TOPIK_LEVEL_MIN).findFirst().orElseThrow();
         ReflectionTestUtils.setField(topik, "parametersJson", "{\"min\":4,\"minimumAssuranceLevel\":\"L3\"}");
@@ -186,6 +213,7 @@ class GraduationEvaluationServiceImplTest {
 
     @Test
     void expiredVerifiedDocumentDoesNotSatisfyGraduationRule() {
+        ReflectionTestUtils.setField(profile, "internationalStudent", true);
         StudentNonCourseRecord expiredTopik = nonCourse(profile, NonCourseRecordType.TOPIK, new BigDecimal("6"), 132L);
         ReflectionTestUtils.setField(expiredTopik, "verificationAssuranceLevel", "L2");
         ReflectionTestUtils.setField(expiredTopik, "expiresAt", LocalDate.now().minusDays(1));
@@ -196,6 +224,33 @@ class GraduationEvaluationServiceImplTest {
         assertThat(result.requirements()).filteredOn(item -> item.code().equals("TOPIK_LEVEL_MIN"))
                 .extracting(GraduationEvaluationRes.RequirementResult::status)
                 .containsExactly(RequirementStatus.UNKNOWN);
+    }
+
+    @Test
+    void topikIsNotApplicableToDomesticStudents() {
+        ReflectionTestUtils.setField(profile, "internationalStudent", false);
+
+        GraduationEvaluationRes result = service.evaluate(10L, LocalDate.of(2026, 8, 11));
+
+        assertThat(result.requirements()).filteredOn(item -> item.code().equals("TOPIK_LEVEL_MIN"))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.status()).isEqualTo(RequirementStatus.NOT_APPLICABLE);
+                    assertThat(item.message()).contains("순수외국인 유학생");
+                });
+        assertThat(result.status()).isEqualTo(EvaluationStatus.ELIGIBLE);
+    }
+
+    @Test
+    void topikAppliesToInternationalStudentsAdmittedSince2012() {
+        ReflectionTestUtils.setField(profile, "internationalStudent", true);
+        ReflectionTestUtils.setField(profile, "admissionYear", (short) 2022);
+
+        GraduationEvaluationRes result = service.evaluate(10L, LocalDate.of(2026, 8, 11));
+
+        assertThat(result.requirements()).filteredOn(item -> item.code().equals("TOPIK_LEVEL_MIN"))
+                .extracting(GraduationEvaluationRes.RequirementResult::status)
+                .containsExactly(RequirementStatus.SATISFIED);
     }
 
     @Test
@@ -301,6 +356,7 @@ class GraduationEvaluationServiceImplTest {
         parameters.put(GraduationRuleType.ACADEMIC_UNIT_CREDITS_MIN, "{\"roleType\":\"PRIMARY\",\"min\":39}");
         parameters.put(GraduationRuleType.COURSE_ALL, "{\"courseCodes\":[\"C1\",\"C2\"]}");
         parameters.put(GraduationRuleType.COURSE_ANY, "{\"courseCodes\":[\"C3\",\"C4\"]}");
+        parameters.put(GraduationRuleType.COURSE_NAME_ANY, "{\"courseNames\":[\"C1\"]}");
         parameters.put(GraduationRuleType.DISTRIBUTION_AREAS_MIN, "{\"min\":2}");
         parameters.put(GraduationRuleType.GPA_MIN, "{\"min\":2.0}");
         parameters.put(GraduationRuleType.REGISTERED_SEMESTERS_MIN, "{\"min\":8}");
@@ -308,6 +364,7 @@ class GraduationEvaluationServiceImplTest {
         parameters.put(GraduationRuleType.ACTIVITY_POINTS_MIN, "{\"min\":800}");
         parameters.put(GraduationRuleType.GRADUATE_COURSE_CREDITS_MIN, "{\"min\":6}");
         parameters.put(GraduationRuleType.TOPIK_LEVEL_MIN, "{\"min\":4}");
+        parameters.put(GraduationRuleType.NON_COURSE_VALUE_MIN, "{\"recordType\":\"TOPIK\",\"min\":4}");
         parameters.put(GraduationRuleType.EVIDENCE_VERIFIED, "{\"roleType\":\"PRIMARY\"}");
         parameters.put(GraduationRuleType.MANUAL_REVIEW, "{}");
         AtomicLong id = new AtomicLong(1000);

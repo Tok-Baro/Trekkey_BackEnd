@@ -22,6 +22,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     // 로그인 시 이메일로 사용자를 찾고, 비밀번호 검증은 AuthService에서 BCrypt로 처리한다.
     Optional<User> findByEmail(String email);
+    Optional<User> findFirstByOrganizationIdOrderByIdAsc(Long organizationId);
 
     // 조직 내 특정 역할·상태의 사용자 목록 (예: 승인 대기 중인 ADMIN 조회)
     List<User> findByOrganizationIdAndRoleAndStatus(Long organizationId, UserRole role, UserStatus status);

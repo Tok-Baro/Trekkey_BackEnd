@@ -76,6 +76,12 @@ public class StudentAcademicProfile extends GraduationPublicEntity {
     @Column(name = "summary_as_of_term", length = 6)
     private String summaryAsOfTerm;
 
+    @Column(name = "expected_graduation_year")
+    private Short expectedGraduationYear;
+
+    @Column(name = "expected_graduation_month")
+    private Short expectedGraduationMonth;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "fail_history_status", nullable = false, length = 20)
     private FailHistoryStatus failHistoryStatus;
@@ -83,4 +89,69 @@ public class StudentAcademicProfile extends GraduationPublicEntity {
     @Version
     @Column(nullable = false)
     private Long version;
+
+    public void update(
+            short admissionYear,
+            short curriculumYear,
+            AdmissionType admissionType,
+            GraduationPath graduationPath,
+            MajorPlanType majorPlanType,
+            short registeredSemesters,
+            BigDecimal totalCredits,
+            BigDecimal hansungCredits,
+            BigDecimal transferRecognizedCredits,
+            BigDecimal cumulativeGpa,
+            BigDecimal gpaScale,
+            int activityPoints,
+            boolean internationalStudent,
+            boolean teachingProgram,
+            InputMode inputMode,
+            RecordCompleteness recordCompleteness,
+            String summaryAsOfTerm,
+            Short expectedGraduationYear,
+            Short expectedGraduationMonth,
+            FailHistoryStatus failHistoryStatus) {
+        this.admissionYear = admissionYear;
+        this.curriculumYear = curriculumYear;
+        this.admissionType = admissionType;
+        this.graduationPath = graduationPath;
+        this.majorPlanType = majorPlanType;
+        this.registeredSemesters = registeredSemesters;
+        this.totalCredits = totalCredits;
+        this.hansungCredits = hansungCredits;
+        this.transferRecognizedCredits = transferRecognizedCredits;
+        this.cumulativeGpa = cumulativeGpa;
+        this.gpaScale = gpaScale;
+        this.activityPoints = activityPoints;
+        this.internationalStudent = internationalStudent;
+        this.teachingProgram = teachingProgram;
+        this.inputMode = inputMode;
+        this.recordCompleteness = recordCompleteness;
+        this.summaryAsOfTerm = summaryAsOfTerm;
+        this.expectedGraduationYear = expectedGraduationYear;
+        this.expectedGraduationMonth = expectedGraduationMonth;
+        this.failHistoryStatus = failHistoryStatus;
+    }
+
+    public void applyImportedTranscript(
+            BigDecimal importedCredits,
+            BigDecimal importedGpa,
+            String asOfTerm,
+            boolean hasFailGrade) {
+        if (importedCredits != null) {
+            this.totalCredits = importedCredits;
+            this.hansungCredits = importedCredits;
+        }
+        if (importedGpa != null) {
+            this.cumulativeGpa = importedGpa;
+        }
+        this.inputMode = InputMode.COURSE_DETAIL;
+        this.recordCompleteness = RecordCompleteness.PARTIAL;
+        this.summaryAsOfTerm = asOfTerm;
+        this.failHistoryStatus = hasFailGrade ? FailHistoryStatus.EXISTS : FailHistoryStatus.NONE;
+    }
+
+    public void applyImportedActivityPoints(int importedActivityPoints) {
+        this.activityPoints = Math.max(0, importedActivityPoints);
+    }
 }

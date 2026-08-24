@@ -9,4 +9,6 @@ public interface StudentNonCourseRecordRepository extends JpaRepository<StudentN
     List<StudentNonCourseRecord> findAllByProfileUserIdOrderById(Long userId);
     Optional<StudentNonCourseRecord> findByPublicIdAndProfileUserId(String publicId, Long userId);
     Optional<StudentNonCourseRecord> findByPublicIdAndProfileUserOrganizationId(String publicId, Long organizationId);
+    boolean existsByProfileIdAndExternalEvidenceTypeAndExternalIssuerCode(
+            Long profileId, String externalEvidenceType, String externalIssuerCode);
 }

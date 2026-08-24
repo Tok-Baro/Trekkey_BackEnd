@@ -65,4 +65,12 @@ public class StudentCourseRecord extends GraduationPublicEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "source_type", nullable = false, length = 20)
     private RecordSourceType sourceType;
+
+    public void correctMapping(CourseCategory category, AcademicUnit academicUnit) {
+        if (category != null) {
+            this.category = category;
+            this.mappingStatus = CourseMappingStatus.SELF_REPORTED;
+        }
+        this.academicUnit = academicUnit;
+    }
 }

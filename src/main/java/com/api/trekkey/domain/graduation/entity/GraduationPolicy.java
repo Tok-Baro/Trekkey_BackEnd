@@ -66,6 +66,12 @@ public class GraduationPolicy extends GraduationPublicEntity {
     @Column(name = "effective_to")
     private LocalDate effectiveTo;
 
+    @Column(name = "expected_graduation_from")
+    private LocalDate expectedGraduationFrom;
+
+    @Column(name = "expected_graduation_to")
+    private LocalDate expectedGraduationTo;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private PolicyStatus status;

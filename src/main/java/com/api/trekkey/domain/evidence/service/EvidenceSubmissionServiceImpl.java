@@ -127,15 +127,23 @@ public class EvidenceSubmissionServiceImpl implements EvidenceSubmissionService 
 
     private void validateRecordType(EvidenceType type, NonCourseRecordType recordType) {
         boolean valid = switch (type) {
-            case LANGUAGE_SCORE -> recordType == NonCourseRecordType.TOPIK || recordType == NonCourseRecordType.OTHER;
+            case LANGUAGE_SCORE -> recordType == NonCourseRecordType.TOPIK
+                    || recordType == NonCourseRecordType.ENGLISH_SCORE || recordType == NonCourseRecordType.OTHER;
+            case TOPIK_SCORE -> recordType == NonCourseRecordType.TOPIK;
+            case ENGLISH_SCORE -> recordType == NonCourseRecordType.ENGLISH_SCORE;
+            case CONTEST_PARTICIPATION -> recordType == NonCourseRecordType.CONTEST_PARTICIPATION;
+            case INDUSTRY_PROJECT -> recordType == NonCourseRecordType.INDUSTRY_PROJECT;
+            case CAPSTONE -> recordType == NonCourseRecordType.CAPSTONE;
             case COMPLETION -> recordType == NonCourseRecordType.TEACHING_COMPLETION || recordType == NonCourseRecordType.OTHER;
             case ENROLLMENT -> recordType == NonCourseRecordType.GRADUATE_ENROLLMENT || recordType == NonCourseRecordType.OTHER;
             case THESIS -> recordType == NonCourseRecordType.THESIS;
             case GRADUATION_WORK -> recordType == NonCourseRecordType.GRADUATION_WORK;
             case GRADUATION_EXAM -> recordType == NonCourseRecordType.GRADUATION_EXAM;
             case RESEARCH_PLAN -> recordType == NonCourseRecordType.RESEARCH_PLAN;
-            case CONTEST_AWARD -> recordType == NonCourseRecordType.GRADUATION_WORK || recordType == NonCourseRecordType.OTHER;
-            case QUALIFICATION, EMPLOYMENT, OTHER -> recordType == NonCourseRecordType.OTHER;
+            case CONTEST_AWARD -> recordType == NonCourseRecordType.CONTEST_AWARD
+                    || recordType == NonCourseRecordType.GRADUATION_WORK || recordType == NonCourseRecordType.OTHER;
+            case EMPLOYMENT -> recordType == NonCourseRecordType.EMPLOYMENT || recordType == NonCourseRecordType.OTHER;
+            case QUALIFICATION, OTHER -> recordType == NonCourseRecordType.OTHER;
         };
         if (!valid) throw new CustomException(EvidenceErrorResponseCode.EVIDENCE_RECORD_TYPE_INVALID);
     }
