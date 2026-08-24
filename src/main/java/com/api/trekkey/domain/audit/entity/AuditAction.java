@@ -34,7 +34,10 @@ public enum AuditAction {
     ADMIN_SIGNUP("admin.signup"),
     ADMIN_APPROVE("admin.approve"),
     ADMIN_REJECT("admin.reject"),
-    LOGIN_LOCKED("auth.login_locked");
+    LOGIN_LOCKED("auth.login_locked"),
+    EVIDENCE_REVIEW("evidence.review"),
+    EVIDENCE_DECISION("evidence.decision"),
+    EVIDENCE_FILE_DOWNLOAD("evidence.file_download");
 
     private final String value;
 }

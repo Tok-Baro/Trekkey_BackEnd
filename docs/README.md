@@ -1,6 +1,6 @@
 # Trekkey 설계 문서
 
-팀 구현 기준 문서는 다음 여섯 개다.
+팀 구현 기준 문서는 다음 문서 세트다.
 
 1. [업무·블록체인 전체 통합 ERD](./unified-erd.md)
    - 업무 SQL 16개, 인증·관리 SQL 3개, 앵커링 SQL 9개를 한 캔버스에 표시
@@ -42,8 +42,28 @@
    - Credential·Kairos 운영 결정
    - 담당자·회의 순서·병합 체크리스트
 
+7. [SW·AI중심대학 졸업요건 검사 설계](./graduation-requirement-design.md)
+   - 2025년 SW중심대학 58개교 대상 레지스트리
+   - 학교·학번·전공·입학유형별 버전형 졸업정책
+   - 성적표·비교과 증빙과 `SATISFIED/UNSATISFIED/UNKNOWN` 판정
+   - 한성대학교 공통 졸업요건 파일럿 규칙
+
+8. 한성대학교 졸업요건 MVP 문서 세트
+   - [기능 설계서](./hansung-graduation-requirement-design.md)
+   - [ERD 및 테이블 명세](./hansung-graduation-erd.md)
+   - [API 및 프론트 계약](./hansung-graduation-api-spec.md)
+   - [3-cycle QA 보고서](./hansung-graduation-qa-report.md)
+   - 한성대 공식 학사기준과 현재 백엔드·프론트 구조를 연결한 구현 기준
+
+9. 외부 증빙 검증 문서 세트
+   - [신뢰 모델 및 처리 설계](./external-evidence-verification-design.md)
+   - [ERD 및 테이블 명세](./external-evidence-verification-erd.md)
+   - [API 및 프론트 계약](./external-evidence-verification-api-spec.md)
+   - [3-cycle 설계 QA](./external-evidence-verification-qa-report.md)
+   - 자격증·공모전 상장·수료증을 기관 확인, 전자서명 또는 2인 수동검수로 검증하고 졸업요건에 연결하는 기준
+
 ## 현재 구현 범위
 
-MVP 설계는 공모전 참여, 최종 제출 작품, 0..N개의 Review Round, 팀 수상 Credential을 대상으로 한다. 현재 코드는 대회·팀·제출·심사·수상과 Credential·Merkle·Solidity·Kaia adapter가 함께 있고, 수상 확정에서 Credential 발급까지 연결돼 있다. 팀원 등록·학번 검색 API도 포함됐다. 리뷰 실행 원장은 `REVIEW_ROUND`/`REVIEW_ROUND_ENTRY`로 전환됐고, 신청·제출 같은 비리뷰 일정만 `CONTEST_STAGE`에 남아 있다. `origin/develop`의 구형 리뷰 stage 구조는 기존 DB 마이그레이션 기준이다. 졸업요건, 학적 이력, 공모전 외 독립 작품, 제출 버전은 실제 업무 요구가 확정될 때 확장한다.
+공모전 참여, 최종 제출 작품, 0..N개의 Review Round, 팀 수상 Credential과 한성대학교 졸업요건 검사가 구현돼 있다. 외부 증빙은 학생 multipart 제출, 파일 시그니처·크기·SHA-256 확인, 조직 범위 관리자 queue, 서로 다른 관리자 2인 검수, `L2/DOCUMENT_VERIFIED` 비교과 기록 연결까지 구현됐다. 공식기관 API·전자서명·악성코드 엔진·OCR·만료 후 자동 철회는 후속 단계다. 현재 코드는 대회·팀·제출·심사·수상과 Credential·Merkle·Solidity·Kaia adapter가 함께 있고, 수상 확정에서 Credential 발급까지 연결돼 있다. 리뷰 실행 원장은 `REVIEW_ROUND`/`REVIEW_ROUND_ENTRY`로 전환됐고, 신청·제출 같은 비리뷰 일정만 `CONTEST_STAGE`에 남아 있다. `origin/develop`의 구형 리뷰 stage 구조는 기존 DB 마이그레이션 기준이다.
 
 문서와 구현이 충돌하면 임의로 해석하지 말고 ERD 결정사항을 먼저 갱신한다. 특히 hash 입력, schema profile, Merkle tree version은 배포 후 조용히 변경하면 안 된다.

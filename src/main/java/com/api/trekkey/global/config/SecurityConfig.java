@@ -89,6 +89,9 @@ public class SecurityConfig {
                         .hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.PATCH, "/api/me/applications/*").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.GET, "/api/me/teams").hasRole("PARTICIPANT")
+                        .requestMatchers("/api/me/graduation/**").hasRole("PARTICIPANT")
+                        .requestMatchers("/api/me/evidence-submissions/**").hasRole("PARTICIPANT")
+                        .requestMatchers("/api/me/evidence-files/**").hasRole("PARTICIPANT")
                         .requestMatchers(HttpMethod.GET, "/api/participants/search").hasRole("PARTICIPANT")
                         .requestMatchers(
                                 "/api/teams/*/submission",

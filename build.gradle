@@ -37,6 +37,9 @@ dependencies {
     implementation 'io.github.erdtman:java-json-canonicalization:1.1'
     implementation 'org.web3j:core:4.14.0'
     implementation 'com.github.librepdf:openpdf:2.0.3'
+    implementation('org.apache.pdfbox:pdfbox:3.0.8') {
+        exclude group: 'commons-logging', module: 'commons-logging'
+    }
     implementation 'com.google.zxing:core:3.5.3'
     implementation 'com.google.zxing:javase:3.5.3'
 

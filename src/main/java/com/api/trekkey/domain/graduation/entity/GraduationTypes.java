@@ -1,0 +1,54 @@
+package com.api.trekkey.domain.graduation.entity;
+
+/** Stable string values persisted by the graduation domain. */
+public final class GraduationTypes {
+    private GraduationTypes() {}
+
+    public enum AcademicUnitType { COLLEGE, DIVISION, DEPARTMENT, MAJOR, TRACK, MICRO_DEGREE }
+    public enum AcademicUnitStatus { ACTIVE, INACTIVE }
+    public enum CourseCategory {
+        GENERAL_REQUIRED, GENERAL_DISTRIBUTION, GENERAL_ELECTIVE,
+        MAJOR_FOUNDATION, MAJOR_REQUIRED, MAJOR_ELECTIVE, FREE_ELECTIVE, GRADUATE_COURSE
+    }
+    public enum PolicyType {
+        COMMON, GENERAL_EDUCATION, MAJOR_PLAN, UNIT_GRADUATION, TRANSFER, EARLY_GRADUATION
+    }
+    public enum PolicyStatus { DRAFT, IN_REVIEW, PUBLISHED, RETIRED }
+    public enum PolicySourceType { ACADEMIC_RULE, GUIDE, CURRICULUM, NOTICE, FORM }
+    public enum AdmissionType {
+        FRESHMAN, GENERAL_TRANSFER, BACHELOR_TRANSFER,
+        INTERNATIONAL_TRANSFER_2, INTERNATIONAL_TRANSFER_3, INTERNATIONAL_TRANSFER_4
+    }
+    public enum GraduationPath {
+        REGULAR, EARLY, BACHELOR_MASTER_LINKED_7, BACHELOR_MASTER_LINKED_8
+    }
+    public enum MajorPlanType {
+        CONVERGENCE_I, CONVERGENCE_II, INTENSIVE, CREATIVE_CONVERGENCE_COLLEGE,
+        CONVERGENCE_I_WITH_MINOR, CONVERGENCE_I_WITH_MICRO_DEGREE
+    }
+    public enum RequirementNodeType { GROUP, RULE }
+    public enum RequirementOperatorType { ALL, ANY, N_OF }
+    public enum GraduationRuleType {
+        TOTAL_CREDITS_MIN, HANSUNG_CREDITS_MIN, TRANSFER_RECOGNIZED_CREDITS_MIN,
+        CATEGORY_CREDITS_MIN, ACADEMIC_UNIT_CREDITS_MIN, COURSE_ALL, COURSE_ANY, COURSE_NAME_ANY,
+        DISTRIBUTION_AREAS_MIN, GPA_MIN, REGISTERED_SEMESTERS_MIN, NO_FAIL_GRADE,
+        ACTIVITY_POINTS_MIN, GRADUATE_COURSE_CREDITS_MIN, TOPIK_LEVEL_MIN,
+        NON_COURSE_VALUE_MIN, EVIDENCE_VERIFIED, MANUAL_REVIEW
+    }
+    public enum AcademicUnitRoleType { PRIMARY, SECONDARY, MINOR, DOUBLE_MAJOR, MICRO_DEGREE }
+    public enum EvidenceStatus { UNKNOWN, SELF_REPORTED, UNIVERSITY_VERIFIED, REJECTED }
+    public enum InputMode { SUMMARY_ONLY, COURSE_DETAIL }
+    public enum RecordCompleteness { UNKNOWN, PARTIAL, COMPLETE }
+    public enum FailHistoryStatus { UNKNOWN, NONE, EXISTS }
+    public enum CourseCompletionStatus { COMPLETED, FAILED, IN_PROGRESS, WITHDRAWN }
+    public enum CourseMappingStatus { MATCHED, SELF_REPORTED, NEEDS_REVIEW, UNIVERSITY_VERIFIED }
+    public enum RecordSourceType { MANUAL, CSV, PDF, UNIVERSITY_API, TREKKEY, ADMIN }
+    public enum NonCourseRecordType {
+        TOPIK, ENGLISH_SCORE, THESIS, CONTEST_PARTICIPATION, CONTEST_AWARD,
+        INDUSTRY_PROJECT, CAPSTONE, GRADUATION_WORK, GRADUATION_EXAM, RESEARCH_PLAN,
+        GRADUATE_ENROLLMENT, TEACHING_COMPLETION, EMPLOYMENT, OTHER
+    }
+    public enum VerificationStatus { SELF_REPORTED, DOCUMENT_VERIFIED, UNIVERSITY_VERIFIED, REJECTED }
+    public enum EvaluationStatus { ELIGIBLE, NOT_ELIGIBLE, INDETERMINATE }
+    public enum RequirementStatus { SATISFIED, UNSATISFIED, UNKNOWN, NOT_APPLICABLE }
+}

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "graduation-policy-draft-v1",
+  "policyCode": "HANSUNG-UNDERGRAD-COMMON-2016+",
+  "organizationName": "한성대학교",
+  "status": "DRAFT_FOR_DESIGN_VALIDATION",
+  "effectiveFrom": "2016-03-01",
+  "applicability": {
+    "admissionYearFrom": 2016,
+    "admissionTypes": ["FRESHMAN"],
+    "degreeRole": "PRIMARY"
+  },
+  "source": {
+    "type": "ACADEMIC_GUIDE",
+    "url": "https://www.hansung.ac.kr/cis/3224/subview.do",
+    "retrievedAt": "2026-08-11",
+    "notice": "설계 검증용 변환 예시이며 공식 졸업사정을 대체하지 않음"
+  },
+  "root": {
+    "type": "ALL",
+    "code": "HANSUNG_COMMON_GRADUATION",
+    "children": [
+      {
+        "type": "REGISTERED_SEMESTERS_MIN",
+        "code": "REGISTERED_SEMESTERS",
+        "parameters": {"minimum": 8}
+      },
+      {
+        "type": "TOTAL_CREDITS_MIN",
+        "code": "TOTAL_CREDITS",
+        "parameters": {"minimum": 130}
+      },
+      {
+        "type": "GPA_MIN",
+        "code": "CUMULATIVE_GPA",
+        "parameters": {"minimum": 2.0, "scale": 4.5}
+      },
+      {
+        "type": "ACTIVITY_POINTS_MIN",
+        "code": "EXTRACURRICULAR_POINTS",
+        "parameters": {"minimum": 800}
+      },
+      {
+        "type": "MANUAL_REVIEW",
+        "code": "ACADEMIC_UNIT_REQUIREMENTS",
+        "parameters": {
+          "reason": "학과·전공·트랙별 교양/전공 최저학점과 논문·작품·자격 요건은 별도 발행 정책 필요"
+        }
+      }
+    ]
+  }
+}

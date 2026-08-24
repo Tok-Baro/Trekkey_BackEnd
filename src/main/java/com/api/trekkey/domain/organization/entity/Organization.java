@@ -18,6 +18,9 @@ public class Organization extends BaseEntity {
     @Column(name = "public_id", unique = true, length = 36)
     private String publicId;
 
+    @Column(name = "code", nullable = false, unique = true, length = 50, updatable = false)
+    private String code;
+
     private String name; //학교이름
 
     @Enumerated(EnumType.STRING)
@@ -26,6 +29,7 @@ public class Organization extends BaseEntity {
     @PrePersist
     void assignPublicId() {
         ensurePublicId();
+        ensureCode();
     }
 
     public String ensurePublicId() {
@@ -33,5 +37,12 @@ public class Organization extends BaseEntity {
             publicId = UUID.randomUUID().toString();
         }
         return publicId;
+    }
+
+    public String ensureCode() {
+        if (code == null || code.isBlank()) {
+            code = "ORG_" + UUID.randomUUID().toString().replace("-", "");
+        }
+        return code;
     }
 }
