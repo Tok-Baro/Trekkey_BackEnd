@@ -2,6 +2,7 @@ package com.api.trekkey.global.swagger;
 
 import com.api.trekkey.global.response.ErrorResponse;
 import com.api.trekkey.global.response.code.BaseResponseCode;
+import com.api.trekkey.global.security.jwt.JwtProperties;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
@@ -20,6 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springdoc.core.customizers.OperationCustomizer;
+import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.HandlerMethod;
@@ -27,7 +29,7 @@ import org.springframework.web.method.HandlerMethod;
 @Configuration
 public class SwaggerConfig {
 
-    private static final String JWT_SCHEME_NAME = "JWT Authentication";
+    static final String JWT_SCHEME_NAME = "JWT Authentication";
 
     @Bean
     public OpenAPI openAPI() {
@@ -66,6 +68,12 @@ public class SwaggerConfig {
             generateErrorCodeResponseExamples(operation, errorCodes);
             return operation;
         };
+    }
+
+    /** Documentation projection only: SecurityConfig and the controllers remain the enforcement source. */
+    @Bean
+    public OpenApiCustomizer securityContractCustomizer(JwtProperties properties) {
+        return new ApiSecurityDocumentation(properties)::customise;
     }
 
     private List<BaseResponseCode> resolveErrorCodes(ApiErrorCodeExamples annotation) {

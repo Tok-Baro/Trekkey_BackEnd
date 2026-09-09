@@ -1,6 +1,7 @@
 package com.api.trekkey.domain.credential.service.port;
 
 import com.api.trekkey.domain.credential.crypto.Eip712;
+import com.api.trekkey.domain.credential.crypto.ChainAddress;
 import com.api.trekkey.domain.credential.crypto.EthereumAddress;
 import com.api.trekkey.domain.credential.crypto.Hash32;
 import com.api.trekkey.domain.credential.crypto.Signature65;
@@ -51,14 +52,22 @@ public interface BlockchainAnchorPort {
 
     record PreparedTransaction(
             Hash32 transactionHash,
-            long transactionNonce,
-            EthereumAddress relayerAddress,
+            Long transactionNonce,
+            ChainAddress relayerAddress,
             byte[] signedRawTransaction) {
 
+        public PreparedTransaction(Hash32 hash, long nonce, EthereumAddress sender, byte[] raw) {
+            this(hash, Long.valueOf(nonce), ChainAddress.of(sender.bytes()), raw);
+        }
+
         public PreparedTransaction {
-            if (transactionHash == null || transactionNonce < 0 || relayerAddress == null || signedRawTransaction == null
+            if (transactionHash == null || (transactionNonce != null && transactionNonce < 0)
+                    || relayerAddress == null || signedRawTransaction == null
                     || signedRawTransaction.length == 0) {
                 throw new IllegalArgumentException("prepared transaction fields are required");
+            }
+            if ((relayerAddress.bytes().length == 20) != (transactionNonce != null)) {
+                throw new IllegalArgumentException("EVM requires a nonce; Sui must not synthesize an EVM nonce");
             }
             signedRawTransaction = signedRawTransaction.clone();
         }

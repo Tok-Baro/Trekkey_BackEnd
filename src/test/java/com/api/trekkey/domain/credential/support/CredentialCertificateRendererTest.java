@@ -10,6 +10,10 @@ import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 class CredentialCertificateRendererTest {
 
@@ -35,6 +39,31 @@ class CredentialCertificateRendererTest {
 
         assertThat(new String(participation, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
         assertThat(new String(work, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
+    }
+
+    @ParameterizedTest
+    @EnumSource(CredentialVerificationStatus.class)
+    void everyStatusIsVisibleAndOnlyValidMayRenderAnAwardClaim(CredentialVerificationStatus status) throws Exception {
+        var original = view(CredentialType.AWARD);
+        var input = new CredentialVerificationView(status, original.credentialPublicId(), original.credentialNo(),
+                status == CredentialVerificationStatus.TAMPERED ? null : original.credentialType(),
+                original.schemaProfileId(), original.issuerPublicId(), "SYNTHETIC 발급기관",
+                status == CredentialVerificationStatus.TAMPERED ? null : original.issuedAt(), null,
+                original.publicDetails(), original.publicSubjects(), original.evidence(), null, null);
+        byte[] pdf = renderer.render(input, "합성 테스트 대회", "대상", "합성 작품", "https://example.invalid/verify/synthetic");
+        try (var reader = new com.lowagie.text.pdf.PdfReader(pdf)) {
+            assertThat(reader.getNumberOfPages()).isEqualTo(1);
+            String extracted = new com.lowagie.text.pdf.parser.PdfTextExtractor(reader).getTextFromPage(1);
+            assertThat(extracted).contains(status.name(), "최신 유효성");
+            if (status == CredentialVerificationStatus.VALID) assertThat(extracted).contains("수여합니다");
+            else assertThat(extracted).contains("현재 유효한 증명서로 사용할 수 없습니다").doesNotContain("수여합니다");
+        }
+        if (java.util.Set.of(CredentialVerificationStatus.VALID, CredentialVerificationStatus.REVOKED,
+                CredentialVerificationStatus.TAMPERED).contains(status)) {
+            Path directory = Path.of("build", "qa-certificates");
+            Files.createDirectories(directory);
+            Files.write(directory.resolve(status.name() + ".pdf"), pdf);
+        }
     }
 
     //======= 헬퍼 메서드 ==========

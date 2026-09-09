@@ -32,13 +32,17 @@ services:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
     restart: unless-stopped
     init: true
-    env_file:
-      - path: /etc/trekkey/relayer.env
-        required: true
+    mem_limit: 1536m
+    cpus: 1.0
+    pids_limit: 256
     depends_on:
       mysql:
         condition: service_healthy
     environment:
+      SPRING_PROFILES_ACTIVE: sui
+      BLOCKCHAIN_PROVIDER: SUI
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_CONFIG_IMPORT: configtree:/run/sui-secrets/
       DATASOURCE_URL: ${DATASOURCE_URL:?DATASOURCE_URL is required}
       DATASOURCE_USERNAME: ${DATASOURCE_USERNAME:?DATASOURCE_USERNAME is required}
       DATASOURCE_PASSWORD: ${DATASOURCE_PASSWORD:?DATASOURCE_PASSWORD is required}
@@ -49,15 +53,21 @@ services:
       JWT_ACCESS_EXPIRATION: ${JWT_ACCESS_EXPIRATION:?JWT_ACCESS_EXPIRATION is required}
       JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:?JWT_REFRESH_EXPIRATION is required}
       BLOCKCHAIN_ANCHORING_MODE: ${BLOCKCHAIN_ANCHORING_MODE:?BLOCKCHAIN_ANCHORING_MODE is required}
-      BLOCKCHAIN_CHAIN_ID: ${BLOCKCHAIN_CHAIN_ID:-1001}
-      BLOCKCHAIN_RPC_URL: ${BLOCKCHAIN_RPC_URL:?BLOCKCHAIN_RPC_URL is required}
-      BLOCKCHAIN_CONTRACT_ADDRESS: ${BLOCKCHAIN_CONTRACT_ADDRESS:?BLOCKCHAIN_CONTRACT_ADDRESS is required}
-      BLOCKCHAIN_RUNTIME_CODE_HASH: ${BLOCKCHAIN_RUNTIME_CODE_HASH:?BLOCKCHAIN_RUNTIME_CODE_HASH is required}
-      BLOCKCHAIN_CONTRACT_VERSION: ${BLOCKCHAIN_CONTRACT_VERSION:-1}
+      SUI_NETWORK: testnet
+      SUI_CHAIN_IDENTIFIER: ${SUI_CHAIN_IDENTIFIER:?SUI_CHAIN_IDENTIFIER is required}
+      SUI_PACKAGE_ID: ${SUI_PACKAGE_ID:?SUI_PACKAGE_ID is required}
+      SUI_REGISTRY_ID: ${SUI_REGISTRY_ID:?SUI_REGISTRY_ID is required}
+      SUI_GATEWAY_URL: http://127.0.0.1:9187
+      LEGACY_KAIA_READ_ENABLED: "true"
+      LEGACY_KAIA_CHAIN_ID: "1001"
+      LEGACY_KAIA_RPC_URL: ${LEGACY_KAIA_RPC_URL:?LEGACY_KAIA_RPC_URL is required}
+      LEGACY_KAIA_CONTRACT_ADDRESS: ${LEGACY_KAIA_CONTRACT_ADDRESS:?LEGACY_KAIA_CONTRACT_ADDRESS is required}
+      LEGACY_KAIA_RUNTIME_CODE_HASH: ${LEGACY_KAIA_RUNTIME_CODE_HASH:?LEGACY_KAIA_RUNTIME_CODE_HASH is required}
+      LEGACY_KAIA_CONTRACT_VERSION: ${LEGACY_KAIA_CONTRACT_VERSION:?LEGACY_KAIA_CONTRACT_VERSION is required}
       BLOCKCHAIN_TREE_VERSION: ${BLOCKCHAIN_TREE_VERSION:-1}
       BLOCKCHAIN_BATCH_SIZE: ${BLOCKCHAIN_BATCH_SIZE:-100}
       BLOCKCHAIN_APPROVAL_TTL: ${BLOCKCHAIN_APPROVAL_TTL:-15m}
-      BLOCKCHAIN_WORKER_ENABLED: ${BLOCKCHAIN_WORKER_ENABLED:-false}
+      BLOCKCHAIN_WORKER_ENABLED: ${BLOCKCHAIN_WORKER_ENABLED:?BLOCKCHAIN_WORKER_ENABLED is required}
       BLOCKCHAIN_WORKER_CLAIM_SIZE: ${BLOCKCHAIN_WORKER_CLAIM_SIZE:-10}
       BLOCKCHAIN_WORKER_MAX_ATTEMPTS: ${BLOCKCHAIN_WORKER_MAX_ATTEMPTS:-8}
       BLOCKCHAIN_OUTBOX_LEASE_TIMEOUT: ${BLOCKCHAIN_OUTBOX_LEASE_TIMEOUT:-1m}
@@ -68,12 +78,88 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - /var/lib/trekkey/uploads:/uploads
+      - type: bind
+        source: /srv/trekkey-sui-testnet/secrets/gateway/gateway-token
+        target: /run/sui-secrets/SUI_GATEWAY_TOKEN
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /etc/trekkey/sui-secrets/EVIDENCE_LOOKUP_HMAC_SECRET
+        target: /run/sui-secrets/EVIDENCE_LOOKUP_HMAC_SECRET
+        read_only: true
+        bind:
+          create_host_path: false
     stop_grace_period: 30s
     logging:
       driver: json-file
       options:
         max-size: 10m
         max-file: "5"
+
+  gateway:
+    image: ${SUI_GATEWAY_IMAGE:?SUI_GATEWAY_IMAGE is required}
+    user: "10001:10001"
+    init: true
+    restart: unless-stopped
+    # The sidecar listener is loopback-only in the backend's network namespace.
+    network_mode: service:backend
+    depends_on:
+      backend:
+        condition: service_started
+        restart: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=1770
+    environment:
+      SUI_GATEWAY_BIND: 127.0.0.1
+      SUI_GATEWAY_PORT: "9187"
+      SUI_GATEWAY_JOURNAL_DIR: /var/lib/trekkey-sui-journal
+      SUI_GRPC_URL: https://fullnode.testnet.sui.io:443
+      SUI_NETWORK: testnet
+      SUI_CHAIN_IDENTIFIER: ${SUI_CHAIN_IDENTIFIER:?SUI_CHAIN_IDENTIFIER is required}
+      SUI_PACKAGE_ID: ${SUI_PACKAGE_ID:?SUI_PACKAGE_ID is required}
+      SUI_REGISTRY_ID: ${SUI_REGISTRY_ID:?SUI_REGISTRY_ID is required}
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=320
+    volumes:
+      - type: bind
+        source: /srv/trekkey-sui-testnet/secrets/deployment/relayer.key
+        target: /run/keys/relayer.key
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/trekkey-sui-testnet/secrets/gateway/gateway-token
+        target: /run/keys/gateway-token
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/trekkey-sui-testnet/secrets/deployment/deployment.json
+        target: /run/manifest/deployment.json
+        read_only: true
+        bind:
+          create_host_path: false
+      # Stop the isolated test gateway before cutover: this journal permits one writer.
+      - type: bind
+        source: /srv/trekkey-sui-testnet/journal
+        target: /var/lib/trekkey-sui-journal
+        bind:
+          create_host_path: false
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
 
 volumes:
   mysql-data:

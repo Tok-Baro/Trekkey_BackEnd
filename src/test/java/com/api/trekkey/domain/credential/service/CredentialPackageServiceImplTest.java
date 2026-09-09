@@ -70,7 +70,7 @@ class CredentialPackageServiceImplTest {
                 .startsWith("%PDF-");
 
         JsonNode publicCredential = new ObjectMapper().readTree(entries.get("public-credential.json"));
-        assertThat(publicCredential.get("disclosure").asText()).isEqualTo("CONSENTED_PUBLIC_SUMMARY");
+        assertThat(publicCredential.get("disclosure").asText()).isEqualTo("ISSUANCE_PUBLIC_SUMMARY");
         assertThat(publicCredential.at("/publicDetails/contestTitle").asText()).isEqualTo("2026 공학경진대회");
         assertThat(publicCredential.at("/publicSubjects/0/displayName").asText()).isEqualTo("홍길동");
         assertThat(publicCredential.toString()).doesNotContain("student-20260001", "private@example.com");
@@ -91,6 +91,30 @@ class CredentialPackageServiceImplTest {
                 .isInstanceOf(CustomException.class)
                 .extracting(e -> ((CustomException) e).getBaseResponseCode())
                 .isEqualTo(CredentialErrorResponseCode.CREDENTIAL_NOT_FOUND);
+    }
+
+    @Test
+    void malformedCredentialDownloadsDiagnosticPackageWithRealPdfInsteadOfNullPointer500() throws Exception {
+        CredentialVerificationView validFields = pendingView();
+        CredentialVerificationView malformed = new CredentialVerificationView(CredentialVerificationStatus.TAMPERED,
+                "cred-pub-1", "2026-C1-001", null, null, null, null, null, null, null, List.of(),
+                validFields.evidence(), null, null);
+        given(credentialVerificationService.verify("cred-pub-1")).willReturn(malformed);
+        var realPdfService = new CredentialCertificateServiceImpl(credentialVerificationService,
+                new com.api.trekkey.domain.credential.support.CredentialCertificateRenderer());
+        org.springframework.test.util.ReflectionTestUtils.setField(realPdfService, "frontBaseUrl", "https://example.invalid");
+        var packages = new CredentialPackageServiceImpl(credentialVerificationService, batchRepository,
+                realPdfService, new ObjectMapper());
+        var entries = unzip(packages.buildPublicPackage("cred-pub-1").zipBytes());
+        JsonNode summary = new ObjectMapper().readTree(entries.get("public-credential.json"));
+        assertThat(summary.path("credentialType").isNull()).isTrue();
+        assertThat(summary.path("issuedAt").isNull()).isTrue();
+        assertThat(summary.path("verificationStatus").asText()).isEqualTo("TAMPERED");
+        try (var reader = new com.lowagie.text.pdf.PdfReader(entries.get("rendered-certificate.pdf"))) {
+            String pdfText = new com.lowagie.text.pdf.parser.PdfTextExtractor(reader).getTextFromPage(1);
+            assertThat(pdfText).contains("TAMPERED", "현재 유효한 증명서로 사용할 수 없습니다");
+            assertThat(pdfText).doesNotContain("수여합니다");
+        }
     }
 
     //======= 헬퍼 메서드 ==========

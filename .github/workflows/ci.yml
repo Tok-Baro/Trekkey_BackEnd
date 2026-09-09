@@ -9,6 +9,7 @@ on:
     branches:
       - develop
       - main
+      - codex/sui-service-release-20260908
   workflow_dispatch:
 
 permissions:
@@ -46,6 +47,11 @@ jobs:
       MYSQL_TEST_URL: jdbc:mysql://127.0.0.1:3306/trekkey_test?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       MYSQL_TEST_USERNAME: root
       MYSQL_TEST_PASSWORD: test-root-password
+      # Only the disposable MySQL service is live. Chain writes require an operator run.
+      BLOCKCHAIN_ANCHORING_MODE: DISABLED
+      BLOCKCHAIN_WORKER_ENABLED: "false"
+      SUI_TESTNET_E2E: "false"
+      SUI_FULL_E2E: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -97,3 +103,92 @@ jobs:
 
       - name: Type-check deployment tools
         run: npx tsc --noEmit
+
+  sui-gateway:
+    name: Sui gateway tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sui-gateway
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: sui-gateway/package-lock.json
+
+      - name: Install locked gateway dependencies
+        run: npm ci
+
+      - name: Test synthetic gateway contracts and local HTTP
+        run: npm test
+
+      - name: Build gateway
+        run: npm run build
+
+  integration-tools:
+    name: Offline Sui integration tools and backend API catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Test synthetic integration fixtures and fail-closed guards
+        run: node --test infra/testnet/*.test.mjs infra/release/*.test.mjs
+
+      - name: Check operator shell syntax without running deployment commands
+        shell: bash
+        run: |
+          for script in infra/testnet/*.sh infra/release/*.sh; do
+            case "$(head -n 1 "$script")" in
+              '#!/bin/bash') bash -n "$script" ;;
+              '#!/bin/sh') sh -n "$script" ;;
+              *) echo "Unsupported operator script interpreter"; exit 1 ;;
+            esac
+          done
+
+      - name: Test backup restore SQL guard without Docker or secrets
+        run: |
+          bash infra/testnet/verify-backup-restore.sh --self-test
+          bash infra/release/rehearse-schema.sh --self-test
+          python3 infra/release/start-restored-app.py --self-test
+
+      # The complete docs verifier also needs the separate frontend checkout. This check
+      # deliberately validates only backend operation parity using the shared extractor.
+      - name: Check backend API catalog against actual controllers
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const assert = require('node:assert/strict');
+          const { extractSpringOperations } = require('./docs/tools/lib/inventory.cjs');
+          const source = fs.readFileSync('docs/spec/api-catalog.md', 'utf8');
+          const start = source.indexOf('<!-- API-CATALOG-START -->');
+          const end = source.indexOf('<!-- API-CATALOG-END -->');
+          assert(start >= 0 && end > start, 'API catalog markers are missing');
+          const documented = [...source.slice(start, end).matchAll(/^\|\s*`(GET|POST|PUT|PATCH|DELETE)`\s*\|\s*`([^`]+)`\s*\|/gm)]
+            .map(([, verb, path]) => `${verb} ${path}`).sort();
+          const actual = extractSpringOperations(process.cwd()).operations
+            .map(({ verb, path }) => `${verb} ${path}`).sort();
+          assert.equal(actual.length, 108, 'Unexpected controller operation count');
+          assert.equal(new Set(documented).size, documented.length, 'Duplicate API catalog rows');
+          assert.deepEqual(documented, actual, 'Backend API catalog differs from actual controllers');
+          console.log('Backend API catalog parity passed: 108 operations; frontend parity not run.');
+          NODE
+
+      # Move tests need the verified CLI 1.79.0-46f18562f1f5 and an explicitly
+      # keyless config (contracts-sui/README.md). No unpinned latest CLI installer.

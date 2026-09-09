@@ -1,0 +1,41 @@
+{
+  "network": "testnet",
+  "genesisDigest": "69WiPg3DAQiwdxfncX6wYQ2siKwAe6L9BZthQea3JNMD",
+  "chainIdentifier": "4c78adac",
+  "protocolVersion": 1,
+  "synthetic": true,
+  "packageId": "0x4954c88c29a33f884ad97e19eae94c3f6f397f7f716753d2fbfe6d2df012faa2",
+  "registryId": "0xb96a54d2ed390d29551608e0477eec57c956b58ac55c54e0083cf59943f5d9a0",
+  "organizationPublicId": "8143bc7e-d085-4f7b-81b0-d2090f8c6b2c",
+  "issuerId": "0x2a3ebf8b294ee5f137f258c12bff07db04d7fbd144d19cad7f18494015a8a1dd",
+  "signerAddress": "0xb89cbe87870f1028eebe17bbec30b8031c7533c1",
+  "keyVersion": 1,
+  "deployerAddress": "0x561eae5830ae52b54c7d43d067b18f3187f35708db948d4e3910edccd29bfa04",
+  "relayerAddress": "0x2a00f71f5aae8e7ab33ef7d75adca014fa7b3e67692992219cda19a5cd5db3d4",
+  "adminCapId": "0x9ca526326b79e81f838d4768a20e936adcc3358df55295c1bf16dd8ff9d859f9",
+  "upgradeCapId": "0x1dde2b977d7737a27246db018f5731bb462b0d3c56a034a2991dfba7ed92cc34",
+  "bytecodeSha256": "b9c5957b3bac1f1e264ff81241db5759828940f877cb26edb7c2719a79f765f1",
+  "backendJarSha256": "a44835dcc26fcc05f69bf42835e1cecd4fbf1bb8f0ff3614f93b6e2e460dfb0d",
+  "e2eBundleSha256": "138cb584e6e95a1d42d43c183b9e898c397e0f7e657dae793555590811a1b36d",
+  "transactions": {
+    "publish": {"digest": "4yYfHm1HPqLKja1g4tvs9yMBKQsciUpwEnWENLrtWpkL", "checkpoint": "381212786", "success": true},
+    "registry": {"digest": "B6imp8C8PJTW3GuFXqMyJQtDpLknzuENcikiDaYW7WCx", "checkpoint": "381212794", "success": true},
+    "authorize": {"digest": "ALnk43C9WNgaFayjFWLZ4YKiqePKDThtPcAyH2yccn3Q", "checkpoint": "381212802", "success": true},
+    "anchor": {"digest": "5fLs2ngYYCRCmeiTK7dXaVQe3GBLKfwSzKwFXi7GgGCV", "checkpoint": "381215064", "success": true},
+    "revoke": {"digest": "9gXxS9Ciw5ZH73wgAHrWjE2GDMcvkEmJh9UyEgbWx3AW", "checkpoint": "381215106", "success": true}
+  },
+  "e2e": {
+    "result": "PASS",
+    "found": 1,
+    "succeeded": 1,
+    "skipped": 0,
+    "failed": 0,
+    "credentialPublicId": "fe3fc5ac-476c-4928-a461-ae723d967fd1",
+    "credentialIdHash": "0x309c1bcb89f971da2231ee510ddbc4e169fe145f6e49d9ec3adea1349ec64905",
+    "batchIdHash": "0xe1846069f9b47c6451515c0fedb9a49439903e09129efb7f1e3eabc7a10482c0",
+    "observedStates": ["VALID", "REVOKED"],
+    "database": "isolated ephemeral H2; not production or persistent MySQL",
+    "publicHttpVerification": "Spring MockMvc public controller, real service/outbox/gateway/testnet",
+    "browserFrontendE2E": false
+  }
+}

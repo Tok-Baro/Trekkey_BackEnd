@@ -1,6 +1,7 @@
 package com.api.trekkey.domain.review.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.api.trekkey.domain.audit.repository.AdminAuditLogRepository;
 import com.api.trekkey.domain.contest.entity.Contest;
@@ -25,6 +26,8 @@ import com.api.trekkey.domain.review.repository.ReviewRoundEntryRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.publicapi.service.ReviewAccessService;
 import com.api.trekkey.domain.review.admin.service.ReviewAssignmentAdminService;
+import com.api.trekkey.domain.review.admin.service.ContestJudgeAdminService;
+import com.api.trekkey.domain.review.admin.web.dto.request.ContestJudgeUpdateReq;
 import com.api.trekkey.domain.review.support.ReviewLinkTokenManager;
 import com.api.trekkey.domain.review.publicapi.web.dto.request.ReviewAccessReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewAssignmentPrepareReq;
@@ -62,6 +65,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest(properties = {
         "spring.jpa.hibernate.ddl-auto=create-drop",
@@ -79,6 +85,9 @@ class ReviewAssignmentMySqlIntegrationTest {
 
     @Autowired
     private ReviewAssignmentAdminService reviewAssignmentAdminService;
+
+    @Autowired private ContestJudgeAdminService contestJudgeAdminService;
+    @Autowired private PlatformTransactionManager transactionManager;
 
     @Autowired
     private ReviewAccessService reviewAccessService;
@@ -384,6 +393,34 @@ class ReviewAssignmentMySqlIntegrationTest {
         } catch (RuntimeException exception) {
             return new PrepareOutcome(List.of(), exception);
         }
+    }
+
+    @Test
+    @Timeout(20)
+    @DisplayName("오래된 RR 스냅샷 이후 배정이 커밋되어도 심사위원 정보 수정을 거부한다")
+    void judgeUpdateSeesAssignmentCommittedAfterRepeatableReadSnapshot() {
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        transaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            assertThatThrownBy(() -> transaction.execute(ignored -> {
+                assertThat(reviewAssignmentRepository.existsByContestJudgeId(judge.getId())).isFalse();
+                try {
+                    PrepareOutcome committed = executor.submit(this::prepareAssignments).get(10, TimeUnit.SECONDS);
+                    assertThat(committed.failure()).isNull();
+                    assertThat(committed.assignments()).hasSize(1);
+                } catch (Exception exception) {
+                    throw new IllegalStateException("Synthetic assignment did not commit", exception);
+                }
+                // This ordinary SELECT deliberately still reads the old snapshot.
+                assertThat(reviewAssignmentRepository.existsByContestJudgeId(judge.getId())).isFalse();
+                return contestJudgeAdminService.updateJudge(admin.getId(), contest.getPublicId(), judge.getId(),
+                        new ContestJudgeUpdateReq("Must not be applied", "Must not be applied"));
+            })).isInstanceOf(CustomException.class)
+                    .extracting(exception -> ((CustomException) exception).getBaseResponseCode())
+                    .isEqualTo(ReviewErrorResponseCode.CONTEST_JUDGE_HAS_ASSIGNMENTS);
+        }
+        assertThat(contestJudgeRepository.findById(judge.getId()).orElseThrow().getName()).isEqualTo(judge.getName());
+        assertThat(reviewAssignmentRepository.count()).isEqualTo(1);
     }
 
     private void deleteTestData() {

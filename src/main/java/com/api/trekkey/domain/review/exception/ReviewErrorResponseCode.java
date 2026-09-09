@@ -22,7 +22,7 @@ public enum ReviewErrorResponseCode implements BaseResponseCode {
     CONTEST_JUDGE_HAS_ASSIGNMENTS(
             "CONTEST_JUDGE_HAS_ASSIGNMENTS",
             409,
-            "심사 배정 이력이 있는 심사위원은 삭제할 수 없습니다."),
+            "심사 배정 이력이 있는 심사위원은 수정하거나 삭제할 수 없습니다."),
     REVIEW_LINK_EXPIRATION_INVALID(
             "REVIEW_LINK_EXPIRATION_INVALID",
             400,

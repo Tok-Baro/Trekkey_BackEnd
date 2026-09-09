@@ -1,0 +1,26 @@
+# Apply WITH docker-compose.yml. Keeps the earlier isolated DB/JAR intact.
+# Normal runtime remains read-only for chain writes; only the explicit E2E runner writes.
+x-full: &full
+  environment:
+    DATASOURCE_URL: jdbc:mysql://127.0.0.1:13306/trekkey_sui_full?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    DATASOURCE_USERNAME: trekkey_sui_full
+  volumes:
+    - type: bind
+      source: ${TESTNET_FULL_ARTIFACT_DIR:?versioned full-integration artifact directory required}/app.jar
+      target: /app/app.jar
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/secrets/full/DATASOURCE_PASSWORD
+      target: /run/backend-secrets/DATASOURCE_PASSWORD
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/uploads-full
+      target: /uploads
+      bind: {create_host_path: false}
+services:
+  backend:
+    <<: *full
+  backend-bootstrap:
+    <<: *full

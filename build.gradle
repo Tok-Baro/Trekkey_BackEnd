@@ -63,8 +63,26 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-tasks.named('test') {
+tasks.withType(Test).configureEach {
     useJUnitPlatform()
+
+    // Test-process-only fallbacks. They are neither application defaults nor bootRun/bootJar
+    // configuration, and cannot enable an external database or blockchain integration gate.
+    // Keep explicitly supplied environment values and Spring test/DynamicPropertySource overrides.
+    def syntheticDefaults = [
+        JWT_SECRET_KEY: 'c3ludGhldGljLXRlc3Qtb25seS1ub3QtZm9yLWFueS1kZXBsb3ltZW50LTAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVm',
+        JWT_ACCESS_EXPIRATION: '900',
+        JWT_REFRESH_EXPIRATION: '604800',
+        EVIDENCE_LOOKUP_HMAC_SECRET: 'synthetic-test-only-independent-evidence-hmac-not-for-deployment',
+        FRONT_BASE_URL: 'http://localhost:3000',
+        CORS_ALLOWED_ORIGIN: 'http://localhost:3000',
+        FILE_UPLOAD_DIR: layout.buildDirectory.dir("test-runtime/${name}/uploads").get().asFile.absolutePath
+    ]
+    syntheticDefaults.each { variable, fallback ->
+        if (!environment.containsKey(variable)) {
+            environment(variable, fallback)
+        }
+    }
 }
 
 sourceSets {

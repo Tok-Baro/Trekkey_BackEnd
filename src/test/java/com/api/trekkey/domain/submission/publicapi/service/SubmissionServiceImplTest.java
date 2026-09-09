@@ -12,6 +12,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.api.trekkey.domain.contest.entity.Contest;
+import com.api.trekkey.domain.audit.entity.AuditAction;
+import com.api.trekkey.domain.audit.support.AdminAuditLogger;
+import com.api.trekkey.domain.organization.entity.Organization;
+import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
+import com.api.trekkey.domain.user.entity.UserRole;
+import com.api.trekkey.domain.user.entity.UserStatus;
+import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
@@ -38,6 +45,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -66,6 +74,9 @@ class SubmissionServiceImplTest {
     @Mock
     private FileStoragePort fileStoragePort;
 
+    @Mock
+    private AdminAuditLogger adminAuditLogger;
+
     private SubmissionServiceImpl submissionService;
 
     private User leader;
@@ -76,7 +87,7 @@ class SubmissionServiceImplTest {
     void setUp() {
         submissionService = new SubmissionServiceImpl(
                 userRepository, teamRepository, contestStageRepository,
-                submissionRepository, submissionFileRepository, fileStoragePort);
+                submissionRepository, submissionFileRepository, fileStoragePort, adminAuditLogger);
 
         leader = mock(User.class);
         lenient().when(leader.getId()).thenReturn(10L);
@@ -279,6 +290,124 @@ class SubmissionServiceImplTest {
     }
 
     //======= 헬퍼 메서드 ==========
+
+    @Test
+    void adminReceiveRecordsActualAdministratorAndAuditWithoutImpersonatingLeader() {
+        givenAdmin();
+        givenSubmissionStageOpen();
+        given(submissionRepository.save(any(Submission.class))).willAnswer(invocation -> {
+            Submission saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            ReflectionTestUtils.setField(saved, "publicId", "sub-pub-1");
+            return saved;
+        });
+        SubmissionRes result = submissionService.submitByAdmin(
+                20L, "contest-pub-1", "team-pub-1", "  Synthetic manual work  ", List.of(pdfFile()));
+        assertThat(result.title()).isEqualTo("Synthetic manual work");
+        ArgumentCaptor<List<SubmissionFile>> files = ArgumentCaptor.forClass(List.class);
+        verify(submissionFileRepository).saveAll(files.capture());
+        assertThat(files.getValue().get(0).getUploadedBy().getId()).isEqualTo(20L);
+        verify(adminAuditLogger).log(20L, 300L, AuditAction.SUBMISSION_MANUAL_RECEIVE,
+                "TEAM", 1L, "contestId=200, submissionPublicId=sub-pub-1");
+    }
+
+    @Test
+    void adminReceiveCannotOverwriteExistingSubmissionOrFiles() {
+        givenAdmin();
+        givenSubmissionStageOpen();
+        Submission existing = submissionFixture(null);
+        given(submissionRepository.findByTeamIdForUpdate(1L)).willReturn(Optional.of(existing));
+        assertThatThrownBy(() -> submissionService.submitByAdmin(
+                20L, "contest-pub-1", "team-pub-1", "Overwrite", List.of(pdfFile())))
+                .isInstanceOf(CustomException.class)
+                .extracting(e -> ((CustomException) e).getBaseResponseCode())
+                .isEqualTo(SubmissionErrorResponseCode.SUBMISSION_ALREADY_EXISTS);
+        assertThat(existing.getTitle()).isEqualTo("원래 작품");
+        verify(submissionFileRepository, never()).deleteAllBySubmissionIdBulk(any());
+        verify(fileStoragePort, never()).store(anyString(), anyString(), any());
+        org.mockito.Mockito.verifyNoInteractions(adminAuditLogger);
+    }
+
+    @Test
+    void adminReceiveCannotOverrideFinalization() {
+        givenAdmin();
+        givenSubmissionStageOpen();
+        given(submissionRepository.findByTeamIdForUpdate(1L))
+                .willReturn(Optional.of(submissionFixture(LocalDateTime.now())));
+        assertAdminFailure(SubmissionErrorResponseCode.SUBMISSION_FINALIZED);
+    }
+
+    @Test
+    void adminReceiveCannotBypassSubmissionWindow() {
+        givenAdmin();
+        assertAdminFailure(SubmissionErrorResponseCode.SUBMISSION_NOT_OPEN);
+    }
+
+    @Test
+    void adminReceiveCannotBypassRejectedTeamState() {
+        givenAdmin();
+        given(team.getStatus()).willReturn(TeamStatus.REJECTED);
+        assertAdminFailure(SubmissionErrorResponseCode.SUBMISSION_NOT_OPEN);
+    }
+
+    @Test
+    void adminReceiveHidesTeamsOfDifferentContests() {
+        givenAdmin();
+        given(contest.getPublicId()).willReturn("other-contest");
+        assertAdminFailure(TeamErrorResponseCode.TEAM_NOT_FOUND);
+    }
+
+    @Test
+    void adminReceiveHidesTeamsOfDifferentOrganizations() {
+        givenAdmin();
+        Organization other = mock(Organization.class);
+        given(other.getId()).willReturn(999L);
+        given(contest.getOrganization()).willReturn(other);
+        assertAdminFailure(TeamErrorResponseCode.TEAM_NOT_FOUND);
+    }
+
+    @Test
+    void adminReceiveRechecksRoleFromDatabase() {
+        given(userRepository.findById(20L)).willReturn(Optional.of(leader));
+        given(leader.getRole()).willReturn(UserRole.PARTICIPANT);
+        assertAdminFailure(UserErrorResponseCode.USER_INVALID_TOKEN);
+        verify(teamRepository, never()).findByPublicIdForUpdate(anyString());
+    }
+
+    @Test
+    void adminReceiveReusesFileValidationBeforeStorageAndRejectsMixedEmptyFiles() {
+        givenAdmin();
+        givenSubmissionStageOpen();
+        MultipartFile empty = new MockMultipartFile("files", "empty.pdf", "application/pdf", new byte[0]);
+        assertThatThrownBy(() -> submissionService.submitByAdmin(
+                20L, "contest-pub-1", "team-pub-1", "Work", List.of(pdfFile(), empty)))
+                .isInstanceOf(CustomException.class)
+                .extracting(e -> ((CustomException) e).getBaseResponseCode())
+                .isEqualTo(SubmissionErrorResponseCode.SUBMISSION_FILE_REQUIRED);
+        verify(fileStoragePort, never()).store(anyString(), anyString(), any());
+    }
+
+    private void givenAdmin() {
+        Organization organization = mock(Organization.class);
+        lenient().when(organization.getId()).thenReturn(300L);
+        User admin = mock(User.class);
+        lenient().when(admin.getId()).thenReturn(20L);
+        lenient().when(admin.getRole()).thenReturn(UserRole.ADMIN);
+        lenient().when(admin.getStatus()).thenReturn(UserStatus.ACTIVE);
+        lenient().when(admin.getOrganization()).thenReturn(organization);
+        lenient().when(userRepository.findById(20L)).thenReturn(Optional.of(admin));
+        lenient().when(contest.getPublicId()).thenReturn("contest-pub-1");
+        lenient().when(contest.getOrganization()).thenReturn(organization);
+    }
+
+    private void assertAdminFailure(com.api.trekkey.global.response.code.BaseResponseCode code) {
+        assertThatThrownBy(() -> submissionService.submitByAdmin(
+                20L, "contest-pub-1", "team-pub-1", "Work", List.of(pdfFile())))
+                .isInstanceOf(CustomException.class)
+                .extracting(e -> ((CustomException) e).getBaseResponseCode())
+                .isEqualTo(code);
+        verify(fileStoragePort, never()).store(anyString(), anyString(), any());
+    }
 
     private void givenSubmissionStageOpen() {
         ContestStage stage = mock(ContestStage.class);

@@ -1,0 +1,118 @@
+{
+  "recordType": "verification-report-not-runtime-deployment-manifest",
+  "recordedDate": "2026-09-08",
+  "syntheticOnly": true,
+  "result": "PASS_ISOLATED_TESTNET_INTEGRATION",
+  "productionReplaced": false,
+  "productionReplacementBlocker": "Six existing Kairos AWARD credentials require legacy verification routing; the single-provider Sui runtime is not a compatible production replacement.",
+  "source": {
+    "backendHead": "0615984797b7c1c6b51f2f9e7ae7ca41332ae15c",
+    "frontendHead": "946525e",
+    "includesUncommittedChanges": true,
+    "preservedAutostash": "822b911",
+    "frontendChanges": ["ExternalEvidencePanel asynchronous form reset", "ContestApplicationForm configured team capacity", "Regression tests only; no design or CSS changes"]
+  },
+  "artifact": {
+    "serverDirectory": "/srv/trekkey-sui-testnet/artifacts/full-integration-0615984/v6",
+    "jarSha256": "a09848b668594a3986c9d90485dfa144c6e53542083bb7c3e62486d247316b58",
+    "testBundleSha256": "7f7489c1441406ba15b96a318071af7ee84754e0c3f35f740869c31ffdadb512",
+    "localRemoteHashesMatch": true,
+    "macosAppleDoubleEntries": 0
+  },
+  "environment": {
+    "database": "trekkey_sui_full",
+    "tableCount": 48,
+    "previousTestDatabase": "trekkey_sui_testnet",
+    "previousTestTableCountPreserved": 30,
+    "backendBinding": "127.0.0.1:18080",
+    "mysqlBinding": "127.0.0.1:13306",
+    "gatewayBinding": "127.0.0.1:9187",
+    "runtimeChainWriteMode": "READ_ONLY",
+    "automaticWorkerEnabled": false,
+    "restartStartedAt": "2026-09-08T13:02:08.761058736Z"
+  },
+  "chain": {
+    "provider": "SUI",
+    "network": "testnet",
+    "chainIdentifier": "4c78adac",
+    "packageId": "0x4954c88c29a33f884ad97e19eae94c3f6f397f7f716753d2fbfe6d2df012faa2",
+    "registryObjectId": "0xb96a54d2ed390d29551608e0477eec57c956b58ac55c54e0083cf59943f5d9a0",
+    "reusedDeployment": true,
+    "maximumTotalGasBudgetMist": "200000000",
+    "budgetIsNotActualGasConsumption": true
+  },
+  "transactions": [
+    {"purpose": "PARTICIPATION_ANCHOR", "status": "CONFIRMED", "digest": "391PcEPC2irKkmga4ybFUArZMYvkzByyDsELTuDRxk6C", "checkpoint": "381273062"},
+    {"purpose": "WORK_ANCHOR", "status": "CONFIRMED", "digest": "4pJJ6px463hFXxvEKUD5MQ16jrWZVoACjkUtppoANej6", "checkpoint": "381273117"},
+    {"purpose": "AWARD_ANCHOR", "status": "CONFIRMED", "digest": "5KDLVPwr6W9upTBAWdBsLeoeLcDX2rWTGqYme53jJ3Qh", "checkpoint": "381280961"},
+    {"purpose": "PARTICIPATION_REVOKE", "status": "CONFIRMED", "digest": "7aKBJK8hABvhVoLJFtb4AsP4bR9ByAu83qcQ8hgJUESP", "checkpoint": "381281042"}
+  ],
+  "credentialsAfterRestart": [
+    {"type": "PARTICIPATION", "publicId": "c616a240-e5be-4021-b144-f78e879b9a2b", "verificationStatus": "REVOKED"},
+    {"type": "WORK", "publicId": "54a0c3ec-925c-4b41-bcb0-36cfbc487db3", "verificationStatus": "VALID"},
+    {"type": "AWARD", "publicId": "930e78ae-2e2d-4a19-9253-4044819acb8a", "verificationStatus": "VALID"}
+  ],
+  "tests": {
+    "localJava": {"total": 760, "passed": 733, "skipped": 27, "failed": 0, "suites": 117, "build": "PASS"},
+    "localJavaSkips": {"dedicatedMysql": 25, "previousH2SuiOptIn": 1, "persistentSuiOptIn": 1},
+    "separateActualMysql": {"classes": 9, "total": 25, "passed": 25, "skipped": 0},
+    "persistentSuiResume": {"total": 1, "passed": 1, "skipped": 0, "confirmedTransactions": 4, "batches": 3, "statusEvents": 1, "processedOutbox": 4},
+    "authenticatedHttpWorkflow": {"checks": 27, "passed": 27},
+    "afterRestartHttpReadback": {"checks": 8, "passed": 8, "finishedAt": "2026-09-08T13:07:51.793Z", "loginRequests": 1, "otherRequestsGetOnly": true},
+    "afterRestartPublicDownloads": {"pdf": 3, "zip": 3, "httpAndMagicBytes": "PASS"},
+    "frontend": {"total": 29, "passed": 29, "skipped": 0, "productionBuild": "PASS"},
+    "infrastructureHelpers": {"total": 19, "passed": 19},
+    "backupSqlGuard": {"total": 11, "passed": 11},
+    "previousStageNotRerunAsPartOfFinalJavaBuild": {"move": "42/42 PASS", "gateway": "53/53 PASS", "solidity": "12/12 PASS"}
+  },
+  "browserObservations": {
+    "browser": "Chrome",
+    "originalFrontendLayoutPreserved": true,
+    "participationValidBeforeRevoke": true,
+    "participationRevokedAfterRestart": true,
+    "awardValidAfterRestart": true,
+    "all33RoutesWalked": false,
+    "authenticatedBrowserWorkflowWalked": false,
+    "liveTamperLabLeafAndMerkleRootRecalculation": "MATCH",
+    "liveTamperLabOverallSuiCompatibility": false,
+    "knownLimitations": [
+      "The legacy technical network label renders '-' for the Sui chainId=0 compatibility sentinel.",
+      "Live Tamper Lab reports missing Kaia evidence and an evidence-mismatch warning despite matching server claims, recalculated leaf and Merkle root. Its fixed Java/frontend test counts are historical. This unapproved frontend area was not changed."
+    ]
+  },
+  "preservation": {
+    "originalTwoDigestsAndSignedBytesUnchanged": true,
+    "allThreeCredentialCanonicalBytesAndContentHashesUnchanged": true,
+    "originalAndResumeClaimsPreserved": true,
+    "firstSuiRun": "Failed after two confirmed anchors because MySQL microsecond rounding was misclassified as tampering; preserved and resumed after precision-only verifier fix.",
+    "readbackToolPreflight": "Initial zero-byte claim created before any HTTP request was preserved as restart-readback-empty-before-http.claim; container FOWNER corrected before the successful run."
+  },
+  "backup": {
+    "localSourceArchiveSha256": "c0f23936307c109339a43b263734a4ed4b9ab9eb270077a69d811e1e98d1fd3a",
+    "serverOnlineSnapshotDirectory": "/srv/trekkey-backups/pre-replacement-20260908-online",
+    "checksumManifestSha256": "095b8191d8084e6c822fba492c716230717451defd2cea7092eb54383ce142b2",
+    "databaseRestoredWithNetworkNone": true,
+    "restoredTables": 48,
+    "restoredAnchoredAwards": 6,
+    "restoreAuditContainerStopped": true,
+    "restoreAuditVolumePreserved": true,
+    "fullApplicationDisasterRecoveryTested": false,
+    "writePausedFinalCutoverBackup": false
+  },
+  "productionPostcheck": {"backendContainer": "62d804a4e4b2", "mysqlContainer": "d5dc8757e07b", "containersUnchanged": true, "http": 200, "legacyAnchoredAwards": 6, "legacyConfirmedKairosTransactions": 1},
+  "documentationChecks": {
+    "markdownReaderParity": 34,
+    "frontendRouteParity": 33,
+    "backendOperationParity": 106,
+    "localLinksAndSecretPatternCheck": "PASS",
+    "desktopReaderOpenedAndSearchVerified": true,
+    "readerSearchFix": "Respect hidden buttons and normalize punctuation consistently with indexed document text.",
+    "mobileReaderQa": "NOT_PERFORMED"
+  },
+  "limitations": [
+    "Synthetic institution only; no official academic eligibility certification.",
+    "Course mapping readback proves membership in the current institution unit list, not equality to a missing original unit-ID snapshot.",
+    "No mainnet deployment, production cutover, legacy automatic routing, or real wallet/private-key handling.",
+    "No Walrus/Seal storage, field-level selective disclosure, KMS/HSM, or comprehensive privacy/security/load audit."
+  ]
+}

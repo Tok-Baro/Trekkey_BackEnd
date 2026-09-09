@@ -1,5 +1,9 @@
 # Trekkey 블록체인 구현 및 실행 가이드
 
+> 2026-09-08: 아래는 기존 Kaia 운용 가이드다. Sui 경로는
+> [Sui 이식 계약](./sui-migration-2026-09-08.md), [Move 계약](../contracts-sui/README.md),
+> [SDK 게이트웨이](../sui-gateway/README.md)를 사용한다. 이 변경은 운영 DB/체인 배포를 실행하지 않는다.
+
 - 기준일: 2026-07-24
 - 대상: Trekkey 백엔드 개발자, 학교 관리자, 배포 담당자
 - 네트워크: Kaia Kairos `chainId=1001`

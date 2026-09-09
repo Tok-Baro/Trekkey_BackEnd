@@ -24,6 +24,9 @@ import com.api.trekkey.domain.organization.repository.OrganizationRepository;
 import com.api.trekkey.global.exception.CustomException;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
@@ -37,6 +40,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional
 public class CredentialIssuanceServiceImpl implements CredentialIssuanceService {
+
+    private static final ObjectMapper CANONICAL_READER = new ObjectMapper();
 
     private final OrganizationRepository organizationRepository;
     private final AncCredentialRepository credentialRepository;
@@ -90,8 +95,8 @@ public class CredentialIssuanceServiceImpl implements CredentialIssuanceService 
                     manifest.canonicalBytes(),
                     contentHash.bytes(),
                     manifest.hash().bytes(),
-                    UtcTime.toLocalDateTime(command.issuedAt()),
-                    command.expiresAt() == null ? null : UtcTime.toLocalDateTime(command.expiresAt())));
+                    UtcTime.toPersistedLocalDateTime(command.issuedAt()),
+                    command.expiresAt() == null ? null : UtcTime.toPersistedLocalDateTime(command.expiresAt())));
 
             credentialSourceRepository.save(sourceEntity(credential, command, sourceFingerprint));
             credentialSubjectRepository.saveAll(subjectEntities(credential, command));
@@ -114,11 +119,25 @@ public class CredentialIssuanceServiceImpl implements CredentialIssuanceService 
         return credential.getCredentialNo().equals(command.credentialNo())
                 && credential.getCredentialType() == command.credentialType()
                 && credential.getSchemaProfileId().equals(command.schemaProfileId())
-                && UtcTime.toInstant(credential.getIssuedAt()).equals(command.issuedAt())
-                && Objects.equals(
-                        credential.getExpiresAt() == null ? null : UtcTime.toInstant(credential.getExpiresAt()),
-                        command.expiresAt())
+                && canonicalTimesMatch(credential, command)
+                && UtcTime.samePersistedInstant(command.issuedAt(), UtcTime.toInstant(credential.getIssuedAt()))
+                && UtcTime.samePersistedInstant(command.expiresAt(),
+                        credential.getExpiresAt() == null ? null : UtcTime.toInstant(credential.getExpiresAt()))
                 && MessageDigest.isEqual(credential.getFileManifestHash(), manifest.hash().bytes());
+    }
+
+    private boolean canonicalTimesMatch(AncCredential credential, CredentialIssueCommand command) {
+        // Retry identity uses exact immutable claims, not the coarser duplicated DB timestamp.
+        // A different nanosecond input must not be accepted merely because it rounds identically.
+        try {
+            JsonNode payload = CANONICAL_READER.readTree(credential.getCanonicalBytes());
+            Instant issuedAt = Instant.parse(payload.path("issuedAt").asText());
+            JsonNode expiry = payload.path("expiresAt");
+            Instant expiresAt = expiry.isNull() ? null : Instant.parse(expiry.asText());
+            return issuedAt.equals(command.issuedAt()) && Objects.equals(expiresAt, command.expiresAt());
+        } catch (Exception invalidCanonical) {
+            return false;
+        }
     }
 
     private SourceFingerprint.Result sourceFingerprint(
@@ -178,7 +197,7 @@ public class CredentialIssuanceServiceImpl implements CredentialIssuanceService 
                 source.awardId(),
                 source.publicId(),
                 sourceFingerprint.fingerprintHash().bytes(),
-                UtcTime.toLocalDateTime(source.finalizedAt()));
+                UtcTime.toPersistedLocalDateTime(source.finalizedAt()));
     }
 
     private List<AncCredentialSubject> subjectEntities(

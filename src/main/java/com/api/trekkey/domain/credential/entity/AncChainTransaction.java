@@ -39,6 +39,22 @@ import lombok.NoArgsConstructor;
         })
 public class AncChainTransaction extends BaseEntity {
 
+    @Column(name = "chain_context", length = 384, updatable = false)
+    private String chainContext;
+
+    public AncChainTransaction inContext(String context) {
+        if (id != null || chainContext != null || context == null || context.isBlank() || context.length() > 384) {
+            throw new IllegalStateException("transaction chain context can only be fixed before persistence");
+        }
+        if ((chainId == 0) != context.startsWith("SUI|")) {
+            throw new IllegalStateException("transaction coordinates and chain context disagree");
+        }
+        chainContext = context;
+        return this;
+    }
+
+    public boolean isSui() { return chainId == 0 && contractAddress != null && contractAddress.length == 32; }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -63,7 +79,7 @@ public class AncChainTransaction extends BaseEntity {
     private long chainId;
 
     @Getter(AccessLevel.NONE)
-    @Column(name = "contract_address", nullable = false, length = 20, updatable = false)
+    @Column(name = "contract_address", nullable = false, length = 32, updatable = false)
     private byte[] contractAddress;
 
     @Column(name = "contract_version", nullable = false, length = 100, updatable = false)
@@ -77,7 +93,7 @@ public class AncChainTransaction extends BaseEntity {
     private Long txNonce;
 
     @Getter(AccessLevel.NONE)
-    @Column(name = "relayer_address", length = 20)
+    @Column(name = "relayer_address", length = 32)
     private byte[] relayerAddress;
 
     @Getter(AccessLevel.NONE)
@@ -124,8 +140,8 @@ public class AncChainTransaction extends BaseEntity {
             byte[] contractAddress,
             String contractVersion,
             LocalDateTime nextAttemptAt) {
-        if (operationType == null || isBlank(idempotencyKey) || chainId <= 0 || contractAddress == null
-                || contractAddress.length != 20 || isBlank(contractVersion)) {
+        if (operationType == null || isBlank(idempotencyKey) || chainId < 0 || contractAddress == null
+                || contractAddress.length != (chainId == 0 ? 32 : 20) || isBlank(contractVersion)) {
             throw new IllegalArgumentException("chain transaction required fields are missing");
         }
         validateTarget(operationType, batchId, credentialStatusEventId, issuerKeyId);
@@ -179,12 +195,13 @@ public class AncChainTransaction extends BaseEntity {
     public void prepare(
             byte[] signedRawTransaction,
             byte[] txHash,
-            long txNonce,
+            Long txNonce,
             byte[] relayerAddress,
             LocalDateTime preparedAt) {
         if (status != ChainTransactionStatus.PENDING || signedRawTransaction == null || signedRawTransaction.length == 0
-                || txHash == null || txHash.length != 32 || txNonce < 0 || relayerAddress == null
-                || relayerAddress.length != 20 || preparedAt == null) {
+                || txHash == null || txHash.length != 32 || relayerAddress == null
+                || relayerAddress.length != (isSui() ? 32 : 20) || preparedAt == null
+                || (isSui() ? txNonce != null : (txNonce == null || txNonce < 0))) {
             throw new IllegalStateException("chain transaction cannot be prepared");
         }
         this.signedRawTransaction = signedRawTransaction.clone();
@@ -198,7 +215,7 @@ public class AncChainTransaction extends BaseEntity {
     }
 
     public void markSubmitted(LocalDateTime submittedAt) {
-        if (status != ChainTransactionStatus.PREPARED || txHash == null || txNonce == null || preparedAt == null
+        if (status != ChainTransactionStatus.PREPARED || txHash == null || (!isSui() && txNonce == null) || preparedAt == null
                 || submittedAt == null || submittedAt.isBefore(preparedAt)) {
             throw new IllegalStateException("chain transaction cannot be marked submitted");
         }

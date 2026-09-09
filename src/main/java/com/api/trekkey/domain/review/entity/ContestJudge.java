@@ -67,6 +67,17 @@ public class ContestJudge extends BaseEntity {
     @Column(name = "token_revoked_at")
     private LocalDateTime tokenRevokedAt;
 
+    public boolean updateLabels(String name, String roleLabel) {
+        String nextName = name.trim();
+        String nextRoleLabel = roleLabel.trim();
+        if (this.name.equals(nextName) && this.roleLabel.equals(nextRoleLabel)) {
+            return false;
+        }
+        this.name = nextName;
+        this.roleLabel = nextRoleLabel;
+        return true;
+    }
+
     public void issueReviewLink(
             String reviewTokenHash,
             LocalDateTime issuedAt,

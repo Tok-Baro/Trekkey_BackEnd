@@ -27,6 +27,7 @@ import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.support.ReviewLinkTokenManager;
 import com.api.trekkey.domain.review.admin.web.dto.request.ContestJudgeCreateReq;
+import com.api.trekkey.domain.review.admin.web.dto.request.ContestJudgeUpdateReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewLinkIssueReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ContestJudgeRes;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewJudgeProgressRes;
@@ -525,6 +526,70 @@ class ContestJudgeAdminServiceImplTest {
         given(userRepository.findById(10L)).willReturn(Optional.of(admin));
         given(contestRepository.findByPublicId("contest-public-id"))
                 .willReturn(Optional.of(contest));
+    }
+
+    @Test
+    void updateJudgeChangesLabelsPreservesLinkedIdentityAndRevokesOldLink() {
+        stubAdminAndContest();
+        User linkedUser = user(20L, organization, "Linked identity", "linked@example.invalid", UserRole.PARTICIPANT);
+        ContestJudge judge = judge(200L, linkedUser, "Original judge");
+        judge.issueReviewLink("unchanged-token-hash", NOW.minusHours(1), NOW.plusHours(1));
+        given(contestJudgeRepository.findByIdAndContestIdForUpdate(200L, 100L)).willReturn(Optional.of(judge));
+        ContestJudgeRes result = service.updateJudge(10L, "contest-public-id", 200L,
+                new ContestJudgeUpdateReq("  Updated judge  ", "  Updated role  "));
+        assertThat(result.name()).isEqualTo("Updated judge");
+        assertThat(result.roleLabel()).isEqualTo("Updated role");
+        assertThat(result.userId()).isEqualTo(20L);
+        assertThat(result.reviewLinkStatus()).isEqualTo(ReviewLinkStatus.REVOKED);
+        assertThat(judge.getReviewTokenHash()).isEqualTo("unchanged-token-hash");
+        verify(adminAuditLogger).log(10L, 1L, AuditAction.CONTEST_JUDGE_UPDATE,
+                "CONTEST_JUDGE", 200L, "contestId=100, linkRevoked=true");
+        verify(adminAuditLogger).log(10L, 1L, AuditAction.REVIEW_LINK_REVOKE,
+                "CONTEST_JUDGE", 200L, "contestId=100, reason=judge_labels_updated");
+        org.mockito.Mockito.verifyNoInteractions(reviewLinkTokenManager);
+    }
+
+    @Test
+    void repeatedIdenticalJudgeUpdateDoesNotRevokeNewlyIssuedLinkOrDuplicateAudit() {
+        stubAdminAndContest();
+        ContestJudge judge = judge(200L, null, "Original judge");
+        given(contestJudgeRepository.findByIdAndContestIdForUpdate(200L, 100L)).willReturn(Optional.of(judge));
+        ContestJudgeUpdateReq request = new ContestJudgeUpdateReq("Updated judge", "Updated role");
+        service.updateJudge(10L, "contest-public-id", 200L, request);
+        judge.issueReviewLink("new-token-hash", NOW, NOW.plusDays(1));
+        ContestJudgeRes repeated = service.updateJudge(10L, "contest-public-id", 200L, request);
+        assertThat(repeated.reviewLinkStatus()).isEqualTo(ReviewLinkStatus.ACTIVE);
+        verify(adminAuditLogger, times(1)).log(10L, 1L, AuditAction.CONTEST_JUDGE_UPDATE,
+                "CONTEST_JUDGE", 200L, "contestId=100, linkRevoked=false");
+    }
+
+    @Test
+    void judgeUpdateRejectsAnyAssignmentHistoryWithoutChangingLabelsOrToken() {
+        stubAdminAndContest();
+        ContestJudge judge = judge(200L, null, "Original judge");
+        judge.issueReviewLink("token-hash", NOW, NOW.plusDays(1));
+        given(contestJudgeRepository.findByIdAndContestIdForUpdate(200L, 100L)).willReturn(Optional.of(judge));
+        given(reviewAssignmentRepository.findAllForUpdateByContestJudgeId(200L))
+                .willReturn(List.of(org.mockito.Mockito.mock(com.api.trekkey.domain.review.entity.ReviewAssignment.class)));
+        assertThatThrownBy(() -> service.updateJudge(10L, "contest-public-id", 200L,
+                new ContestJudgeUpdateReq("Changed", "Changed")))
+                .isInstanceOf(CustomException.class)
+                .extracting(e -> ((CustomException) e).getBaseResponseCode())
+                .isEqualTo(ReviewErrorResponseCode.CONTEST_JUDGE_HAS_ASSIGNMENTS);
+        assertThat(judge.getName()).isEqualTo("Original judge");
+        assertThat(judge.getReviewLinkStatus(NOW)).isEqualTo(ReviewLinkStatus.ACTIVE);
+        org.mockito.Mockito.verifyNoInteractions(adminAuditLogger);
+    }
+
+    @Test
+    void judgeUpdateRejectsJudgeIdOutsideContest() {
+        stubAdminAndContest();
+        assertThatThrownBy(() -> service.updateJudge(10L, "contest-public-id", 999L,
+                new ContestJudgeUpdateReq("Changed", "Changed")))
+                .isInstanceOf(CustomException.class)
+                .extracting(e -> ((CustomException) e).getBaseResponseCode())
+                .isEqualTo(ReviewErrorResponseCode.CONTEST_JUDGE_NOT_FOUND);
+        org.mockito.Mockito.verifyNoInteractions(adminAuditLogger);
     }
 
     private User user(

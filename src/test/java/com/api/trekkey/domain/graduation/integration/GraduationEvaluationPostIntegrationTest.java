@@ -91,18 +91,25 @@ class GraduationEvaluationPostIntegrationTest {
     }
 
     @Test
-    void postRunsRealServiceAndPersistsEvaluationAndItems() throws Exception {
+    void commonOnlyPolicyCannotClaimCompleteGraduationAndPersistsActualItems() throws Exception {
         mockMvc.perform(post("/api/me/graduation/evaluations")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"policyAsOf\":\"2026-08-11\"}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.status").value("ELIGIBLE"))
+                .andExpect(jsonPath("$.data.status").value("INDETERMINATE"))
+                .andExpect(jsonPath("$.data.coverage.complete").value(false))
+                .andExpect(jsonPath("$.data.coverage.appliedPolicyTypes[0]").value("COMMON"))
+                .andExpect(jsonPath("$.data.coverage.gaps[0].code").value("ACADEMIC_STANDING_UNAVAILABLE"))
                 .andExpect(jsonPath("$.data.summary.satisfied").value(1))
                 .andExpect(jsonPath("$.data.requirements[0].code").value("TOTAL_CREDITS"))
                 .andExpect(jsonPath("$.data.requirements[0].status").value("SATISFIED"));
 
         assertThat(evaluationRepository.count()).isEqualTo(1);
         assertThat(itemRepository.count()).isEqualTo(1);
+        GraduationEvaluation saved = evaluationRepository.findAll().getFirst();
+        assertThat(saved.getEvaluatorVersion()).isEqualTo("hansung-v2-coverage");
+        assertThat(saved.getInputSnapshotJson()).contains("ACADEMIC_STANDING_UNAVAILABLE", "registeredSemesters",
+                "internationalStudent", "expectedGraduationYear", "ACADEMIC_UNITS_MISSING");
     }
 
     private HandlerMethodArgumentResolver authPrincipalResolver(AuthPrincipal principal) {

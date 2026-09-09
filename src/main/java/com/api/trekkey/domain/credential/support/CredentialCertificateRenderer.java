@@ -2,6 +2,7 @@ package com.api.trekkey.domain.credential.support;
 
 import com.api.trekkey.domain.credential.entity.CredentialType;
 import com.api.trekkey.domain.credential.service.dto.CredentialVerificationView;
+import com.api.trekkey.domain.credential.service.dto.CredentialVerificationStatus;
 import com.google.zxing.BarcodeFormat;
 import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.common.BitMatrix;
@@ -54,15 +55,25 @@ public class CredentialCertificateRenderer {
             number.setAlignment(Element.ALIGN_RIGHT);
             document.add(number);
 
+            boolean usable = view.verificationStatus() == CredentialVerificationStatus.VALID
+                    && view.credentialType() != null && view.issuedAt() != null;
+            Font statusFont = font(bold, 12);
+            statusFont.setColor(usable ? new java.awt.Color(20, 100, 65) : new java.awt.Color(160, 30, 30));
+            Paragraph status = new Paragraph(statusLabel(view.verificationStatus()) + " ["
+                    + view.verificationStatus() + "]", statusFont);
+            status.setAlignment(Element.ALIGN_CENTER);
+            status.setSpacingBefore(12);
+            document.add(status);
+
             //제목 — 유형별 (상장 / 작품 확인서 / 참여 확인서)
-            Paragraph title = new Paragraph(titleOf(view.credentialType()), font(bold, 40));
+            Paragraph title = new Paragraph(usable ? titleOf(view.credentialType()) : "증명 상태 확인서", font(bold, usable ? 40 : 30));
             title.setAlignment(Element.ALIGN_CENTER);
             title.setSpacingBefore(30);
             title.setSpacingAfter(view.credentialType() == CredentialType.AWARD ? 6 : 28);
             document.add(title);
 
             //상격 (수상 전용)
-            if (view.credentialType() == CredentialType.AWARD && prize != null) {
+            if (usable && view.credentialType() == CredentialType.AWARD && prize != null) {
                 Paragraph prizeLine = new Paragraph(prize, font(bold, 22));
                 prizeLine.setAlignment(Element.ALIGN_CENTER);
                 prizeLine.setSpacingAfter(24);
@@ -77,7 +88,8 @@ public class CredentialCertificateRenderer {
             }
 
             //본문
-            Paragraph bodyText = new Paragraph(bodyOf(view.credentialType(), contestTitle, submissionTitle),
+            Paragraph bodyText = new Paragraph(usable ? bodyOf(view.credentialType(), contestTitle, submissionTitle)
+                    : "현재 유효한 증명서로 사용할 수 없습니다.\n이 문서는 조회 시점의 상태를 보관한 확인서입니다.\n아래 공개 검증 주소에서 최신 상태를 확인하세요.",
                     font(regular, 14));
             bodyText.setAlignment(Element.ALIGN_CENTER);
             bodyText.setLeading(26);
@@ -85,15 +97,15 @@ public class CredentialCertificateRenderer {
             document.add(bodyText);
 
             //발급일·발급기관
-            LocalDate issued = LocalDate.ofInstant(view.issuedAt(), ZoneOffset.UTC);
+            LocalDate issued = view.issuedAt() == null ? null : LocalDate.ofInstant(view.issuedAt(), ZoneOffset.UTC);
             Paragraph date = new Paragraph(
-                    "%d년 %d월 %d일".formatted(issued.getYear(), issued.getMonthValue(), issued.getDayOfMonth()),
+                    issued == null ? "발급일 확인 불가" : "%d년 %d월 %d일".formatted(issued.getYear(), issued.getMonthValue(), issued.getDayOfMonth()),
                     font(regular, 14));
             date.setAlignment(Element.ALIGN_CENTER);
             date.setSpacingBefore(42);
             document.add(date);
 
-            Paragraph issuer = new Paragraph(view.issuerName(), font(bold, 24));
+            Paragraph issuer = new Paragraph(view.issuerName() == null ? "발급기관 확인 불가" : view.issuerName(), font(bold, 24));
             issuer.setAlignment(Element.ALIGN_CENTER);
             issuer.setSpacingBefore(14);
             document.add(issuer);
@@ -107,7 +119,7 @@ public class CredentialCertificateRenderer {
             canvas.beginText();
             canvas.setFontAndSize(regular, 9);
             canvas.showTextAligned(Element.ALIGN_LEFT,
-                    "본 증서의 진위는 블록체인 앵커링 기반 공개 검증으로 확인할 수 있습니다.", 165, 122, 0);
+                    "다운로드 당시 상태이며 최신 유효성은 아래 주소에서 다시 확인하세요.", 165, 122, 0);
             canvas.showTextAligned(Element.ALIGN_LEFT, verifyUrl, 165, 106, 0);
             canvas.showTextAligned(Element.ALIGN_LEFT,
                     "증서 번호 " + view.credentialNo(), 165, 90, 0);
@@ -121,6 +133,23 @@ public class CredentialCertificateRenderer {
     }
 
     //======= 헬퍼 메서드 ==========
+
+    private String statusLabel(CredentialVerificationStatus status) {
+        if (status == null) return "검증 상태 확인 불가";
+        return switch (status) {
+            case VALID -> "다운로드 시점 검증 유효";
+            case REVOKED -> "발급기관이 취소한 증명";
+            case SUPERSEDED -> "다른 증명서로 대체됨";
+            case EXPIRED -> "유효기간 만료";
+            case PENDING -> "체인 확정 전 - 유효성 미확정";
+            case TAMPERED -> "내용 또는 증거 불일치";
+            case RPC_UNAVAILABLE -> "체인 조회 불가 - 유효성 미확인";
+            case ANCHOR_NOT_FOUND -> "체인 기록 확인 불가";
+            case ISSUER_INVALID -> "발급기관 검증 실패";
+            case BLOCKCHAIN_CONFIGURATION_ERROR -> "체인 설정 검증 실패";
+            case SCHEMA_UNSUPPORTED -> "지원하지 않는 증명 형식";
+        };
+    }
 
     private String titleOf(CredentialType type) {
         return switch (type) {

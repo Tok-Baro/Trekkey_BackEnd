@@ -1,6 +1,7 @@
 package com.api.trekkey.domain.credential.service.support;
 
 import java.time.Instant;
+import java.time.DateTimeException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
@@ -19,15 +20,27 @@ public final class UtcTime {
         return localDateTime.toInstant(ZoneOffset.UTC);
     }
 
-    /**
-     * MySQL DATETIME(6) preserves microseconds, while Java Instant can carry nanoseconds.
-     * Compare duplicated timestamp claims only at the precision the persistence layer retains.
-     */
-    public static boolean samePersistedInstant(Instant left, Instant right) {
-        return Objects.equals(toPersistencePrecision(left), toPersistencePrecision(right));
+    /** New duplicated DB metadata is explicitly representable in DATETIME(6); canonical input is unchanged. */
+    public static LocalDateTime toPersistedLocalDateTime(Instant instant) {
+        return toLocalDateTime(instant.truncatedTo(ChronoUnit.MICROS));
     }
 
-    private static Instant toPersistencePrecision(Instant instant) {
-        return instant == null ? null : instant.truncatedTo(ChronoUnit.MICROS);
+    /**
+     * Compare immutable canonical time with its duplicated DB metadata. MySQL DATETIME(6)
+     * can round half-up; TIME_TRUNCATE_FRACTIONAL and older writers can truncate instead.
+     * Accept ONLY these exact representations, never an arbitrary +/- microsecond tolerance.
+     * If metadata still has nanoseconds (e.g. an unflushed entity), only exact equality is valid.
+     */
+    public static boolean samePersistedInstant(Instant canonical, Instant stored) {
+        if (Objects.equals(canonical, stored)) return true;
+        if (canonical == null || stored == null || stored.getNano() % 1_000 != 0) return false;
+        Instant floor = canonical.truncatedTo(ChronoUnit.MICROS);
+        if (floor.equals(stored)) return true;
+        if (canonical.getNano() % 1_000 < 500) return false;
+        try {
+            return floor.plusNanos(1_000).equals(stored);
+        } catch (DateTimeException overflow) {
+            return false;
+        }
     }
 }

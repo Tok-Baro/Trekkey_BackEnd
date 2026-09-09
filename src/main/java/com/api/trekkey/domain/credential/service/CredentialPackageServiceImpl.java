@@ -62,14 +62,14 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
 
     private ObjectNode publicCredentialJson(CredentialVerificationView view) {
         ObjectNode node = objectMapper.createObjectNode();
-        node.put("disclosure", "CONSENTED_PUBLIC_SUMMARY");
+        node.put("disclosure", "ISSUANCE_PUBLIC_SUMMARY");
         node.put("credentialPublicId", view.credentialPublicId());
         node.put("credentialNo", view.credentialNo());
-        node.put("credentialType", view.credentialType().name());
+        node.put("credentialType", view.credentialType() == null ? null : view.credentialType().name());
         node.put("schemaProfileId", view.schemaProfileId());
         node.put("issuerPublicId", view.issuerPublicId());
         node.put("issuerName", view.issuerName());
-        node.put("issuedAt", view.issuedAt().toString());
+        node.put("issuedAt", view.issuedAt() == null ? null : view.issuedAt().toString());
         node.put("expiresAt", view.expiresAt() == null ? null : view.expiresAt().toString());
         node.set("publicDetails", publicDetailsJson(view.publicDetails()));
 
@@ -77,7 +77,7 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
         view.publicSubjects().forEach(subject -> subjects.add(publicSubjectJson(subject)));
         node.put("verificationStatus", view.verificationStatus().name());
         node.put("replacementCredentialPublicId", view.replacementCredentialPublicId());
-        node.put("notice", "공개 동의된 요약이며 canonical Credential 원문 또는 contentHash의 preimage가 아닙니다.");
+        node.put("notice", "발급 당시 PUBLIC으로 지정된 요약입니다. 현재 공유 동의를 별도 검증한 결과가 아니며 canonical 원문 또는 contentHash의 preimage가 아닙니다.");
         return node;
     }
 
@@ -134,6 +134,7 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
         node.put("transactionHash", view.evidence().transactionHash());
         node.put("blockNumber", view.evidence().blockNumber());
         node.put("merkleRoot", view.evidence().merkleRoot());
+        if (view.evidence().blockchain() != null) node.set("blockchain", objectMapper.valueToTree(view.evidence().blockchain()));
         return node;
     }
 
@@ -153,7 +154,7 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
         node.put("state", "SIGNED");
         node.put("approvalPayload", batch.getApprovalPayloadJson());
         node.put("approvalNonce", batch.getApprovalNonce());
-        node.put("approvalDeadline", batch.getApprovalDeadline().toString());
+        node.put("approvalDeadline", batch.getApprovalDeadline() == null ? null : batch.getApprovalDeadline().toString());
         node.put("issuerSignature", toHex(batch.getIssuerSignature()));
         return node;
     }
@@ -162,12 +163,12 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
         ObjectNode node = objectMapper.createObjectNode();
         node.put("credentialPublicId", view.credentialPublicId());
         node.put("credentialNo", view.credentialNo());
-        node.put("credentialType", view.credentialType().name());
+        node.put("credentialType", view.credentialType() == null ? null : view.credentialType().name());
         node.put("verificationStatus", view.verificationStatus().name());
         node.put("issuerName", view.issuerName());
         node.put("issuerPublicId", view.issuerPublicId());
         node.put("schemaProfileId", view.schemaProfileId());
-        node.put("issuedAt", view.issuedAt().toString());
+        node.put("issuedAt", view.issuedAt() == null ? null : view.issuedAt().toString());
         node.put("replacementCredentialPublicId", view.replacementCredentialPublicId());
         return node;
     }
@@ -181,10 +182,10 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
                 이 패키지는 익명 공개 검증 페이지에 표시되는 범위의 요약과 암호학적 근거를 보관합니다.
                 개인정보가 포함될 수 있는 canonical Credential 원문과 file manifest는 포함하지 않습니다.
 
-                - public-credential.json 공개 동의된 최소 요약 (canonical 원문 아님)
+                - public-credential.json 발급 당시 PUBLIC 지정 요약 (현재 동의 확인·canonical 원문 아님)
                 - merkle-proof.json    Merkle leaf·proof·root (OpenZeppelin StandardMerkleTree 호환)
-                - anchor.json          Kaia 앵커링 좌표 (chainId, contract, tx)
-                - issuer-approval.json 발급 학교의 EIP-712 배치 승인 서명
+                - anchor.json          기록된 네트워크 좌표와 blockchain 메타데이터
+                - issuer-approval.json 발급 학교의 65-byte secp256k1 배치 승인 서명
                 - status.json          패키지 생성 시점의 검증 상태
                 - rendered-certificate.pdf 사람용 표시물 (cryptographic source of truth 아님)
 
@@ -192,6 +193,13 @@ public class CredentialPackageServiceImpl implements CredentialPackageService {
                 없습니다. 제공된 leaf와 proof로 batch 포함 여부를 확인하고, anchor.json의 컨트랙트에서
                 root·issuer·폐기·대체 상태를 조회할 수 있습니다. 전체 원문 독립 검증 package는 본인 인증과
                 소유권 확인이 적용된 별도 경계에서 제공해야 합니다.
+
+                blockchain.provider=SUI인 경우 chainId=0은 EVM chain ID가 없다는 호환 표기입니다.
+                contractAddress는 원본 Move package ID, transactionHash는 Sui base58 digest,
+                blockNumber는 checkpoint sequence입니다. registryObjectId와 실제 chainIdentifier는
+                blockchain 메타데이터를 사용합니다. 기관 승인은 TREKKEY_SUI_APPROVAL_V1이며
+                EIP-712 지갑 서명이나 Sui 트랜잭션 서명이 아닙니다. KAIA 기록은 기존 EIP-712를 유지합니다.
+                이 파일에 포함된 키·트랜잭션 좌표만으로 현재 유효성을 단정하지 말고 상태를 다시 조회하세요.
                 """.formatted(view.credentialNo());
     }
 

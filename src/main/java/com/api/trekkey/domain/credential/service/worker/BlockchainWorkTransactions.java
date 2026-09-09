@@ -3,6 +3,7 @@ package com.api.trekkey.domain.credential.service.worker;
 import com.api.trekkey.domain.credential.config.BlockchainProperties;
 import com.api.trekkey.domain.credential.crypto.Eip712;
 import com.api.trekkey.domain.credential.crypto.EthereumAddress;
+import com.api.trekkey.domain.credential.crypto.ChainAddress;
 import com.api.trekkey.domain.credential.crypto.Hash32;
 import com.api.trekkey.domain.credential.crypto.Hashing;
 import com.api.trekkey.domain.credential.crypto.Signature65;
@@ -80,6 +81,11 @@ public class BlockchainWorkTransactions {
     public SubmissionWork loadSubmission(Long outboxId, Instant now) {
         AncOutboxEvent outbox = processingOutbox(outboxId);
         AncChainTransaction transaction = chainTransaction(outbox);
+        if (!currentNetwork(transaction)) {
+            // Never execute an old network's durable work under new provider settings.
+            outbox.reschedule("CHAIN_CONTEXT_MISMATCH", UtcTime.toLocalDateTime(now.plusSeconds(3600)));
+            return null;
+        }
         if (transaction.getStatus() == ChainTransactionStatus.PREPARED) {
             return SubmissionWork.prepared(outbox.getId(), transaction.getId(), transaction.getOperationType(), prepared(transaction));
         }
@@ -117,9 +123,12 @@ public class BlockchainWorkTransactions {
         if (!transaction.getId().equals(chainTransaction(outbox).getId())) {
             throw new IllegalStateException("outbox does not own the chain transaction");
         }
+        requireCurrentNetwork(transaction);
         if (transaction.getStatus() == ChainTransactionStatus.PREPARED) {
             if (!Hash32.of(transaction.getTxHash()).equals(prepared.transactionHash())
-                    || transaction.getTxNonce() != prepared.transactionNonce()) {
+                    || !java.util.Objects.equals(transaction.getTxNonce(), prepared.transactionNonce())
+                    || !java.util.Arrays.equals(transaction.getSignedRawTransaction(), prepared.signedRawTransaction())
+                    || !java.util.Arrays.equals(transaction.getRelayerAddress(), prepared.relayerAddress().bytes())) {
                 throw new IllegalStateException("prepared transaction does not match the persisted reservation");
             }
             return prepared(transaction);
@@ -200,18 +209,26 @@ public class BlockchainWorkTransactions {
     @Transactional(readOnly = true)
     public List<ReceiptTask> receiptTasks(Instant now) {
         int claimSize = Math.max(1, properties.getWorkerClaimSize());
+        String context = properties.chainContext();
+        boolean allowLegacy = properties.getProvider() == BlockchainProperties.Provider.KAIA;
+        long chainId = properties.ledgerChainId();
+        byte[] contractAddress = properties.ledgerContractAddress();
+        String contractVersion = properties.getContractVersion();
         List<ReceiptTask> tasks = new ArrayList<>();
-        chainTransactionRepository.findByStatusOrderByCreatedAtAsc(
+        // Scope before LIMIT: old networks' unfinished rows must not starve this worker forever.
+        chainTransactionRepository.findSubmittedForReceiptInContext(
                         ChainTransactionStatus.SUBMITTED,
+                        context, allowLegacy, chainId, contractAddress, contractVersion,
                         PageRequest.of(0, claimSize))
                 .stream()
                 .map(this::receiptTask)
                 .forEach(tasks::add);
         int remaining = claimSize - tasks.size();
         if (remaining > 0) {
-            chainTransactionRepository.findUnknownDueForReceipt(
+            chainTransactionRepository.findUnknownDueForReceiptInContext(
                             ChainTransactionStatus.UNKNOWN,
                             UtcTime.toLocalDateTime(now),
+                            context, allowLegacy, chainId, contractAddress, contractVersion,
                             PageRequest.of(0, remaining))
                     .stream()
                     .map(this::receiptTask)
@@ -345,6 +362,7 @@ public class BlockchainWorkTransactions {
     }
 
     private SubmissionWork buildSubmissionWork(AncOutboxEvent outbox, AncChainTransaction transaction) {
+        requireCurrentNetwork(transaction);
         if (transaction.getOperationType() == ChainOperationType.ANCHOR_BATCH) {
             AncBatch batch = batchRepository.findById(transaction.getBatchId())
                     .orElseThrow(() -> new IllegalStateException("batch does not exist"));
@@ -355,10 +373,16 @@ public class BlockchainWorkTransactions {
                     .orElseThrow(() -> new IllegalStateException("issuer key does not exist"));
             Organization organization = organizationRepository.findById(batch.getIssuerOrganizationId())
                     .orElseThrow(() -> new IllegalStateException("organization does not exist"));
+            requireContext(batch.getChainContext());
+            requireContext(issuerKey.getChainContext());
+            Eip712.BatchApproval approval = ApprovalPayloadFactory.batch(organizationPublicId(organization), batch, issuerKey);
+            if (!java.util.Arrays.equals(ApprovalPayloadFactory.batchDigest(properties, approval).bytes(), batch.getApprovalDigest())) {
+                throw new IllegalStateException("persisted batch approval digest does not match immutable network context");
+            }
             return SubmissionWork.batch(
                     outbox.getId(),
                     transaction.getId(),
-                    ApprovalPayloadFactory.batch(organizationPublicId(organization), batch, issuerKey),
+                    approval,
                     Signature65.of(batch.getIssuerSignature()));
         }
         AncCredentialStatusEvent event = statusEventRepository.findById(transaction.getCredentialStatusEventId())
@@ -373,6 +397,13 @@ public class BlockchainWorkTransactions {
                         .orElseThrow(() -> new IllegalStateException("replacement credential does not exist"));
         Organization organization = organizationRepository.findById(credential.getIssuerOrganizationId())
                 .orElseThrow(() -> new IllegalStateException("organization does not exist"));
+        requireContext(event.getChainContext());
+        requireContext(issuerKey.getChainContext());
+        Eip712.StatusApproval approval = ApprovalPayloadFactory.status(
+                organizationPublicId(organization), event, credential, issuerKey, replacement);
+        if (!java.util.Arrays.equals(ApprovalPayloadFactory.statusDigest(properties, approval).bytes(), event.getApprovalDigest())) {
+            throw new IllegalStateException("persisted status approval digest does not match immutable network context");
+        }
         return SubmissionWork.status(
                 outbox.getId(),
                 transaction.getId(),
@@ -414,8 +445,23 @@ public class BlockchainWorkTransactions {
         return new BlockchainAnchorPort.PreparedTransaction(
                 Hash32.of(transaction.getTxHash()),
                 transaction.getTxNonce(),
-                EthereumAddress.fromBytes(transaction.getRelayerAddress()),
+                ChainAddress.of(transaction.getRelayerAddress()),
                 transaction.getSignedRawTransaction());
+    }
+
+    private boolean currentNetwork(AncChainTransaction transaction) {
+        return properties.matchesContext(transaction.getChainContext())
+                && transaction.getChainId() == properties.ledgerChainId()
+                && java.util.Arrays.equals(transaction.getContractAddress(), properties.ledgerContractAddress())
+                && transaction.getContractVersion().equals(properties.getContractVersion());
+    }
+
+    private void requireCurrentNetwork(AncChainTransaction transaction) {
+        if (!currentNetwork(transaction)) throw new IllegalStateException("transaction network context does not match this worker");
+    }
+
+    private void requireContext(String context) {
+        if (!properties.matchesContext(context)) throw new IllegalStateException("approval network context does not match this worker");
     }
 
     private ReceiptTask receiptTask(AncChainTransaction transaction) {

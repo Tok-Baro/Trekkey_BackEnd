@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,6 +29,7 @@ public class GraduationCourseController {
     private final AcademicUnitRepository academicUnitRepository;
 
     @GetMapping("/api/me/graduation/courses")
+    @Transactional(readOnly = true)
     public ResponseEntity<SuccessResponse<List<StudentCourseRes>>> list(
             @AuthenticationPrincipal AuthPrincipal principal) {
         return ResponseEntity.ok(SuccessResponse.ok(courseRepository
@@ -36,6 +38,7 @@ public class GraduationCourseController {
     }
 
     @PatchMapping("/api/me/graduation/courses/{publicId}")
+    @Transactional
     public ResponseEntity<SuccessResponse<StudentCourseRes>> patch(
             @AuthenticationPrincipal AuthPrincipal principal,
             @PathVariable String publicId,

@@ -4,6 +4,7 @@ import com.api.trekkey.domain.contest.exception.ContestErrorResponseCode;
 import com.api.trekkey.domain.review.exception.ReviewErrorResponseCode;
 import com.api.trekkey.domain.review.admin.service.ContestJudgeAdminService;
 import com.api.trekkey.domain.review.admin.web.dto.request.ContestJudgeCreateReq;
+import com.api.trekkey.domain.review.admin.web.dto.request.ContestJudgeUpdateReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewLinkIssueReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ContestJudgeRes;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewJudgeProgressRes;
@@ -25,6 +26,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,6 +40,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class ContestJudgeAdminController {
 
     private final ContestJudgeAdminService contestJudgeAdminService;
+
+    @ApiErrorCodeExamples(value = UserErrorResponseCode.class,
+            codes = {"USER_NOT_FOUND", "USER_INVALID_TOKEN"})
+    @ApiErrorCodeExamples(value = ContestErrorResponseCode.class,
+            codes = {"CONTEST_NOT_FOUND", "CONTEST_FORBIDDEN"})
+    @ApiErrorCodeExamples(value = ReviewErrorResponseCode.class,
+            codes = {"CONTEST_JUDGE_NOT_FOUND", "CONTEST_JUDGE_HAS_ASSIGNMENTS"})
+    @PatchMapping("/{judgeId}")
+    public ResponseEntity<SuccessResponse<ContestJudgeRes>> updateJudge(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String publicId,
+            @PathVariable Long judgeId,
+            @RequestBody @Valid ContestJudgeUpdateReq req) {
+        return ResponseEntity.ok(SuccessResponse.okCustom(
+                contestJudgeAdminService.updateJudge(principal.getId(), publicId, judgeId, req),
+                "심사위원 정보를 수정했습니다. 변경된 심사 링크는 다시 발급해 주세요."));
+    }
 
     @ApiErrorCodeExamples(value = UserErrorResponseCode.class, codes = {
             "USER_NOT_FOUND",

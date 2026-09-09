@@ -31,7 +31,7 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
     private static final String HANSUNG_CODE = "HANSUNG_UNIVERSITY";
     private static final int TOPIK_GRADUATION_REQUIREMENT_FROM_ADMISSION_YEAR = 2012;
     private static final String DISCLAIMER = "자가점검 결과이며 한성대학교의 공식 졸업사정을 대체하지 않습니다.";
-    private static final String EVALUATOR_VERSION = "hansung-v1";
+    private static final String EVALUATOR_VERSION = "hansung-v2-coverage";
 
     private final StudentAcademicProfileRepository profileRepository;
     private final StudentAcademicUnitRepository academicUnitRepository;
@@ -75,6 +75,7 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
         List<StudentCourseRecord> courses = courseRepository.findAllByProfileUserIdOrderByTermAscCourseNameAsc(userId);
         List<StudentNonCourseRecord> nonCourses = nonCourseRepository.findAllByProfileUserIdOrderById(userId);
         List<GraduationPolicy> policies = resolvePolicies(profile, units, asOf);
+        GraduationEvaluationRes.Coverage coverage = GraduationCoverage.assess(profile, units, policies);
 
         LinkedHashMap<Long, Outcome> outcomes = new LinkedHashMap<>();
         List<GraduationRequirement> roots = new ArrayList<>();
@@ -103,7 +104,8 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
         int unknown = (int) decisive.stream().filter(outcome -> outcome.status == RequirementStatus.UNKNOWN).count();
         EvaluationStatus status = unsatisfied > 0
                 ? EvaluationStatus.NOT_ELIGIBLE
-                : unknown > 0 || decisive.isEmpty() ? EvaluationStatus.INDETERMINATE : EvaluationStatus.ELIGIBLE;
+                : unknown > 0 || decisive.isEmpty() || !coverage.complete()
+                        ? EvaluationStatus.INDETERMINATE : EvaluationStatus.ELIGIBLE;
 
         Long currentVersion = profileRepository.findVersionById(profile.getId()).orElse(null);
         if (!Objects.equals(profile.getVersion(), currentVersion)) {
@@ -111,7 +113,7 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
         }
 
         LocalDateTime evaluatedAt = LocalDateTime.now();
-        String snapshot = inputSnapshot(profile, units, courses, nonCourses);
+        String snapshot = inputSnapshot(profile, units, courses, nonCourses, coverage, asOf);
         GraduationEvaluation evaluation = evaluationRepository.saveAndFlush(GraduationEvaluation.builder()
                 .profile(profile)
                 .status(status)
@@ -134,7 +136,7 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
                 .build()));
         outcomes.values().forEach(outcome -> evaluationItemRepository.save(toItem(evaluation, outcome)));
 
-        return toResponse(evaluation, policies, outcomes.values(), satisfied, unsatisfied, unknown);
+        return toResponse(evaluation, policies, outcomes.values(), satisfied, unsatisfied, unknown, coverage);
     }
 
     private List<GraduationPolicy> resolvePolicies(
@@ -506,8 +508,12 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
         return values;
     }
 
-    private String inputSnapshot(StudentAcademicProfile p, List<StudentAcademicUnit> units, List<StudentCourseRecord> courses, List<StudentNonCourseRecord> nonCourses) {
+    private String inputSnapshot(StudentAcademicProfile p, List<StudentAcademicUnit> units, List<StudentCourseRecord> courses,
+            List<StudentNonCourseRecord> nonCourses, GraduationEvaluationRes.Coverage coverage, LocalDate policyAsOf) {
         Map<String, Object> snapshot = new TreeMap<>();
+        snapshot.put("evaluatorVersion", EVALUATOR_VERSION);
+        snapshot.put("policyAsOf", policyAsOf.toString());
+        snapshot.put("coverage", coverage);
         snapshot.put("profilePublicId", p.getPublicId());
         snapshot.put("profileVersion", p.getVersion());
         snapshot.put("admissionYear", p.getAdmissionYear());
@@ -520,11 +526,49 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
         snapshot.put("gpa", p.getCumulativeGpa());
         snapshot.put("activityPoints", p.getActivityPoints());
         snapshot.put("recordCompleteness", p.getRecordCompleteness());
+        snapshot.put("registeredSemesters", p.getRegisteredSemesters());
+        snapshot.put("internationalStudent", p.isInternationalStudent());
+        snapshot.put("teachingProgram", p.isTeachingProgram());
+        snapshot.put("expectedGraduationYear", p.getExpectedGraduationYear());
+        snapshot.put("expectedGraduationMonth", p.getExpectedGraduationMonth());
+        snapshot.put("inputMode", p.getInputMode());
+        snapshot.put("failHistoryStatus", p.getFailHistoryStatus());
         snapshot.put("unitPublicIds", units.stream().map(unit -> unit.getAcademicUnit().getPublicId()).sorted().toList());
-        snapshot.put("courses", courses.stream().map(course -> Map.of(
-                "publicId", course.getPublicId(), "term", course.getTerm(), "name", course.getCourseName(),
-                "credits", course.getCredits(), "status", course.getCompletionStatus())).toList());
+        snapshot.put("units", units.stream().map(unit -> {
+            Map<String, Object> values = new TreeMap<>();
+            values.put("publicId", unit.getAcademicUnit().getPublicId());
+            values.put("role", unit.getRoleType());
+            values.put("evidenceStatus", unit.getGraduationEvidenceStatus());
+            return values;
+        }).toList());
+        snapshot.put("courses", courses.stream().map(course -> {
+            Map<String, Object> values = new TreeMap<>();
+            values.put("publicId", course.getPublicId());
+            values.put("term", course.getTerm());
+            values.put("name", course.getCourseName());
+            values.put("code", course.getCourseCode());
+            values.put("credits", course.getCredits());
+            values.put("status", course.getCompletionStatus());
+            values.put("category", course.getCategory());
+            values.put("mappingStatus", course.getMappingStatus());
+            values.put("academicUnitPublicId", course.getAcademicUnit() == null ? null : course.getAcademicUnit().getPublicId());
+            values.put("academicCoursePublicId", course.getAcademicCourse() == null ? null : course.getAcademicCourse().getPublicId());
+            values.put("distributionArea", course.getAcademicCourse() == null ? null : course.getAcademicCourse().getDistributionArea());
+            return values;
+        }).toList());
         snapshot.put("nonCoursePublicIds", nonCourses.stream().map(StudentNonCourseRecord::getPublicId).sorted().toList());
+        snapshot.put("nonCourses", nonCourses.stream().map(record -> {
+            Map<String, Object> values = new TreeMap<>();
+            values.put("publicId", record.getPublicId());
+            values.put("type", record.getRecordType());
+            values.put("numericValue", record.getNumericValue());
+            values.put("verificationStatus", record.getVerificationStatus());
+            values.put("assuranceLevel", record.getVerificationAssuranceLevel());
+            values.put("evidenceType", record.getExternalEvidenceType());
+            values.put("issuerCode", record.getExternalIssuerCode());
+            values.put("expiresAt", record.getExpiresAt() == null ? null : record.getExpiresAt().toString());
+            return values;
+        }).toList());
         try {
             return objectMapper.writeValueAsString(snapshot);
         } catch (JsonProcessingException e) {
@@ -558,7 +602,7 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
 
     private GraduationEvaluationRes toResponse(
             GraduationEvaluation evaluation, List<GraduationPolicy> policies, Collection<Outcome> outcomes,
-            int satisfied, int unsatisfied, int unknown) {
+            int satisfied, int unsatisfied, int unknown, GraduationEvaluationRes.Coverage coverage) {
         List<GraduationEvaluationRes.AppliedPolicy> appliedPolicies = policies.stream().map(policy ->
                 new GraduationEvaluationRes.AppliedPolicy(policy.getPublicId(), policy.getPolicyCode(), policy.getVersionNo(), policy.getTitle())).toList();
         List<GraduationEvaluationRes.RequirementResult> results = outcomes.stream().map(outcome ->
@@ -566,7 +610,7 @@ public class GraduationEvaluationServiceImpl implements GraduationEvaluationServ
                         outcome.status, outcome.current, outcome.required, outcome.remaining, outcome.message, outcome.source)).toList();
         return new GraduationEvaluationRes(evaluation.getPublicId(), evaluation.getStatus(), evaluation.getPolicyAsOf(),
                 evaluation.getEvaluatedAt(), new GraduationEvaluationRes.Summary(satisfied, unsatisfied, unknown),
-                appliedPolicies, results, DISCLAIMER);
+                appliedPolicies, results, DISCLAIMER, coverage);
     }
 
     private record Outcome(

@@ -38,3 +38,13 @@ out/
 ### VS Code ###
 .vscode/
 uploads/
+
+# Runtime credentials, private backups and local Python tooling never enter a release.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+backups/
+__pycache__/
+*.py[cod]

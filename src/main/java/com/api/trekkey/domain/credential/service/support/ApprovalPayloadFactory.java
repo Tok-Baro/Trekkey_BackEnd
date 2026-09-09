@@ -2,6 +2,7 @@ package com.api.trekkey.domain.credential.service.support;
 
 import com.api.trekkey.domain.credential.config.BlockchainProperties;
 import com.api.trekkey.domain.credential.crypto.Eip712;
+import com.api.trekkey.domain.credential.crypto.SuiApproval;
 import com.api.trekkey.domain.credential.crypto.EthereumAddress;
 import com.api.trekkey.domain.credential.crypto.Hash32;
 import com.api.trekkey.domain.credential.crypto.Hashing;
@@ -18,9 +19,35 @@ public final class ApprovalPayloadFactory {
     }
 
     public static Eip712.Domain domain(BlockchainProperties properties) {
+        if (properties.isSui()) throw new IllegalArgumentException("Sui must not use an EVM approval domain");
         return new Eip712.Domain(
                 BigInteger.valueOf(properties.getChainId()),
                 EthereumAddress.fromHex(properties.getContractAddress()));
+    }
+
+    private static SuiApproval.Domain suiDomain(BlockchainProperties properties) {
+        var sui = properties.getSui();
+        return new SuiApproval.Domain(sui.getChainIdentifier(), sui.getPackageId(), sui.getRegistryId());
+    }
+
+    public static Hash32 batchDigest(BlockchainProperties properties, Eip712.BatchApproval approval) {
+        return properties.isSui() ? SuiApproval.batchDigest(suiDomain(properties), approval)
+                : Eip712.batchDigest(domain(properties), approval);
+    }
+
+    public static Hash32 statusDigest(BlockchainProperties properties, Eip712.StatusApproval approval) {
+        return properties.isSui() ? SuiApproval.statusDigest(suiDomain(properties), approval)
+                : Eip712.statusDigest(domain(properties), approval);
+    }
+
+    public static String batchPayload(BlockchainProperties properties, Eip712.BatchApproval approval) {
+        return properties.isSui() ? SuiApproval.batchPayloadJson(suiDomain(properties), approval)
+                : Eip712.batchTypedDataJson(domain(properties), approval);
+    }
+
+    public static String statusPayload(BlockchainProperties properties, Eip712.StatusApproval approval) {
+        return properties.isSui() ? SuiApproval.statusPayloadJson(suiDomain(properties), approval)
+                : Eip712.statusTypedDataJson(domain(properties), approval);
     }
 
     public static Eip712.BatchApproval batch(

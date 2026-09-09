@@ -1,6 +1,7 @@
 package com.api.trekkey.domain.review.admin.service;
 
 import com.api.trekkey.domain.review.admin.web.dto.request.ContestJudgeCreateReq;
+import com.api.trekkey.domain.review.admin.web.dto.request.ContestJudgeUpdateReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewLinkIssueReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ContestJudgeRes;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewLinkIssueRes;
@@ -16,6 +17,9 @@ public interface ContestJudgeAdminService {
     );
 
     List<ContestJudgeRes> getJudges(Long adminUserId, String contestPublicId);
+
+    ContestJudgeRes updateJudge(Long adminUserId, String contestPublicId,
+            Long judgeId, ContestJudgeUpdateReq req);
 
     List<ReviewJudgeProgressRes> getJudgeProgress(
             Long adminUserId,

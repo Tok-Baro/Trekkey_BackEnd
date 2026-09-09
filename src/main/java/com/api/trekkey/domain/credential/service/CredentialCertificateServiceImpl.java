@@ -1,14 +1,8 @@
 package com.api.trekkey.domain.credential.service;
 
-import com.api.trekkey.domain.credential.entity.AncCredential;
-import com.api.trekkey.domain.credential.exception.CredentialErrorResponseCode;
-import com.api.trekkey.domain.credential.repository.AncCredentialRepository;
 import com.api.trekkey.domain.credential.service.dto.CredentialPackageFile;
 import com.api.trekkey.domain.credential.service.dto.CredentialVerificationView;
 import com.api.trekkey.domain.credential.support.CredentialCertificateRenderer;
-import com.api.trekkey.global.exception.CustomException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -25,38 +19,25 @@ import org.springframework.transaction.annotation.Transactional;
 public class CredentialCertificateServiceImpl implements CredentialCertificateService {
 
     private final CredentialVerificationService credentialVerificationService;
-    private final AncCredentialRepository credentialRepository;
     private final CredentialCertificateRenderer certificateRenderer;
-    private final ObjectMapper objectMapper;
 
     @Value("${app.front.base-url}")
     private String frontBaseUrl;
 
     @Override
     public CredentialPackageFile renderCertificate(String credentialPublicId) {
-        AncCredential credential = credentialRepository.findByPublicId(credentialPublicId)
-                .orElseThrow(() -> new CustomException(CredentialErrorResponseCode.CREDENTIAL_NOT_FOUND));
         CredentialVerificationView view = credentialVerificationService.verify(credentialPublicId);
 
-        JsonNode snapshot = readSnapshot(credential.getPayloadJson());
+        CredentialVerificationView.PublicDetails details = view.publicDetails();
         byte[] pdf = certificateRenderer.render(
                 view,
-                snapshot.path("contestTitle").asText(null),
-                snapshot.path("prize").asText(null),
-                snapshot.path("submissionTitle").asText(null),
+                details == null ? null : details.contestTitle(),
+                details == null ? null : details.prize(),
+                details == null ? null : details.submissionTitle(),
                 frontBaseUrl + "/verify/" + credentialPublicId);
 
         return new CredentialPackageFile(
                 "trekkey-certificate-" + view.credentialNo() + ".pdf", pdf);
     }
 
-    //======= 헬퍼 메서드 ==========
-
-    private JsonNode readSnapshot(String payloadJson) {
-        try {
-            return objectMapper.readTree(payloadJson).path("source").path("snapshot");
-        } catch (Exception exception) {
-            return objectMapper.createObjectNode();
-        }
-    }
 }

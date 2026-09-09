@@ -1,5 +1,7 @@
 package com.api.trekkey.domain.submission.publicapi.service;
 
+import com.api.trekkey.domain.audit.entity.AuditAction;
+import com.api.trekkey.domain.audit.support.AdminAuditLogger;
 import com.api.trekkey.domain.contest.entity.ContestStage;
 import com.api.trekkey.domain.contest.entity.StageType;
 import com.api.trekkey.domain.contest.repository.ContestStageRepository;
@@ -19,6 +21,8 @@ import com.api.trekkey.domain.team.entity.TeamStatus;
 import com.api.trekkey.domain.team.exception.TeamErrorResponseCode;
 import com.api.trekkey.domain.team.repository.TeamRepository;
 import com.api.trekkey.domain.user.entity.User;
+import com.api.trekkey.domain.user.entity.UserRole;
+import com.api.trekkey.domain.user.entity.UserStatus;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.exception.CustomException;
@@ -51,12 +55,41 @@ public class SubmissionServiceImpl implements SubmissionService {
     private final SubmissionRepository submissionRepository;
     private final SubmissionFileRepository submissionFileRepository;
     private final FileStoragePort fileStoragePort;
+    private final AdminAuditLogger adminAuditLogger;
 
     @Override
     @Transactional
     public SubmissionRes submit(Long userId, String teamPublicId, String title, List<MultipartFile> files) {
         User user = findUser(userId);
         Team team = findLeaderTeamForUpdate(teamPublicId, user.getId());
+        return saveSubmission(user, team, title, files, false);
+    }
+
+    @Override
+    @Transactional
+    public SubmissionRes submitByAdmin(Long adminUserId, String contestPublicId,
+            String teamPublicId, String title, List<MultipartFile> files) {
+        User admin = findUser(adminUserId);
+        if ((admin.getRole() != UserRole.ADMIN && admin.getRole() != UserRole.ROOT_ADMIN)
+                || admin.getStatus() != UserStatus.ACTIVE) {
+            throw new CustomException(UserErrorResponseCode.USER_INVALID_TOKEN);
+        }
+        Team team = teamRepository.findByPublicIdForUpdate(teamPublicId)
+                .orElseThrow(() -> new CustomException(TeamErrorResponseCode.TEAM_NOT_FOUND));
+        // A mismatched contest or organization must not reveal the foreign team's existence.
+        if (!team.getContest().getPublicId().equals(contestPublicId)
+                || !team.getContest().getOrganization().getId().equals(admin.getOrganization().getId())) {
+            throw new CustomException(TeamErrorResponseCode.TEAM_NOT_FOUND);
+        }
+        SubmissionRes response = saveSubmission(admin, team, title, files, true);
+        adminAuditLogger.log(admin.getId(), admin.getOrganization().getId(),
+                AuditAction.SUBMISSION_MANUAL_RECEIVE, "TEAM", team.getId(),
+                "contestId=" + team.getContest().getId() + ", submissionPublicId=" + response.id());
+        return response;
+    }
+
+    private SubmissionRes saveSubmission(User user, Team team, String title,
+            List<MultipartFile> files, boolean createOnly) {
 
         //검토중·승인 상태의 팀만 제출할 수 있다 (보완요청·반려 팀은 불가)
         if (team.getStatus() != TeamStatus.PENDING && team.getStatus() != TeamStatus.APPROVED) {
@@ -81,6 +114,9 @@ public class SubmissionServiceImpl implements SubmissionService {
             // 심사 시작으로 이미 확정된 제출물은 덮어쓸 수 없다.
             if (submission.isFinalized()) {
                 throw new CustomException(SubmissionErrorResponseCode.SUBMISSION_FINALIZED);
+            }
+            if (createOnly) {
+                throw new CustomException(SubmissionErrorResponseCode.SUBMISSION_ALREADY_EXISTS);
             }
             // 기존 DB 행은 현재 트랜잭션에서 교체하고 객체는 커밋 후 삭제한다.
             //현재읽기(FOR UPDATE)로 조회해야 잠금 대기 중 커밋된 직전 파일도 보인다 (RR 스냅샷 누락 방지)
@@ -181,7 +217,8 @@ public class SubmissionServiceImpl implements SubmissionService {
     }
 
     private void validateFiles(List<MultipartFile> files) {
-        if (files == null || files.isEmpty() || files.stream().allMatch(MultipartFile::isEmpty)) {
+        if (files == null || files.isEmpty()
+                || files.stream().anyMatch(file -> file == null || file.isEmpty())) {
             throw new CustomException(SubmissionErrorResponseCode.SUBMISSION_FILE_REQUIRED);
         }
         for (MultipartFile file : files) {

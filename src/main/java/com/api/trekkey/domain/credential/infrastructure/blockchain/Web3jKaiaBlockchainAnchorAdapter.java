@@ -46,6 +46,8 @@ import org.web3j.utils.Numeric;
  * Bounded standard EVM JSON-RPC adapter. It deliberately knows no Kaia-specific SDK types.
  */
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+        prefix = "blockchain.anchoring", name = "provider", havingValue = "KAIA", matchIfMissing = true)
 public class Web3jKaiaBlockchainAnchorAdapter implements BlockchainAnchorPort {
 
     private static final BigInteger GAS_MARGIN_NUMERATOR = BigInteger.valueOf(120);

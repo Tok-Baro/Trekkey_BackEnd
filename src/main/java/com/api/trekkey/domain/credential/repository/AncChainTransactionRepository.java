@@ -38,6 +38,41 @@ public interface AncChainTransactionRepository extends JpaRepository<AncChainTra
             @Param("now") java.time.LocalDateTime now,
             Pageable pageable);
 
+    @Query("""
+            select t from AncChainTransaction t
+            where t.status = :status
+              and t.chainId = :chainId and t.contractAddress = :contractAddress
+              and t.contractVersion = :contractVersion
+              and (t.chainContext = :chainContext or (:allowLegacy = true and t.chainContext is null))
+            order by t.createdAt asc, t.id asc
+            """)
+    List<AncChainTransaction> findSubmittedForReceiptInContext(
+            @Param("status") ChainTransactionStatus status,
+            @Param("chainContext") String chainContext,
+            @Param("allowLegacy") boolean allowLegacy,
+            @Param("chainId") long chainId,
+            @Param("contractAddress") byte[] contractAddress,
+            @Param("contractVersion") String contractVersion,
+            Pageable pageable);
+
+    @Query("""
+            select t from AncChainTransaction t
+            where t.status = :status and t.nextAttemptAt <= :now
+              and t.chainId = :chainId and t.contractAddress = :contractAddress
+              and t.contractVersion = :contractVersion
+              and (t.chainContext = :chainContext or (:allowLegacy = true and t.chainContext is null))
+            order by t.nextAttemptAt asc, t.id asc
+            """)
+    List<AncChainTransaction> findUnknownDueForReceiptInContext(
+            @Param("status") ChainTransactionStatus status,
+            @Param("now") java.time.LocalDateTime now,
+            @Param("chainContext") String chainContext,
+            @Param("allowLegacy") boolean allowLegacy,
+            @Param("chainId") long chainId,
+            @Param("contractAddress") byte[] contractAddress,
+            @Param("contractVersion") String contractVersion,
+            Pageable pageable);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select t from AncChainTransaction t where t.idempotencyKey = :idempotencyKey")
     Optional<AncChainTransaction> findByIdempotencyKeyForUpdate(@Param("idempotencyKey") String idempotencyKey);

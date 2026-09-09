@@ -1,0 +1,178 @@
+name: trekkey-sui-testnet
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: 5m, max-file: "3"}
+
+x-backend: &backend
+  image: eclipse-temurin:21.0.12_8-jre-jammy
+  user: "10001:10001"
+  init: true
+  network_mode: host
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  mem_limit: 1536m
+  cpus: 1.0
+  pids_limit: 256
+  tmpfs: ["/tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001,mode=1770"]
+  entrypoint: [/bin/sh, /app/backend-entrypoint.sh]
+  environment: &backend-env
+    SPRING_PROFILES_ACTIVE: sui
+    SPRING_CONFIG_IMPORT: configtree:/run/backend-secrets/
+    DATASOURCE_URL: jdbc:mysql://127.0.0.1:13306/trekkey_sui_testnet?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    DATASOURCE_USERNAME: trekkey_sui_testnet
+    CORS_ALLOWED_ORIGIN: ${TESTNET_FRONT_ORIGIN:-http://localhost:3000}
+    FRONT_BASE_URL: ${TESTNET_FRONT_ORIGIN:-http://localhost:3000}
+    FILE_UPLOAD_DIR: /uploads
+    JWT_ACCESS_EXPIRATION: "900"
+    JWT_REFRESH_EXPIRATION: "604800"
+    JWT_REFRESH_COOKIE_NAME: trekkey_sui_testnet_refresh
+    BLOCKCHAIN_ANCHORING_MODE: READ_ONLY
+    BLOCKCHAIN_WORKER_ENABLED: "false"
+    SUI_NETWORK: testnet
+    SUI_CHAIN_IDENTIFIER: ${SUI_CHAIN_IDENTIFIER:?verified testnet manifest required}
+    SUI_PACKAGE_ID: ${SUI_PACKAGE_ID:?verified testnet manifest required}
+    SUI_REGISTRY_ID: ${SUI_REGISTRY_ID:?verified testnet manifest required}
+    SUI_GATEWAY_URL: http://127.0.0.1:9187
+    SERVER_ADDRESS: 127.0.0.1
+    SPRINGDOC_API_DOCS_ENABLED: "false"
+    SPRINGDOC_SWAGGER_UI_ENABLED: "false"
+    TZ: UTC
+  volumes:
+    - type: bind
+      source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/artifacts/app.jar
+      target: /app/app.jar
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ./backend-entrypoint.sh
+      target: /app/backend-entrypoint.sh
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/secrets/mysql/DATASOURCE_PASSWORD
+      target: /run/backend-secrets/DATASOURCE_PASSWORD
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/secrets/backend/JWT_SECRET_KEY
+      target: /run/backend-secrets/JWT_SECRET_KEY
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/secrets/backend/EVIDENCE_LOOKUP_HMAC_SECRET
+      target: /run/backend-secrets/EVIDENCE_LOOKUP_HMAC_SECRET
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/secrets/gateway/gateway-token
+      target: /run/backend-secrets/SUI_GATEWAY_TOKEN
+      read_only: true
+      bind: {create_host_path: false}
+    - type: bind
+      source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/uploads
+      target: /uploads
+      bind: {create_host_path: false}
+  logging: *logging
+  stop_grace_period: 30s
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: "no"
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m", "/var/run/mysqld:rw,nosuid,size=16m"]
+    mem_limit: 1024m
+    cpus: 1.0
+    pids_limit: 256
+    environment:
+      MYSQL_DATABASE: trekkey_sui_testnet
+      MYSQL_USER: trekkey_sui_testnet
+      MYSQL_PASSWORD_FILE: /run/mysql-secrets/DATASOURCE_PASSWORD
+      MYSQL_ROOT_PASSWORD_FILE: /run/mysql-secrets/MYSQL_ROOT_PASSWORD
+      MYSQL_ROOT_HOST: localhost
+      TZ: UTC
+    command: [--character-set-server=utf8mb4, --collation-server=utf8mb4_0900_ai_ci, --default-time-zone=+00:00, --innodb-buffer-pool-size=256M, --max-connections=40]
+    ports: ["127.0.0.1:13306:3306"]
+    networks: [testnet-db]
+    volumes:
+      - testnet-mysql-data:/var/lib/mysql
+      - type: bind
+        source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/secrets/mysql
+        target: /run/mysql-secrets
+        read_only: true
+        bind: {create_host_path: false}
+    healthcheck:
+      test: [CMD, mysqladmin, ping, -h, 127.0.0.1, --silent]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging: *logging
+
+  gateway:
+    image: trekkey-sui-testnet-gateway:local
+    build: {context: ../../sui-gateway, dockerfile: Dockerfile}
+    user: "10001:10001"
+    init: true
+    restart: "no"
+    network_mode: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 64
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=1770"]
+    environment:
+      SUI_GATEWAY_BIND: 127.0.0.1
+      SUI_GATEWAY_PORT: "9187"
+      SUI_GATEWAY_JOURNAL_DIR: /var/lib/trekkey-sui-journal
+      SUI_GRPC_URL: https://fullnode.testnet.sui.io:443
+      NODE_OPTIONS: --max-old-space-size=320
+    volumes:
+      - type: bind
+        source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/secrets/deployment/relayer.key
+        target: /run/keys/relayer.key
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/secrets/gateway/gateway-token
+        target: /run/keys/gateway-token
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/secrets/deployment/deployment.json
+        target: /run/manifest/deployment.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${TESTNET_ROOT:-/srv/trekkey-sui-testnet}/journal
+        target: /var/lib/trekkey-sui-journal
+        bind: {create_host_path: false}
+    logging: *logging
+
+  backend:
+    <<: *backend
+    restart: "no"
+    depends_on:
+      mysql: {condition: service_healthy}
+      gateway: {condition: service_started}
+
+  backend-bootstrap:
+    <<: *backend
+    profiles: [bootstrap]
+    restart: "no"
+    environment:
+      <<: *backend-env
+      TREKKEY_BOOTSTRAP: "true"
+      SUI_TESTNET_BOOTSTRAP_EMPTY_SCHEMA: ${SUI_TESTNET_BOOTSTRAP_EMPTY_SCHEMA:-UNCONFIRMED}
+    depends_on:
+      mysql: {condition: service_healthy}
+
+volumes:
+  testnet-mysql-data:
+networks:
+  testnet-db:
+    driver: bridge

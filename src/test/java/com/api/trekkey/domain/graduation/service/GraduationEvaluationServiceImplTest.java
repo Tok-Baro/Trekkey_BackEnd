@@ -75,7 +75,12 @@ class GraduationEvaluationServiceImplTest {
     void evaluatesEveryRuleTypeAndPersistsSnapshotItems() {
         GraduationEvaluationRes result = service.evaluate(10L, LocalDate.of(2026, 8, 11));
 
-        assertThat(result.status()).isEqualTo(EvaluationStatus.ELIGIBLE);
+        assertThat(result.status()).isEqualTo(EvaluationStatus.INDETERMINATE);
+        assertThat(result.coverage().complete()).isFalse();
+        assertThat(result.coverage().missingPolicyTypes()).contains("GENERAL_EDUCATION", "MAJOR_PLAN");
+        assertThat(result.coverage().uncoveredUnitPublicIds()).containsExactly("primary-unit");
+        assertThat(result.coverage().gaps()).extracting(GraduationEvaluationRes.CoverageGap::code)
+                .contains("ACADEMIC_STANDING_UNAVAILABLE", "UNIT_POLICIES_MISSING");
         assertThat(result.summary()).isEqualTo(new GraduationEvaluationRes.Summary(16, 0, 0));
         assertThat(result.requirements()).hasSize(18);
         assertThat(result.requirements()).extracting(GraduationEvaluationRes.RequirementResult::code)
@@ -101,6 +106,36 @@ class GraduationEvaluationServiceImplTest {
                         "CATEGORY_CREDITS_MIN", "ACADEMIC_UNIT_CREDITS_MIN", "COURSE_ALL", "COURSE_ANY", "COURSE_NAME_ANY",
                         "DISTRIBUTION_AREAS_MIN", "GRADUATE_COURSE_CREDITS_MIN").contains(item.code()))
                 .allMatch(item -> item.status() == RequirementStatus.UNKNOWN);
+    }
+
+    @Test
+    void decisionRelevantChangesAlterPersistedInputHashEvenWithoutProfileVersionChange() {
+        service.evaluate(10L, LocalDate.of(2026, 8, 11));
+        ReflectionTestUtils.setField(profile, "internationalStudent", true);
+        service.evaluate(10L, LocalDate.of(2026, 8, 11));
+        ArgumentCaptor<GraduationEvaluation> snapshots = ArgumentCaptor.forClass(GraduationEvaluation.class);
+        verify(evaluationRepository, org.mockito.Mockito.times(2)).saveAndFlush(snapshots.capture());
+        assertThat(snapshots.getAllValues().get(0).getInputHash())
+                .isNotEqualTo(snapshots.getAllValues().get(1).getInputHash());
+        assertThat(snapshots.getAllValues().get(1).getInputSnapshotJson())
+                .contains("\"internationalStudent\":true", "assuranceLevel", "mappingStatus", "coverage");
+    }
+
+    @Test
+    void catalogDistributionAreaChangeAltersSnapshotHashWithoutProfileVersionChange() {
+        var courses = fixture().courses;
+        given(courseRepository.findAllByProfileUserIdOrderByTermAscCourseNameAsc(10L)).willReturn(courses);
+        var catalog = courses.stream().map(StudentCourseRecord::getAcademicCourse)
+                .filter(Objects::nonNull).findFirst().orElseThrow();
+        service.evaluate(10L, LocalDate.of(2026, 8, 11));
+        ReflectionTestUtils.setField(catalog, "distributionArea", "CHANGED_SYNTHETIC_AREA");
+        service.evaluate(10L, LocalDate.of(2026, 8, 11));
+        ArgumentCaptor<GraduationEvaluation> snapshots = ArgumentCaptor.forClass(GraduationEvaluation.class);
+        verify(evaluationRepository, org.mockito.Mockito.times(2)).saveAndFlush(snapshots.capture());
+        assertThat(snapshots.getAllValues().get(0).getInputHash())
+                .isNotEqualTo(snapshots.getAllValues().get(1).getInputHash());
+        assertThat(snapshots.getAllValues().get(1).getInputSnapshotJson())
+                .contains("CHANGED_SYNTHETIC_AREA", "academicCoursePublicId");
     }
 
     @Test
@@ -136,7 +171,7 @@ class GraduationEvaluationServiceImplTest {
 
         GraduationEvaluationRes result = service.evaluate(10L, LocalDate.of(2026, 8, 11));
 
-        assertThat(result.status()).isEqualTo(EvaluationStatus.ELIGIBLE);
+        assertThat(result.status()).isEqualTo(EvaluationStatus.INDETERMINATE);
         assertThat(result.summary()).isEqualTo(new GraduationEvaluationRes.Summary(3, 0, 0));
         assertThat(result.requirements()).filteredOn(item -> Set.of("GROUP_ALL", "GROUP_ANY", "GROUP_N_OF").contains(item.code()))
                 .allMatch(item -> item.status() == RequirementStatus.SATISFIED);
@@ -159,7 +194,7 @@ class GraduationEvaluationServiceImplTest {
 
         GraduationEvaluationRes result = service.evaluate(10L, LocalDate.of(2026, 8, 11));
 
-        assertThat(result.status()).isEqualTo(EvaluationStatus.ELIGIBLE);
+        assertThat(result.status()).isEqualTo(EvaluationStatus.INDETERMINATE);
         assertThat(result.requirements()).filteredOn(item -> item.code().equals("COMMON_ALL"))
                 .extracting(GraduationEvaluationRes.RequirementResult::status)
                 .containsExactly(RequirementStatus.SATISFIED);
@@ -238,7 +273,7 @@ class GraduationEvaluationServiceImplTest {
                     assertThat(item.status()).isEqualTo(RequirementStatus.NOT_APPLICABLE);
                     assertThat(item.message()).contains("순수외국인 유학생");
                 });
-        assertThat(result.status()).isEqualTo(EvaluationStatus.ELIGIBLE);
+        assertThat(result.status()).isEqualTo(EvaluationStatus.INDETERMINATE);
     }
 
     @Test

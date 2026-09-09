@@ -13,6 +13,9 @@ import com.api.trekkey.domain.credential.crypto.Hash32;
 import com.api.trekkey.domain.credential.crypto.Hashing;
 import com.api.trekkey.domain.credential.entity.AncBatch;
 import com.api.trekkey.domain.credential.entity.AncBatchItem;
+import com.api.trekkey.domain.credential.entity.AncChainTransaction;
+import com.api.trekkey.domain.credential.entity.ChainOperationType;
+import com.api.trekkey.domain.credential.crypto.SuiDigest;
 import com.api.trekkey.domain.credential.entity.AncCredential;
 import com.api.trekkey.domain.credential.entity.AncIssuerKey;
 import com.api.trekkey.domain.credential.entity.CredentialSourceType;
@@ -28,6 +31,7 @@ import com.api.trekkey.domain.credential.service.dto.CredentialIssueCommand;
 import com.api.trekkey.domain.credential.service.dto.CredentialVerificationStatus;
 import com.api.trekkey.domain.credential.service.dto.CredentialVerificationView;
 import com.api.trekkey.domain.credential.service.port.BlockchainAnchorPort;
+import com.api.trekkey.domain.credential.infrastructure.blockchain.BlockchainVerificationRouter;
 import com.api.trekkey.domain.credential.service.port.BlockchainGatewayException;
 import com.api.trekkey.domain.credential.service.support.CredentialPayloadFactory;
 import com.api.trekkey.domain.credential.service.support.UtcTime;
@@ -83,7 +87,7 @@ class CredentialVerificationServiceImplTest {
                 issuerKeyRepository,
                 chainTransactionRepository,
                 organizationRepository,
-                blockchainAnchorPort,
+                new BlockchainVerificationRouter(properties, blockchainAnchorPort),
                 properties,
                 new ObjectMapper(),
                 Clock.fixed(Instant.parse("2026-07-24T02:00:00Z"), ZoneOffset.UTC));
@@ -95,6 +99,8 @@ class CredentialVerificationServiceImplTest {
 
     @Test
     void returnsOnlyClaimsParsedFromTheCanonicalCredential() {
+        byte[] originalCanonical = credential.getCanonicalBytes().clone();
+        byte[] originalHash = credential.getContentHash().clone();
         ReflectionTestUtils.setField(organization, "name", "현재 학교 이름");
 
         CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
@@ -109,6 +115,10 @@ class CredentialVerificationServiceImplTest {
         assertThat(result.publicSubjects())
                 .extracting(CredentialVerificationView.PublicSubject::displayName)
                 .containsExactly("공개 학생");
+        assertThat(result.publicSubjects()).extracting(CredentialVerificationView.PublicSubject::subjectRef)
+                .containsExactly("public-subject:" + CREDENTIAL_PUBLIC_ID + ":0");
+        assertThat(credential.getCanonicalBytes()).containsExactly(originalCanonical);
+        assertThat(credential.getContentHash()).containsExactly(originalHash);
         assertThat(result.evidence().credentialClaimsMatch()).isTrue();
         assertThat(result.evidence().issuerId()).startsWith("0x");
         assertThat(result.evidence().credentialIdHash()).startsWith("0x");
@@ -117,16 +127,32 @@ class CredentialVerificationServiceImplTest {
     }
 
     @Test
-    void rejectsAStoredTimestampChangedByOneMicrosecond() {
+    void rejectsAStoredTimestampOutsideBothPermittedMicrosecondRepresentations() {
         ReflectionTestUtils.setField(
                 credential,
                 "issuedAt",
-                credential.getIssuedAt().plusNanos(1_000));
+                credential.getIssuedAt().plusNanos(2_000));
 
         CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
 
         assertThat(result.verificationStatus()).isEqualTo(CredentialVerificationStatus.TAMPERED);
         assertThat(result.evidence().credentialClaimsMatch()).isFalse();
+    }
+
+    @Test
+    void acceptsMySqlRoundedMetadataWithoutMutatingCanonicalBytesOrHashes() {
+        byte[] originalCanonical = credential.getCanonicalBytes();
+        byte[] originalHash = credential.getContentHash();
+        String originalJson = credential.getPayloadJson();
+        ReflectionTestUtils.setField(credential, "issuedAt", credential.getIssuedAt().plusNanos(1_000));
+        CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
+        assertThat(result.verificationStatus()).isEqualTo(CredentialVerificationStatus.PENDING);
+        assertThat(result.evidence().credentialClaimsMatch()).isTrue();
+        assertThat(result.evidence().canonicalPayloadMatches()).isTrue();
+        assertThat(result.evidence().contentHashMatches()).isTrue();
+        assertThat(credential.getCanonicalBytes()).containsExactly(originalCanonical);
+        assertThat(credential.getContentHash()).containsExactly(originalHash);
+        assertThat(credential.getPayloadJson()).isEqualTo(originalJson);
     }
 
     @Test
@@ -257,6 +283,153 @@ class CredentialVerificationServiceImplTest {
         return value;
     }
 
+    @Test
+    void suiVerificationKeepsExistingClaimsAndMerkleContractWithHonestNativeCoordinates() {
+        AnchoredEvidence evidence = anchoredEvidence();
+        configureSui();
+        ReflectionTestUtils.setField(evidence.batch(), "chainContext", properties.chainContext());
+        ReflectionTestUtils.setField(evidence.issuerKey(), "chainContext", properties.chainContext());
+        AncChainTransaction tx = suiTransaction(evidence);
+        stubValidChainEvidence(evidence, new BlockchainAnchorPort.OnChainCredentialStatus(
+                BlockchainAnchorPort.CredentialChainState.NONE, 0, 0, 0, Hash32.ZERO), 0);
+
+        CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
+
+        assertThat(result.verificationStatus()).isEqualTo(CredentialVerificationStatus.VALID);
+        assertThat(result.evidence().chainId()).isZero();
+        assertThat(result.evidence().transactionHash()).isEqualTo(SuiDigest.encode(tx.getTxHash()));
+        assertThat(result.evidence().blockchain().provider()).isEqualTo("SUI");
+        assertThat(result.evidence().blockchain().registryObjectId()).isEqualTo(properties.getSui().getRegistryId());
+        assertThat(result.evidence().blockchain().checkpointSequenceNumber()).isEqualTo(75);
+        assertThat(result.evidence().merkleProofMatches()).isTrue();
+        assertThat(result.evidence().treeVersion()).isEqualTo(1);
+        assertThat(result.publicSubjects()).extracting(CredentialVerificationView.PublicSubject::displayName).containsExactly("공개 학생");
+    }
+
+    @Test
+    void providerSwitchCannotRelabelAnExistingKaiaProofOrQueryItOnSui() {
+        AnchoredEvidence evidence = anchoredEvidence();
+        AncChainTransaction tx = AncChainTransaction.pending(evidence.batch().getId(), null, null,
+                ChainOperationType.ANCHOR_BATCH, "legacy-test", 1001, EthereumAddress.fromHex(properties.getContractAddress()).bytes(),
+                "1", UtcTime.toLocalDateTime(ISSUED_AT));
+        tx.prepare(new byte[] {1}, bytes(9, 32), 2L, bytes(3, 20), UtcTime.toLocalDateTime(ISSUED_AT));
+        given(chainTransactionRepository.findByBatchIdAndOperationType(evidence.batch().getId(), ChainOperationType.ANCHOR_BATCH))
+                .willReturn(Optional.of(tx));
+        configureSui();
+
+        CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
+
+        assertThat(result.verificationStatus()).isEqualTo(CredentialVerificationStatus.BLOCKCHAIN_CONFIGURATION_ERROR);
+        assertThat(result.evidence().chainId()).isEqualTo(1001);
+        assertThat(result.evidence().blockchain().provider()).isEqualTo("KAIA");
+        assertThat(result.evidence().contractAddress()).isEqualTo(EthereumAddress.fromBytes(tx.getContractAddress()).hex());
+        org.mockito.Mockito.verifyNoInteractions(blockchainAnchorPort);
+    }
+
+    @Test
+    void allowlistedLegacyProofAndItsStatusKeyAreVerifiedOnKaiaWhileSuiRemainsTheActiveProvider() {
+        AnchoredEvidence evidence = anchoredEvidence();
+        ReflectionTestUtils.setField(evidence.batch(), "chainContext", null);
+        String legacyContract = properties.getContractAddress();
+        AncChainTransaction tx = AncChainTransaction.pending(evidence.batch().getId(), null, null,
+                ChainOperationType.ANCHOR_BATCH, "legacy-routed", 1001,
+                EthereumAddress.fromHex(legacyContract).bytes(), "1", UtcTime.toLocalDateTime(ISSUED_AT));
+        tx.prepare(new byte[]{1, 2, 3}, bytes(9, 32), 2L, bytes(3, 20), UtcTime.toLocalDateTime(ISSUED_AT));
+        byte[] originalCanonical = credential.getCanonicalBytes();
+        given(chainTransactionRepository.findByBatchIdAndOperationType(evidence.batch().getId(), ChainOperationType.ANCHOR_BATCH))
+                .willReturn(Optional.of(tx));
+        configureSui();
+        var allow = new BlockchainProperties.LegacyKaiaReadRoute();
+        allow.setEnabled(true); allow.setChainId(1001); allow.setContractAddress(legacyContract);
+        allow.setContractVersion("1"); allow.setRuntimeCodeHash("0x" + "11".repeat(32));
+        allow.setRpcUrl("https://rpc.example.invalid"); properties.getLegacyKaiaReadRoutes().add(allow);
+        try (var created = org.mockito.Mockito.mockConstruction(
+                com.api.trekkey.domain.credential.infrastructure.blockchain.Web3jKaiaBlockchainAnchorAdapter.class)) {
+            ReflectionTestUtils.setField(service, "verificationRouter", new BlockchainVerificationRouter(properties, blockchainAnchorPort));
+            BlockchainAnchorPort legacy = created.constructed().getFirst();
+            long recorded = ISSUED_AT.plusSeconds(150).getEpochSecond();
+            stubValidChainEvidence(evidence, new BlockchainAnchorPort.OnChainCredentialStatus(
+                    BlockchainAnchorPort.CredentialChainState.REVOKED, recorded - 10, recorded, 2, Hash32.ZERO), 0, legacy);
+            given(legacy.getIssuerKey(evidence.issuerId(), 2)).willReturn(new BlockchainAnchorPort.OnChainIssuerKey(
+                    EthereumAddress.fromBytes(bytes(4, 20)), ISSUED_AT.getEpochSecond(), 0, 0, true));
+
+            CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
+
+            assertThat(result.verificationStatus()).isEqualTo(CredentialVerificationStatus.REVOKED);
+            assertThat(result.evidence().blockchain().provider()).isEqualTo("KAIA");
+            assertThat(result.evidence().chainId()).isEqualTo(1001);
+            org.mockito.Mockito.verify(legacy).getIssuerKey(evidence.issuerId(), 1);
+            org.mockito.Mockito.verify(legacy).getIssuerKey(evidence.issuerId(), 2);
+            org.mockito.Mockito.verifyNoInteractions(blockchainAnchorPort);
+            assertThat(credential.getCanonicalBytes()).isEqualTo(originalCanonical);
+            assertThat(tx.getSignedRawTransaction()).containsExactly(1, 2, 3);
+            assertThat(tx.getChainContext()).isNull();
+            assertThat(evidence.batch().getChainContext()).isNull();
+            assertThat(evidence.issuerKey().getChainContext()).isNull();
+        }
+    }
+
+    @Test
+    void malformedStoredRoutingIdentityProducesAConfigurationErrorWithoutThrowingOrInventingCoordinates() {
+        AnchoredEvidence evidence = anchoredEvidence();
+        ReflectionTestUtils.setField(evidence.batch(), "chainContext", "SUI|malformed");
+        CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
+        assertThat(result.verificationStatus()).isEqualTo(CredentialVerificationStatus.BLOCKCHAIN_CONFIGURATION_ERROR);
+        assertThat(result.evidence().contractAddress()).isNull();
+        assertThat(result.evidence().blockchain().provider()).isNull();
+        org.mockito.Mockito.verifyNoInteractions(blockchainAnchorPort);
+    }
+
+    @Test
+    void aLegacyAnchorCannotBorrowAnIssuerKeyBoundToSui() {
+        AnchoredEvidence evidence = anchoredEvidence();
+        ReflectionTestUtils.setField(evidence.issuerKey(), "chainContext", "SUI|testnet|aabbccdd|0x"
+                + "11".repeat(32) + "|0x" + "22".repeat(32) + "|1");
+        long anchored = ISSUED_AT.plusSeconds(30).getEpochSecond();
+        given(blockchainAnchorPort.getBatch(Hash32.of(evidence.batch().getBatchIdHash())))
+                .willReturn(new BlockchainAnchorPort.OnChainBatch(evidence.issuerId(),
+                        Hash32.of(evidence.batch().getMerkleRoot()), Hash32.of(evidence.batch().getSchemaVersionHash()),
+                        1, 1, 1, anchored, true));
+        assertThat(service.verify(CREDENTIAL_PUBLIC_ID).verificationStatus()).isEqualTo(CredentialVerificationStatus.ISSUER_INVALID);
+        org.mockito.Mockito.verify(blockchainAnchorPort).getBatch(Hash32.of(evidence.batch().getBatchIdHash()));
+        org.mockito.Mockito.verifyNoMoreInteractions(blockchainAnchorPort);
+    }
+
+    @Test
+    void changingSuiRegistryFailsClosedWhileDisplayingTheOriginalStoredRegistry() {
+        AnchoredEvidence evidence = anchoredEvidence();
+        configureSui();
+        ReflectionTestUtils.setField(evidence.batch(), "chainContext", properties.chainContext());
+        String originalRegistry = properties.getSui().getRegistryId();
+        suiTransaction(evidence);
+        properties.getSui().setRegistryId("0x" + "44".repeat(32));
+
+        CredentialVerificationView result = service.verify(CREDENTIAL_PUBLIC_ID);
+
+        assertThat(result.verificationStatus()).isEqualTo(CredentialVerificationStatus.BLOCKCHAIN_CONFIGURATION_ERROR);
+        assertThat(result.evidence().blockchain().registryObjectId()).isEqualTo(originalRegistry);
+        org.mockito.Mockito.verifyNoInteractions(blockchainAnchorPort);
+    }
+
+    private void configureSui() {
+        properties.setProvider(BlockchainProperties.Provider.SUI);
+        properties.getSui().setChainIdentifier("aabbccdd");
+        properties.getSui().setPackageId("0x" + "11".repeat(32));
+        properties.getSui().setRegistryId("0x" + "22".repeat(32));
+    }
+
+    private AncChainTransaction suiTransaction(AnchoredEvidence evidence) {
+        AncChainTransaction tx = AncChainTransaction.pending(evidence.batch().getId(), null, null,
+                ChainOperationType.ANCHOR_BATCH, "sui-test", 0, properties.ledgerContractAddress(), "1",
+                UtcTime.toLocalDateTime(ISSUED_AT)).inContext(properties.chainContext());
+        tx.prepare(new byte[] {1, 2}, bytes(5, 32), null, bytes(6, 32), UtcTime.toLocalDateTime(ISSUED_AT));
+        tx.markSubmitted(UtcTime.toLocalDateTime(ISSUED_AT.plusSeconds(1)));
+        tx.markConfirmed(75, bytes(7, 32), 0, UtcTime.toLocalDateTime(ISSUED_AT.plusSeconds(2)));
+        given(chainTransactionRepository.findByBatchIdAndOperationType(evidence.batch().getId(), ChainOperationType.ANCHOR_BATCH))
+                .willReturn(Optional.of(tx));
+        return tx;
+    }
+
     private AncCredential credential() throws Exception {
         FileManifest.Result manifest = FileManifest.build(List.of());
         CredentialIssueCommand command = command();
@@ -365,6 +538,7 @@ class CredentialVerificationServiceImplTest {
                 LocalDateTime.ofInstant(ISSUED_AT.plusSeconds(600), ZoneOffset.UTC),
                 LocalDateTime.ofInstant(ISSUED_AT, ZoneOffset.UTC));
         ReflectionTestUtils.setField(batch, "id", 30L);
+        ReflectionTestUtils.setField(batch, "chainContext", properties.chainContext());
         batch.recordApproval("{}", bytes(8, 32), bytes(9, 65),
                 LocalDateTime.ofInstant(ISSUED_AT.plusSeconds(1), ZoneOffset.UTC));
         batch.beginAnchoring();
@@ -386,8 +560,16 @@ class CredentialVerificationServiceImplTest {
             AnchoredEvidence evidence,
             BlockchainAnchorPort.OnChainCredentialStatus status,
             long compromisedAt) {
+        stubValidChainEvidence(evidence, status, compromisedAt, blockchainAnchorPort);
+    }
+
+    private void stubValidChainEvidence(
+            AnchoredEvidence evidence,
+            BlockchainAnchorPort.OnChainCredentialStatus status,
+            long compromisedAt,
+            BlockchainAnchorPort reader) {
         long anchoredAt = ISSUED_AT.plusSeconds(30).getEpochSecond();
-        given(blockchainAnchorPort.getBatch(Hash32.of(evidence.batch().getBatchIdHash())))
+        given(reader.getBatch(Hash32.of(evidence.batch().getBatchIdHash())))
                 .willReturn(new BlockchainAnchorPort.OnChainBatch(
                         evidence.issuerId(),
                         Hash32.of(evidence.batch().getMerkleRoot()),
@@ -397,7 +579,7 @@ class CredentialVerificationServiceImplTest {
                         evidence.issuerKey().getKeyVersion(),
                         anchoredAt,
                         true));
-        given(blockchainAnchorPort.getIssuerKey(
+        given(reader.getIssuerKey(
                 evidence.issuerId(),
                 evidence.issuerKey().getKeyVersion()))
                 .willReturn(new BlockchainAnchorPort.OnChainIssuerKey(
@@ -406,7 +588,7 @@ class CredentialVerificationServiceImplTest {
                         0,
                         compromisedAt,
                         true));
-        lenient().when(blockchainAnchorPort.getCredentialStatus(
+        lenient().when(reader.getCredentialStatus(
                         evidence.issuerId(),
                         Hash32.of(credential.getCredentialIdHash())))
                 .thenReturn(status);

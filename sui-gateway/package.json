@@ -1,0 +1,26 @@
+{
+  "name": "@trekkey/sui-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --import tsx --test test/*.test.ts",
+    "start": "node dist/src/server.js",
+    "deploy-testnet": "node dist/src/deploy-testnet.js",
+    "sign-approval": "node --import tsx src/cli.ts sign-approval",
+    "inspect": "node --import tsx src/cli.ts inspect"
+  },
+  "dependencies": {
+    "@mysten/sui": "2.29.0",
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "2.0.1"
+  },
+  "devDependencies": {
+    "@protobuf-ts/runtime-rpc": "2.11.1",
+    "@types/node": "22.19.15",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3"
+  }
+}

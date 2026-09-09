@@ -29,8 +29,11 @@ import com.api.trekkey.domain.credential.repository.AncIssuerKeyRepository;
 import com.api.trekkey.domain.credential.service.dto.CredentialVerificationStatus;
 import com.api.trekkey.domain.credential.service.dto.CredentialVerificationView;
 import com.api.trekkey.domain.credential.service.port.BlockchainAnchorPort;
+import com.api.trekkey.domain.credential.service.port.BlockchainVerificationReader;
+import com.api.trekkey.domain.credential.infrastructure.blockchain.BlockchainVerificationRouter;
 import com.api.trekkey.domain.credential.service.port.BlockchainGatewayException;
 import com.api.trekkey.domain.credential.service.support.UtcTime;
+import com.api.trekkey.domain.credential.service.support.AnchorCoordinates;
 import com.api.trekkey.domain.organization.entity.Organization;
 import com.api.trekkey.domain.organization.repository.OrganizationRepository;
 import com.api.trekkey.global.exception.CustomException;
@@ -58,7 +61,7 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
     private final AncIssuerKeyRepository issuerKeyRepository;
     private final AncChainTransactionRepository chainTransactionRepository;
     private final OrganizationRepository organizationRepository;
-    private final BlockchainAnchorPort blockchainAnchorPort;
+    private final BlockchainVerificationRouter verificationRouter;
     private final BlockchainProperties properties;
     private final ObjectMapper objectMapper;
     private final Clock credentialClock;
@@ -115,8 +118,11 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
         }
 
         try {
+            BlockchainVerificationRouter.Route route = verificationRouter.resolve(
+                    localEvidence.batch(), localEvidence.transaction());
+            BlockchainVerificationReader reader = route.reader();
             BlockchainAnchorPort.OnChainBatch onChainBatch =
-                    blockchainAnchorPort.getBatch(Hash32.of(localEvidence.batch().getBatchIdHash()));
+                    reader.getBatch(Hash32.of(localEvidence.batch().getBatchIdHash()));
             if (!onChainBatch.exists()) {
                 CredentialVerificationStatus status =
                         localEvidence.batch().getStatus() == BatchStatus.ANCHORED
@@ -132,7 +138,7 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
                         null,
                         null);
             }
-            if (!issuerWasValid(localEvidence.batch(), onChainBatch)) {
+            if (!issuerWasValid(localEvidence.batch(), onChainBatch, route)) {
                 return response(
                         CredentialVerificationStatus.ISSUER_INVALID,
                         credential,
@@ -141,11 +147,11 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
                         null);
             }
 
-            BlockchainAnchorPort.OnChainCredentialStatus chainStatus = blockchainAnchorPort.getCredentialStatus(
+            BlockchainAnchorPort.OnChainCredentialStatus chainStatus = reader.getCredentialStatus(
                     localEvidence.issuerId(),
                     localEvidence.credentialIdHash());
             if (chainStatus.state() != BlockchainAnchorPort.CredentialChainState.NONE
-                    && !statusIssuerWasValid(localEvidence.issuerId(), chainStatus)) {
+                    && !statusIssuerWasValid(localEvidence.issuerId(), chainStatus, reader)) {
                 return response(
                         CredentialVerificationStatus.ISSUER_INVALID,
                         credential,
@@ -311,7 +317,7 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
                 if (!subject.isObject()) {
                     throw new CryptoValidationException("Credential subject must be an object");
                 }
-                String subjectRef = requiredText(subject, "ref");
+                requiredText(subject, "ref");
                 String subjectType = CredentialSubjectType.valueOf(requiredText(subject, "type")).name();
                 String displayName = requiredText(subject, "displayName");
                 String major = nullableText(subject, "major");
@@ -320,7 +326,9 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
                         DisclosureClass.valueOf(requiredText(subject, "disclosureClass"));
                 if (disclosureClass == DisclosureClass.PUBLIC) {
                     publicSubjects.add(new CredentialVerificationView.PublicSubject(
-                            subjectRef,
+                            // Public projection only: never expose the internal user PK or a
+                            // cross-credential subject identifier. Canonical bytes stay unchanged.
+                            "public-subject:" + credentialPublicId + ":" + publicSubjects.size(),
                             subjectType,
                             displayName,
                             major,
@@ -383,13 +391,14 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
 
     private boolean issuerWasValid(
             AncBatch batch,
-            BlockchainAnchorPort.OnChainBatch onChainBatch) {
+            BlockchainAnchorPort.OnChainBatch onChainBatch,
+            BlockchainVerificationRouter.Route route) {
         AncIssuerKey expectedKey = issuerKeyRepository.findById(batch.getIssuerKeyId()).orElse(null);
-        if (expectedKey == null) {
+        if (expectedKey == null || !issuerContextMatches(route, expectedKey.getChainContext())) {
             return false;
         }
         BlockchainAnchorPort.OnChainIssuerKey actualKey =
-                blockchainAnchorPort.getIssuerKey(onChainBatch.issuerId(), onChainBatch.issuerKeyVersion());
+                route.reader().getIssuerKey(onChainBatch.issuerId(), onChainBatch.issuerKeyVersion());
         long anchoredAt = onChainBatch.anchoredAt();
         return actualKey.exists()
                 && actualKey.signer().equals(EthereumAddress.fromHex(hex(expectedKey.getSignerAddress())))
@@ -400,16 +409,25 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
 
     private boolean statusIssuerWasValid(
             Hash32 issuerId,
-            BlockchainAnchorPort.OnChainCredentialStatus status) {
+            BlockchainAnchorPort.OnChainCredentialStatus status,
+            BlockchainVerificationReader reader) {
         if (status.recordedAt() <= 0 || status.recordedAt() < status.effectiveAt()) {
             return false;
         }
         BlockchainAnchorPort.OnChainIssuerKey key =
-                blockchainAnchorPort.getIssuerKey(issuerId, status.issuerKeyVersion());
+                reader.getIssuerKey(issuerId, status.issuerKeyVersion());
         return key.exists()
                 && status.recordedAt() >= key.validFrom()
                 && (key.validUntil() == 0 || status.recordedAt() <= key.validUntil())
                 && (key.compromisedAt() == 0 || status.recordedAt() < key.compromisedAt());
+    }
+
+    private boolean issuerContextMatches(BlockchainVerificationRouter.Route route, String stored) {
+        try {
+            return route.identity().matchesIssuerContext(stored);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
     }
 
     private List<String> proof(String proofJson) {
@@ -438,6 +456,7 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
         VerifiedPayload payload = local.allValid() ? local.payload() : null;
         AncBatch batch = local.batch();
         AncChainTransaction transaction = local.transaction();
+        AnchorCoordinates coordinates = AnchorCoordinates.from(batch, transaction, properties);
         CredentialVerificationView.Evidence evidence = new CredentialVerificationView.Evidence(
                 local.canonicalPayloadMatches(),
                 local.contentHashMatches(),
@@ -456,12 +475,11 @@ public class CredentialVerificationServiceImpl implements CredentialVerification
                 batch == null ? null : Hash32.of(batch.getMerkleRoot()).hex(),
                 batch == null ? null : batch.getTreeVersion(),
                 local.proof(),
-                properties.getChainId(),
-                properties.getContractAddress(),
-                transaction == null || transaction.getTxHash() == null
-                        ? null
-                        : Hash32.of(transaction.getTxHash()).hex(),
-                transaction == null ? null : transaction.getBlockNumber());
+                coordinates.chainId(),
+                coordinates.contractAddress(),
+                coordinates.transactionHash(),
+                coordinates.blockNumber(),
+                coordinates.metadata());
         return new CredentialVerificationView(
                 status,
                 credential.getPublicId(),

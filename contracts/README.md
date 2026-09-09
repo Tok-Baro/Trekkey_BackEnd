@@ -1,5 +1,8 @@
 # Trekkey Credential Registry Contracts
 
+Legacy Kaia contracts are preserved for existing proofs and rollback. New Sui implementation:
+[Move registry](../contracts-sui/README.md), [migration contract](../docs/sui-migration-2026-09-08.md).
+
 `TrekkeyCredentialRegistryV1` anchors Merkle roots and individual correction states on Kaia. It never stores Credential JSON, PII, file metadata, or Merkle proofs on-chain.
 
 ## Fixed V1 rules

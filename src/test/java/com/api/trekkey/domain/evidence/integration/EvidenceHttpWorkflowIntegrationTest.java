@@ -2,9 +2,12 @@ package com.api.trekkey.domain.evidence.integration;
 
 import static com.api.trekkey.domain.graduation.entity.GraduationTypes.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import com.api.trekkey.domain.graduation.entity.*;
 import com.api.trekkey.domain.graduation.repository.*;
+import com.api.trekkey.domain.graduation.service.TrekkeyGraduationEvidenceSyncService;
 import com.api.trekkey.domain.organization.entity.*;
 import com.api.trekkey.domain.organization.repository.OrganizationRepository;
 import com.api.trekkey.domain.user.entity.*;
@@ -28,6 +31,7 @@ import org.springframework.http.*;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -60,6 +64,11 @@ class EvidenceHttpWorkflowIntegrationTest {
     @Autowired StudentAcademicProfileRepository profileRepository;
     @Autowired GraduationPolicyRepository policyRepository;
     @Autowired GraduationRequirementRepository requirementRepository;
+
+    // This H2 test covers external evidence HTTP/storage/review/evaluation, not imports
+    // from Trekkey-issued credentials. That separate native MySQL JSON query requires
+    // the real MySQL workflow; H2 MODE=MySQL does not implement JSON_UNQUOTE/JSON_EXTRACT.
+    @MockitoBean TrekkeyGraduationEvidenceSyncService trekkeyCredentialSync;
 
     private User student;
     private User admin1;
@@ -103,7 +112,7 @@ class EvidenceHttpWorkflowIntegrationTest {
     }
 
     @Test
-    void realMultipartPostTwoAdminReviewsAndGraduationEvaluation() throws Exception {
+    void externalEvidenceHttpWorkflowWithCredentialImportExplicitlyIsolated() throws Exception {
         String documentPath = System.getenv("EVIDENCE_E2E_FILE");
         Assumptions.assumeTrue(documentPath != null && !documentPath.isBlank(), "EVIDENCE_E2E_FILE not set");
         byte[] document = Files.readAllBytes(Path.of(documentPath));
@@ -129,9 +138,11 @@ class EvidenceHttpWorkflowIntegrationTest {
         JsonNode secondReview = review(admin2, caseId, "2차: 독립 재검토 완료");
         assertThat(secondReview.path("data").path("finalDecision").asText()).isEqualTo("VERIFIED");
         JsonNode afterReview = evaluate();
-        assertThat(afterReview.path("data").path("status").asText()).isEqualTo("ELIGIBLE");
+        assertThat(afterReview.path("data").path("status").asText()).isEqualTo("INDETERMINATE");
+        assertThat(afterReview.path("data").path("coverage").path("complete").asBoolean()).isFalse();
         assertThat(afterReview.path("data").path("requirements").get(0).path("status").asText())
                 .isEqualTo("SATISFIED");
+        verify(trekkeyCredentialSync, times(3)).sync(student.getId());
 
         System.out.printf("HTTP_E2E submit=%s case=%s before=%s first=%s final=%s graduation=%s%n",
                 submitted.getStatusCode(), caseId, beforeReview.path("data").path("status").asText(),

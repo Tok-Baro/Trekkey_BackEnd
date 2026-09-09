@@ -13,6 +13,7 @@ import com.api.trekkey.domain.review.repository.ReviewAssignmentRepository;
 import com.api.trekkey.domain.review.repository.ReviewRoundRepository;
 import com.api.trekkey.domain.review.support.ReviewLinkTokenManager;
 import com.api.trekkey.domain.review.admin.web.dto.request.ContestJudgeCreateReq;
+import com.api.trekkey.domain.review.admin.web.dto.request.ContestJudgeUpdateReq;
 import com.api.trekkey.domain.review.admin.web.dto.request.ReviewLinkIssueReq;
 import com.api.trekkey.domain.review.admin.web.dto.response.ContestJudgeRes;
 import com.api.trekkey.domain.review.admin.web.dto.response.ReviewJudgeProgressRes;
@@ -158,6 +159,32 @@ public class ContestJudgeAdminServiceImpl implements ContestJudgeAdminService {
                 judgeId,
                 "contestId=" + contest.getId()
         );
+    }
+
+    @Override
+    public ContestJudgeRes updateJudge(Long adminUserId, String contestPublicId,
+            Long judgeId, ContestJudgeUpdateReq req) {
+        User admin = findUser(adminUserId);
+        Contest contest = findContest(contestPublicId, admin);
+        // Assignment creation and link use acquire this same judge lock.
+        ContestJudge judge = findJudgeForUpdate(judgeId, contest.getId());
+        if (!reviewAssignmentRepository.findAllForUpdateByContestJudgeId(judgeId).isEmpty()) {
+            throw new CustomException(ReviewErrorResponseCode.CONTEST_JUDGE_HAS_ASSIGNMENTS);
+        }
+        LocalDateTime now = LocalDateTime.now(clock);
+        if (judge.updateLabels(req.name(), req.roleLabel())) {
+            boolean linkRevoked = judge.revokeReviewLink(now);
+            contestJudgeRepository.flush();
+            adminAuditLogger.log(admin.getId(), admin.getOrganization().getId(),
+                    AuditAction.CONTEST_JUDGE_UPDATE, TARGET_TYPE_CONTEST_JUDGE, judge.getId(),
+                    "contestId=" + contest.getId() + ", linkRevoked=" + linkRevoked);
+            if (linkRevoked) {
+                adminAuditLogger.log(admin.getId(), admin.getOrganization().getId(),
+                        AuditAction.REVIEW_LINK_REVOKE, TARGET_TYPE_CONTEST_JUDGE, judge.getId(),
+                        "contestId=" + contest.getId() + ", reason=judge_labels_updated");
+            }
+        }
+        return ContestJudgeRes.from(judge, now);
     }
 
     @Override

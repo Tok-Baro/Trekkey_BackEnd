@@ -1,5 +1,9 @@
 # Trekkey Credential 및 Kaia 앵커링 설계
 
+> 2026-09-08: 이 문서의 EVM 규격은 기존 Kaia 증명의 역사/호환 정본으로 보존한다.
+> 신규 Sui adapter·승인 도메인·프론트 무수정 한계·이관 gate는
+> [Sui 이식 계약](./sui-migration-2026-09-08.md)을 우선 참고한다. 운영 체인이 이미 바뀌었다는 뜻은 아니다.
+
 - 기준일: 2026-07-24
 - 상태: 블록체인 기반 구현 완료, 업무 도메인 연결 전
 - 시각 보드: [팀 회의용 Mermaid 다이어그램](./architecture-diagrams.md)

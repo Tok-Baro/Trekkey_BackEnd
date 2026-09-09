@@ -17,6 +17,10 @@ import com.api.trekkey.domain.credential.entity.DisclosureClass;
 import com.api.trekkey.domain.credential.exception.CredentialErrorResponseCode;
 import com.api.trekkey.domain.credential.crypto.FileManifest;
 import com.api.trekkey.domain.credential.crypto.Hashing;
+import com.api.trekkey.domain.credential.crypto.CanonicalJson;
+import com.api.trekkey.domain.credential.service.support.CredentialPayloadFactory;
+import com.api.trekkey.domain.credential.service.support.UtcTime;
+import java.nio.charset.StandardCharsets;
 import com.api.trekkey.domain.credential.repository.AncCredentialRepository;
 import com.api.trekkey.domain.credential.repository.AncCredentialSourceRepository;
 import com.api.trekkey.domain.credential.repository.AncCredentialSubjectRepository;
@@ -142,6 +146,48 @@ class CredentialIssuanceServiceImplTest {
                                 .isEqualTo(CredentialErrorResponseCode.CREDENTIAL_SOURCE_CONFLICT));
     }
 
+    @Test
+    void newMetadataIsMicrosecondExactButCanonicalNanosecondsAreNotRewritten() throws Exception {
+        given(sourceRepository.findBySourceFingerprint(any(byte[].class))).willReturn(Optional.empty());
+        given(credentialRepository.findByIssuerOrganizationIdAndCredentialNo(1L, "AWARD-2026-001"))
+                .willReturn(Optional.empty());
+        given(credentialRepository.save(any(AncCredential.class))).willAnswer(invocation -> {
+            AncCredential value = invocation.getArgument(0);
+            ReflectionTestUtils.setField(value, "id", 10L);
+            return value;
+        });
+        Instant nanos = Instant.parse("2026-09-08T12:32:29.868396862Z");
+        service.issue(withTimes(command(), nanos, nanos.plusSeconds(3600)));
+        ArgumentCaptor<AncCredential> captured = ArgumentCaptor.forClass(AncCredential.class);
+        verify(credentialRepository).save(captured.capture());
+        AncCredential actual = captured.getValue();
+        assertThat(actual.getIssuedAt().getNano()).isEqualTo(868396000);
+        assertThat(actual.getExpiresAt().getNano()).isEqualTo(868396000);
+        assertThat(actual.getPayloadJson()).contains(nanos.toString(), nanos.plusSeconds(3600).toString());
+        assertThat(Hashing.sha256(actual.getCanonicalBytes()).bytes()).containsExactly(actual.getContentHash());
+    }
+
+    @Test
+    void retryUsesExactCanonicalTimeEvenWhenDatabaseMetadataWasRounded() throws Exception {
+        Instant nanos = Instant.parse("2026-09-08T12:32:29.868396862Z");
+        CredentialIssueCommand request = withTimes(command(), nanos, null);
+        AncCredential existing = credential(77L, "existing-credential", request);
+        ReflectionTestUtils.setField(existing, "issuedAt", java.time.LocalDateTime.parse("2026-09-08T12:32:29.868397"));
+        AncCredentialSource source = org.mockito.Mockito.mock(AncCredentialSource.class);
+        given(source.getCredentialId()).willReturn(77L);
+        given(sourceRepository.findBySourceFingerprint(any(byte[].class))).willReturn(Optional.of(source));
+        given(credentialRepository.findById(77L)).willReturn(Optional.of(existing));
+        assertThat(service.issue(request).alreadyExisted()).isTrue();
+        assertThatThrownBy(() -> service.issue(withTimes(request, nanos.plusNanos(1), null)))
+                .isInstanceOfSatisfying(CustomException.class, exception ->
+                        assertThat(exception.getBaseResponseCode()).isEqualTo(CredentialErrorResponseCode.CREDENTIAL_SOURCE_CONFLICT));
+    }
+
+    private CredentialIssueCommand withTimes(CredentialIssueCommand original, Instant issuedAt, Instant expiresAt) {
+        return new CredentialIssueCommand(original.issuerOrganizationId(), original.credentialNo(), original.credentialType(),
+                original.schemaProfileId(), original.source(), original.subjects(), original.files(), issuedAt, expiresAt);
+    }
+
     private CredentialIssueCommand command() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         return new CredentialIssueCommand(
@@ -191,8 +237,14 @@ class CredentialIssuanceServiceImplTest {
         return value;
     }
 
-    private AncCredential credential(Long id, String publicId) {
+    private AncCredential credential(Long id, String publicId) throws Exception {
+        return credential(id, publicId, command());
+    }
+
+    private AncCredential credential(Long id, String publicId, CredentialIssueCommand request) {
         FileManifest.Result manifest = FileManifest.build(List.of());
+        byte[] canonical = CanonicalJson.canonicalize(CredentialPayloadFactory.create(publicId, request,
+                organization.getPublicId(), organization.getName(), manifest.hash().hex()));
         AncCredential value = AncCredential.ready(
                 1L,
                 publicId,
@@ -201,13 +253,13 @@ class CredentialIssuanceServiceImplTest {
                 CredentialType.AWARD,
                 CredentialSchemaProfiles.AWARD_V1,
                 Hashing.schemaVersion(CredentialSchemaProfiles.AWARD_V1).bytes(),
-                "{}",
-                new byte[] {1},
+                new String(canonical, StandardCharsets.UTF_8),
+                canonical,
                 manifest.canonicalBytes(),
-                Hashing.sha256(new byte[] {1}).bytes(),
+                Hashing.sha256(canonical).bytes(),
                 manifest.hash().bytes(),
-                java.time.LocalDateTime.of(2026, 7, 24, 1, 5),
-                null);
+                UtcTime.toPersistedLocalDateTime(request.issuedAt()),
+                request.expiresAt() == null ? null : UtcTime.toPersistedLocalDateTime(request.expiresAt()));
         ReflectionTestUtils.setField(value, "id", id);
         return value;
     }

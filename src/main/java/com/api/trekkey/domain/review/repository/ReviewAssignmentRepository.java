@@ -159,6 +159,16 @@ public interface ReviewAssignmentRepository
 
     boolean existsByContestJudgeId(Long contestJudgeId);
 
+    // Current read after the judge lock: a repeatable-read snapshot may predate
+    // an assignment committed while waiting for that lock.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select assignment from ReviewAssignment assignment
+            where assignment.contestJudge.id = :judgeId
+            order by assignment.id
+            """)
+    List<ReviewAssignment> findAllForUpdateByContestJudgeId(@Param("judgeId") Long judgeId);
+
     @Query("""
             select assignment
             from ReviewAssignment assignment

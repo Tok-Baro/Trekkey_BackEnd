@@ -1,0 +1,11 @@
+[package]
+name = "TrekkeyCredentialRegistry"
+edition = "2024"
+license = "Apache-2.0"
+
+# Pin the framework used by the verified local build instead of following a mutable branch.
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "ae59d7718668b468ce65702ecb0440aa2330f389" }
+
+[addresses]
+trekkey = "0x0"

@@ -29,6 +29,17 @@ import lombok.NoArgsConstructor;
         })
 public class AncIssuerKey extends BaseEntity {
 
+    @Column(name = "chain_context", length = 384, updatable = false)
+    private String chainContext;
+
+    public AncIssuerKey inContext(String context) {
+        if (id != null || chainContext != null || context == null || context.isBlank() || context.length() > 384) {
+            throw new IllegalStateException("issuer key chain context can only be fixed before persistence");
+        }
+        chainContext = context;
+        return this;
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

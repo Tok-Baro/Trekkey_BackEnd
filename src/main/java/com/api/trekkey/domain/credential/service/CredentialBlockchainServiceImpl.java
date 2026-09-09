@@ -149,7 +149,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
                 tree.root().bytes(),
                 nonceGenerator.next(),
                 UtcTime.toLocalDateTime(deadline),
-                UtcTime.toLocalDateTime(now)));
+                UtcTime.toLocalDateTime(now)).inContext(properties.chainContext()));
 
         batchItemRepository.saveAll(leaves.stream()
                 .map(item -> batchItem(batch, tree, item))
@@ -182,6 +182,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
         AncBatch batch = batchRepository.findByPublicIdForUpdate(batchPublicId)
                 .filter(candidate -> candidate.getIssuerOrganizationId().equals(organizationId))
                 .orElseThrow(() -> new CustomException(CredentialErrorResponseCode.BATCH_NOT_FOUND));
+        requireContext(batch.getChainContext());
         Instant now = credentialClock.instant();
         requireApprovalRenewalDue(batch.getApprovalDeadline(), now);
         boolean unsigned = batch.getStatus() == BatchStatus.SEALED && batch.getApprovalDigest() == null;
@@ -203,6 +204,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
         AncBatch batch = batchRepository.findByPublicIdForUpdate(batchPublicId)
                 .filter(candidate -> candidate.getIssuerOrganizationId().equals(organizationId))
                 .orElseThrow(() -> new CustomException(CredentialErrorResponseCode.BATCH_NOT_FOUND));
+        requireContext(batch.getChainContext());
         if (batch.getStatus() == BatchStatus.ANCHORED) {
             return batchView(batch);
         }
@@ -242,6 +244,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
         AncBatch batch = batchRepository.findByPublicIdForUpdate(batchPublicId)
                 .filter(candidate -> candidate.getIssuerOrganizationId().equals(organizationId))
                 .orElseThrow(() -> new CustomException(CredentialErrorResponseCode.BATCH_NOT_FOUND));
+        requireContext(batch.getChainContext());
         Signature65 signature = signature(signatureHex);
         if (batch.getStatus() != BatchStatus.SEALED) {
             if (batch.getIssuerSignature() != null && Arrays.equals(batch.getIssuerSignature(), signature.bytes())) {
@@ -256,10 +259,10 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
         }
         AncIssuerKey issuerKey = activeIssuerKey(batch.getIssuerOrganizationId(), batch.getIssuerKeyId());
         Eip712.BatchApproval approval = batchApproval(batch);
-        Hash32 digest = Eip712.batchDigest(domain(), approval);
+        Hash32 digest = ApprovalPayloadFactory.batchDigest(properties, approval);
         verifySigner(digest, signature, issuerKey);
         batch.recordApproval(
-                Eip712.batchTypedDataJson(domain(), approval),
+                ApprovalPayloadFactory.batchPayload(properties, approval),
                 digest.bytes(),
                 signature.bytes(),
                 UtcTime.toLocalDateTime(now));
@@ -292,6 +295,8 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
             throw new CustomException(CredentialErrorResponseCode.INVALID_CREDENTIAL_STATE);
         }
 
+        requireCredentialContext(credential);
+
         AncIssuerKey issuerKey = activeIssuerKey(organizationId, command.issuerKeyVersion());
         AncCredential replacement = replacementCredential(organizationId, credential, command);
         Instant effectiveAt = credentialClock.instant();
@@ -311,7 +316,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
                 nonceGenerator.next(),
                 UtcTime.toLocalDateTime(deadline),
                 "STATUS:" + credential.getPublicId(),
-                UtcTime.toLocalDateTime(effectiveAt)));
+                UtcTime.toLocalDateTime(effectiveAt)).inContext(properties.chainContext()));
         return statusApprovalView(event, credential, issuerKey, replacement);
     }
 
@@ -350,6 +355,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
         AncCredential credential = credentialRepository.findById(event.getCredentialId())
                 .filter(candidate -> candidate.getIssuerOrganizationId().equals(organizationId))
                 .orElseThrow(() -> new CustomException(CredentialErrorResponseCode.STATUS_EVENT_NOT_FOUND));
+        requireContext(event.getChainContext());
         Instant now = credentialClock.instant();
         requireApprovalRenewalDue(event.getApprovalDeadline(), now);
         if (event.getApprovalDigest() != null) {
@@ -384,6 +390,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
         AncCredential credential = credentialRepository.findByIdForUpdate(event.getCredentialId())
                 .filter(candidate -> candidate.getIssuerOrganizationId().equals(organizationId))
                 .orElseThrow(() -> new CustomException(CredentialErrorResponseCode.STATUS_EVENT_NOT_FOUND));
+        requireContext(event.getChainContext());
         if (credential.getStatus() == event.getNextStatus()) {
             return;
         }
@@ -425,6 +432,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
         AncCredential credential = credentialRepository.findById(event.getCredentialId())
                 .filter(candidate -> candidate.getIssuerOrganizationId().equals(organizationId))
                 .orElseThrow(() -> new CustomException(CredentialErrorResponseCode.STATUS_EVENT_NOT_FOUND));
+        requireContext(event.getChainContext());
         Signature65 signature = signature(signatureHex);
         if (event.getIssuerSignature() != null) {
             if (Arrays.equals(event.getIssuerSignature(), signature.bytes())) {
@@ -442,9 +450,10 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
                 : credentialRepository.findById(event.getSupersedingCredentialId()).orElseThrow(
                         () -> new CustomException(CredentialErrorResponseCode.CREDENTIAL_NOT_FOUND));
         Eip712.StatusApproval approval = statusApproval(event, credential, issuerKey, replacement);
-        Hash32 digest = Eip712.statusDigest(domain(), approval);
+        requireContext(event.getChainContext());
+        Hash32 digest = ApprovalPayloadFactory.statusDigest(properties, approval);
         verifySigner(digest, signature, issuerKey);
-        event.recordApproval(Eip712.statusTypedDataJson(domain(), approval), digest.bytes(), signature.bytes());
+        event.recordApproval(ApprovalPayloadFactory.statusPayload(properties, approval), digest.bytes(), signature.bytes());
 
         ChainOperationType operationType = event.getNextStatus() == CredentialStatus.REVOKED
                 ? ChainOperationType.REVOKE
@@ -484,6 +493,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
     }
 
     private AncIssuerKey requireActive(AncIssuerKey issuerKey) {
+        requireContext(issuerKey.getChainContext());
         LocalDateTime now = UtcTime.toLocalDateTime(credentialClock.instant());
         if (issuerKey.getStatus() != IssuerKeyStatus.ACTIVE
                 || now.isBefore(issuerKey.getValidFrom())
@@ -497,6 +507,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
     private AncIssuerKey synchronizeExistingKey(
             AncIssuerKey existing,
             BlockchainAnchorPort.OnChainIssuerKey onChainKey) {
+        requireContext(existing.getChainContext());
         LocalDateTime validFrom = epochSecond(onChainKey.validFrom());
         if (!Arrays.equals(existing.getSignerAddress(), onChainKey.signer().bytes())
                 || !existing.getValidFrom().equals(validFrom)) {
@@ -523,7 +534,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
                 onChainKey.signer().bytes(),
                 signerRef,
                 epochSecond(onChainKey.validFrom()),
-                null);
+                null).inContext(properties.chainContext());
         try {
             issuerKey.synchronizeLifecycle(
                     optionalEpochSecond(onChainKey.validUntil()),
@@ -555,6 +566,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
     }
 
     private Eip712.BatchApproval batchApproval(AncBatch batch) {
+        requireContext(batch.getChainContext());
         Organization organization = organization(batch.getIssuerOrganizationId());
         AncIssuerKey issuerKey = issuerKeyRepository.findById(batch.getIssuerKeyId())
                 .orElseThrow(() -> new CustomException(CredentialErrorResponseCode.ISSUER_KEY_NOT_FOUND));
@@ -563,12 +575,12 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
 
     private BlockchainApprovalView batchApprovalView(AncBatch batch) {
         Eip712.BatchApproval approval = batchApproval(batch);
-        Eip712.Domain domain = domain();
+        requireReadConfiguration();
         return new BlockchainApprovalView(
                 "BATCH",
                 batch.getPublicId(),
-                Eip712.batchTypedDataJson(domain, approval),
-                Eip712.batchDigest(domain, approval).hex(),
+                ApprovalPayloadFactory.batchPayload(properties, approval),
+                ApprovalPayloadFactory.batchDigest(properties, approval).hex(),
                 batch.getApprovalNonce(),
                 UtcTime.toInstant(batch.getApprovalDeadline()));
     }
@@ -578,6 +590,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
             AncCredential credential,
             AncIssuerKey issuerKey,
             AncCredential replacement) {
+        requireContext(event.getChainContext());
         Organization organization = organization(credential.getIssuerOrganizationId());
         return ApprovalPayloadFactory.status(
                 existingOrganizationPublicId(organization),
@@ -593,12 +606,12 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
             AncIssuerKey issuerKey,
             AncCredential replacement) {
         Eip712.StatusApproval approval = statusApproval(event, credential, issuerKey, replacement);
-        Eip712.Domain domain = domain();
+        requireReadConfiguration();
         return new BlockchainApprovalView(
                 "STATUS_EVENT",
                 String.valueOf(event.getId()),
-                Eip712.statusTypedDataJson(domain, approval),
-                Eip712.statusDigest(domain, approval).hex(),
+                ApprovalPayloadFactory.statusPayload(properties, approval),
+                ApprovalPayloadFactory.statusDigest(properties, approval).hex(),
                 event.getApprovalNonce(),
                 UtcTime.toInstant(event.getApprovalDeadline()));
     }
@@ -622,6 +635,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
         if (replacement.getId().equals(original.getId()) || replacement.getStatus() != CredentialStatus.ANCHORED) {
             throw new CustomException(CredentialErrorResponseCode.INVALID_CREDENTIAL_STATE);
         }
+        requireCredentialContext(replacement);
         return replacement;
     }
 
@@ -637,6 +651,7 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
                 .findByIdempotencyKeyForUpdate(idempotencyKey);
         if (existingTransaction.isPresent()) {
             AncChainTransaction transaction = existingTransaction.get();
+            requireContext(transaction.getChainContext());
             AncOutboxEvent outbox = outboxEventRepository.findByIdempotencyKey("OUTBOX:" + idempotencyKey)
                     .orElseThrow(() -> new CustomException(CredentialErrorResponseCode.INVALID_CREDENTIAL_STATE));
             if (transaction.getStatus() == ChainTransactionStatus.FAILED
@@ -646,17 +661,16 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
             }
             return;
         }
-        EthereumAddress contractAddress = contractAddress();
         AncChainTransaction transaction = chainTransactionRepository.save(AncChainTransaction.pending(
                 batchId,
                 statusEventId,
                 null,
                 operationType,
                 idempotencyKey,
-                properties.getChainId(),
-                contractAddress.bytes(),
+                properties.ledgerChainId(),
+                properties.ledgerContractAddress(),
                 properties.getContractVersion(),
-                UtcTime.toLocalDateTime(now)));
+                UtcTime.toLocalDateTime(now)).inContext(properties.chainContext()));
         Long aggregateId = batchId == null ? statusEventId : batchId;
         outboxEventRepository.save(AncOutboxEvent.pending(
                 aggregateType,
@@ -857,14 +871,33 @@ public class CredentialBlockchainServiceImpl implements CredentialBlockchainServ
         if (!properties.isReadEnabled()) {
             throw new CustomException(CredentialErrorResponseCode.BLOCKCHAIN_READ_DISABLED);
         }
-        if (properties.getChainId() <= 0
-                || properties.getContractAddress() == null
+        if ((!properties.isSui() && (properties.getChainId() <= 0 || properties.getContractAddress() == null))
+                || (properties.isSui() && (properties.getSui().getPackageId() == null
+                        || properties.getSui().getRegistryId() == null || properties.getSui().getChainIdentifier() == null))
                 || properties.getApprovalTtl().isZero()
                 || properties.getApprovalTtl().isNegative()
                 || properties.getBatchSize() < 1
                 || properties.getTreeVersion() < 1) {
             throw new CustomException(CredentialErrorResponseCode.BLOCKCHAIN_CONFIGURATION_INVALID);
         }
+    }
+
+    private void requireContext(String context) {
+        if (!properties.matchesContext(context)) {
+            throw new CustomException(CredentialErrorResponseCode.BLOCKCHAIN_CONFIGURATION_INVALID);
+        }
+    }
+
+    private void requireCredentialContext(AncCredential credential) {
+        // Legacy mocks/rows have no context; only legacy mode may accept them.
+        var item = batchItemRepository.findByCredentialId(credential.getId());
+        if (item.isEmpty()) {
+            if (properties.isSui()) throw new CustomException(CredentialErrorResponseCode.BLOCKCHAIN_CONFIGURATION_INVALID);
+            return;
+        }
+        AncBatch batch = batchRepository.findById(item.get().getBatchId())
+                .orElseThrow(() -> new CustomException(CredentialErrorResponseCode.BATCH_NOT_FOUND));
+        requireContext(batch.getChainContext());
     }
 
     private void requireWriteConfiguration() {

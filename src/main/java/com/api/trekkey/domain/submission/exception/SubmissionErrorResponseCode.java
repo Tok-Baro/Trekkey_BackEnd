@@ -23,6 +23,10 @@ public enum SubmissionErrorResponseCode implements BaseResponseCode {
             "SUBMISSION_FINALIZED",
             409,
             "제출이 마감되어 수정할 수 없습니다."),
+    SUBMISSION_ALREADY_EXISTS(
+            "SUBMISSION_ALREADY_EXISTS",
+            409,
+            "이미 제출물이 있는 팀입니다. 관리자 수동 접수는 신규 제출만 가능합니다."),
     SUBMISSION_FILE_REQUIRED(
             "SUBMISSION_FILE_REQUIRED",
             400,

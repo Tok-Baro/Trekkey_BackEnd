@@ -1,0 +1,4 @@
+/build/
+/coverage/
+/.trace
+/.coverage_map.mvcov
