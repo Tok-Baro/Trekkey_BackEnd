@@ -19,6 +19,11 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.AndRequestMatcher;
 
 @Configuration
 @EnableWebSecurity
@@ -54,10 +59,30 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public CookieCsrfTokenRepository csrfTokenRepository(JwtProperties jwtProperties) {
+        CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
+        repository.setCookieCustomizer(cookie -> cookie
+                .httpOnly(true)
+                .secure(jwtProperties.isRefreshCookieSecure())
+                .sameSite(jwtProperties.getRefreshCookieSameSite())
+                .path("/api/auth"));
+        return repository;
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(
+            HttpSecurity http,
+            CookieCsrfTokenRepository csrfTokenRepository
+    ) throws Exception {
         http
                 .cors(Customizer.withDefaults())
-                .csrf(csrf -> csrf.disable())
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(csrfTokenRepository)
+                        .csrfTokenRequestHandler(new XorCsrfTokenRequestAttributeHandler())
+                        // Other APIs authenticate with an explicit Bearer header, not cookies.
+                        .requireCsrfProtectionMatcher(new AndRequestMatcher(
+                                CsrfFilter.DEFAULT_CSRF_MATCHER,
+                                PathPatternRequestMatcher.withDefaults().matcher("/api/auth/**"))))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(jwtAuthenticationEntryPoint)
