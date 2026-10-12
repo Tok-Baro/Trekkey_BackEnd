@@ -20,6 +20,7 @@ import com.api.trekkey.domain.auth.web.dto.AuthResult;
 import com.api.trekkey.domain.auth.web.dto.UserSignInRes;
 import com.api.trekkey.global.security.handler.JwtAccessDeniedHandler;
 import com.api.trekkey.global.security.handler.JwtAuthenticationEntryPoint;
+import com.api.trekkey.global.security.jwt.AccessTokenBlacklist;
 import com.api.trekkey.global.security.jwt.JwtAuthenticationFilter;
 import com.api.trekkey.global.security.jwt.JwtExtractor;
 import com.api.trekkey.global.security.jwt.JwtTokenProvider;
@@ -56,6 +57,8 @@ import org.springframework.test.web.servlet.MvcResult;
         RefreshTokenCookieProvider.class
 })
 class CsrfSecurityTest {
+    @MockitoBean
+    private AccessTokenBlacklist accessTokenBlacklist;
 
     @Autowired
     private MockMvc mockMvc;
@@ -134,7 +137,7 @@ class CsrfSecurityTest {
     }
 
     @Test
-    void issuedTokenCanBeReusedForSignInRefreshAndLogout() throws Exception {
+    void 발급된_CSRF_토큰을_로그인과_재발급과_로그아웃에_재사용할_수_있다() throws Exception {
         CsrfPair pair = issueCsrf();
         given(authService.signIn(any())).willReturn(
                 new AuthResult(new UserSignInRes("access-token", null), "first-refresh"));
@@ -171,7 +174,7 @@ class CsrfSecurityTest {
         assertThat(logout.getRequest().getSession(false)).isNull();
         verify(authService).signIn(any());
         verify(authService).reissue("first-refresh");
-        verify(authService).logout("next-refresh");
+        verify(authService).logout(null, "next-refresh");
     }
 
     @Test

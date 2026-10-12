@@ -23,6 +23,8 @@ import com.api.trekkey.domain.user.entity.UserRole;
 import com.api.trekkey.domain.user.web.dto.UserSignUpReq;
 import com.api.trekkey.global.exception.CustomException;
 import com.api.trekkey.global.exception.GlobalExceptionHandler;
+import com.api.trekkey.global.response.code.ErrorResponseCode;
+import com.api.trekkey.global.security.jwt.JwtExtractor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,7 +51,7 @@ class AuthControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(authService, refreshTokenCookieProvider))
+        mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(authService, new JwtExtractor(), refreshTokenCookieProvider))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -196,17 +198,28 @@ class AuthControllerTest {
 
     @Test
     @DisplayName("로그아웃하면 DB token을 폐기하고 refresh cookie를 삭제한다")
-    void logout_revokesTokenAndDeletesRefreshCookie() throws Exception {
+    void 로그아웃하면_토큰을_폐기하고_리프레시_쿠키를_삭제한다() throws Exception {
         given(refreshTokenCookieProvider.extract(any())).willReturn("refresh-token");
         given(refreshTokenCookieProvider.deleteCookie()).willReturn(refreshCookie("", 0));
 
-        mockMvc.perform(post("/api/auth/logout"))
+        mockMvc.perform(post("/api/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("로그아웃 성공"))
                 .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("refreshToken=")))
                 .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")));
 
-        verify(authService).logout("refresh-token");
+        verify(authService).logout("access-token", "refresh-token");
+    }
+
+    @Test
+    void 레디스_저장에_실패하면_로그아웃은_503을_반환하고_쿠키를_삭제하지_않는다() throws Exception {
+        given(refreshTokenCookieProvider.extract(any())).willReturn("refresh-token");
+        willThrow(new CustomException(ErrorResponseCode.AUTH_STORAGE_UNAVAILABLE))
+                .given(authService).logout("access-token", "refresh-token");
+        mockMvc.perform(post("/api/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("GLOBAL_503_AUTH"))
+                .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
     }
 
     private String validSignUpRequest() {

@@ -1,5 +1,6 @@
 package com.api.trekkey.domain.graduation.integration;
 
+import com.api.trekkey.global.security.jwt.AccessTokenBlacklist;
 import static com.api.trekkey.domain.graduation.entity.GraduationTypes.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -34,6 +35,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -54,6 +56,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 })
 @AutoConfigureMockMvc
 class GraduationCourseHttpTransactionIntegrationTest {
+    @MockitoBean
+    private AccessTokenBlacklist accessTokenBlacklist;
+
     @Autowired MockMvc mvc;
     @Autowired JwtTokenProvider tokenProvider;
     @Autowired OrganizationRepository organizations;

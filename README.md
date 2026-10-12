@@ -36,7 +36,7 @@
 | Language | Java 21 |
 | Framework | Spring Boot 3.5.14 |
 | Security | Spring Security, JWT (`jjwt` 0.13.0) |
-| Data | Spring Data JPA, QueryDSL, MySQL |
+| Data | Spring Data JPA, QueryDSL, MySQL, Redis (access token blacklist) |
 | Blockchain | Kaia, Solidity 0.8.28, OpenZeppelin 5.4.0, web3j 4.14.0; Sui Move·TypeScript SDK gateway |
 | Integrity | RFC 8785 JCS, Unicode NFC, SHA-256, Keccak-256, Merkle proof, EIP-712 |
 | Validation | Jakarta Bean Validation |
@@ -72,7 +72,7 @@ src/main/java/com/api/trekkey
 | `POST` | `/api/auth/signup` | 사용자 회원가입 | 불필요 |
 | `POST` | `/api/auth/signin` | 로그인 및 토큰 발급 | 불필요 |
 | `POST` | `/api/auth/refresh` | access/refresh token 재발급 | refresh cookie |
-| `POST` | `/api/auth/logout` | 로그아웃 및 refresh token 폐기 | refresh cookie |
+| `POST` | `/api/auth/logout` | 로그아웃 및 access/refresh token 폐기 | 선택적 Bearer + refresh cookie, CSRF 필수 |
 | `GET` | `/api/organizations?keyword=` | 활성 학교 검색 | 불필요 |
 | `GET` | `/api/public/credentials/{publicId}` | hash·proof·설정된 체인의 상태 공개 검증 | 불필요 |
 | `GET` | `/api/public/credentials/{publicId}/package` | 공개 proof package ZIP | 불필요 |
@@ -104,6 +104,7 @@ src/main/java/com/api/trekkey
 
 - JDK 21
 - MySQL
+- Redis (인증 요청 및 access token을 포함한 로그아웃에 필요)
 
 환경별 설정은 `src/main/resources/application.properties` 또는 환경변수로 주입합니다.
 
@@ -112,6 +113,9 @@ src/main/java/com/api/trekkey
 | `DATASOURCE_URL` | MySQL JDBC URL | 없음 |
 | `DATASOURCE_USERNAME` | DB 사용자명 | 없음 |
 | `DATASOURCE_PASSWORD` | DB 비밀번호 | 없음 |
+| `REDIS_HOST` | 블랙리스트 Redis 주소 | `localhost` |
+| `REDIS_PORT` | Redis 포트 | `6379` |
+| `REDIS_PASSWORD` | Redis 인증 비밀번호 | 빈 값 |
 | `JWT_SECRET_KEY` | Base64 인코딩된 64바이트 이상 JWT 서명 키 | 없음 |
 | `JWT_ACCESS_EXPIRATION` | access token 유효기간(초) | 필수 주입; 격리 testnet은 `900` |
 | `JWT_REFRESH_EXPIRATION` | refresh token 유효기간(초) | 필수 주입; 격리 testnet은 `604800` |
@@ -151,6 +155,41 @@ export JWT_SECRET_KEY="$(openssl rand -base64 64)"
 애플리케이션은 기본적으로 `http://localhost:8080`에서 실행됩니다.
 로컬 파일을 사용할 때는 `application-local.properties.example`을
 `application-local.properties`로 복사하고 실제 값은 Git에 커밋하지 않습니다.
+
+## Access token 로그아웃 차단
+
+`POST /api/auth/logout`은 `Authorization: Bearer <accessToken>`으로 받은 유효한 access token의
+서명 대상(header.payload)을 SHA-256 해시하여 Redis에 저장한다. 키는
+`trekkey:auth:access-blacklist:<hash>`이며 TTL은 JWT 만료까지 남은 시간이다.
+토큰 원문은 저장하지 않고, 서명부의 동등한 Base64URL 표현도 같은 키로 차단한다.
+access token마다 UUID `jti`를 발급하여 같은 초에 로그인해도 다른 세션과 충돌하지 않는다.
+
+인증 필터는 서명·종류·만료 검증 후 Redis를 조회한다. 폐기한 토큰으로 보호 API를 호출하면
+401을 반환한다. Redis 읽기·쓰기 장애는 `503 GLOBAL_503_AUTH`를 반환하며 인증을 허용하거나
+서버 로그아웃 성공으로 처리하지 않는다. 기존 프론트는 서버 로그아웃 실패 시에도 로컬 세션을
+정리하므로, 로컬 로그아웃만으로 서버 폐기 성공을 판단하면 안 된다.
+
+refresh cookie가 있으면 기존 DB의 해당 family를 폐기하고 쿠키를 삭제한다. access token이
+없거나 만료·변조된 경우 Redis 저장을 생략하고 기존 refresh cookie 정리를 수행한다.
+CSRF는 `GET /api/auth/csrf`에서 받은 쿠키와 응답 토큰 헤더를 함께 전송한다.
+로그아웃이 폐기하는 access token은 **요청에 담긴 하나**다. 이전 refresh로 발급한 토큰,
+다른 기기의 토큰, 이미 인증을 통과해 처리 중인 요청까지 취소하지는 않는다.
+
+DB와 Redis는 단일 원자적 트랜잭션이 아니다. Redis에 먼저 기록하며 이후 DB 작업이 실패하면
+access token만 차단된 상태가 될 수 있어 로그아웃 재시도가 필요하다.
+운영 Compose는 외부 포트를 열지 않은 Redis에 영속 볼륨·AOF(`appendfsync always`)·`noeviction`을
+적용한다. 모든 백엔드 인스턴스는 같은 Redis를 사용해야 하며, Redis 데이터 유실 시에는
+아직 만료되지 않은 차단 기록도 유실된다. 이 설정은 무손실 고가용성을 보장하지 않는다.
+
+실제 Redis 검증은 **전용 임시 인스턴스**를 대상으로 실행한다.
+
+```bash
+docker run --rm --name trekkey-access-blacklist-test -p 127.0.0.1:16389:6379 redis:7.4-alpine
+REDIS_INTEGRATION_PORT=16389 ./gradlew test --tests '*AccessTokenBlacklistRedisIntegrationTest'
+```
+
+테스트는 로그아웃 전후 인증, 다른 세션 독립성, 반복 로그아웃, 다른 저장소 객체에서의 조회,
+실제 Redis TTL 만료를 확인한다. 기본 단위·HTTP 회귀 테스트에서는 Redis를 mock 처리한다.
 
 ## 테스트
 

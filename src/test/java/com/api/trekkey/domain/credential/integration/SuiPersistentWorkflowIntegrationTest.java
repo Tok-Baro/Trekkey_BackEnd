@@ -1,5 +1,6 @@
 package com.api.trekkey.domain.credential.integration;
 
+import com.api.trekkey.global.security.jwt.AccessTokenBlacklist;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -81,6 +82,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -106,6 +108,9 @@ import org.web3j.crypto.Keys;
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @Import(SuiPersistentWorkflowIntegrationTest.IsolatedDatabase.class)
 class SuiPersistentWorkflowIntegrationTest {
+    @MockitoBean
+    private AccessTokenBlacklist accessTokenBlacklist;
+
     private static final String MYSQL_URL = "jdbc:mysql://127.0.0.1:13306/trekkey_sui_full"
             + "?serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true";
     private static Path runDirectory;

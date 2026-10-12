@@ -1,5 +1,6 @@
 package com.api.trekkey.global.config;
 
+import com.api.trekkey.global.exception.CustomException;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -42,9 +43,11 @@ import com.api.trekkey.domain.team.publicapi.web.controller.TeamApplicationContr
 import com.api.trekkey.domain.team.publicapi.web.dto.ApplicationProgressRes;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationCreateReq;
 import com.api.trekkey.domain.team.publicapi.web.dto.TeamApplicationUpdateReq;
+import com.api.trekkey.global.response.code.ErrorResponseCode;
 import com.api.trekkey.global.security.AuthPrincipal;
 import com.api.trekkey.global.security.handler.JwtAccessDeniedHandler;
 import com.api.trekkey.global.security.handler.JwtAuthenticationEntryPoint;
+import com.api.trekkey.global.security.jwt.AccessTokenBlacklist;
 import com.api.trekkey.global.security.jwt.JwtAuthenticationFilter;
 import com.api.trekkey.global.security.jwt.JwtExtractor;
 import com.api.trekkey.global.security.jwt.JwtTokenProvider;
@@ -88,6 +91,8 @@ import org.springframework.test.web.servlet.MockMvc;
         JwtAccessDeniedHandler.class
 })
 class SecurityConfigTest {
+    @MockitoBean
+    private AccessTokenBlacklist accessTokenBlacklist;
 
     @Autowired
     private MockMvc mockMvc;
@@ -958,6 +963,27 @@ class SecurityConfigTest {
                   "comment": "의견"
                 }
                 """.formatted("a".repeat(43));
+    }
+
+    @Test
+    void 폐기된_액세스_토큰으로_보호된_API에_접근하면_401을_반환한다() throws Exception {
+        String token = accessToken("PARTICIPANT");
+        given(accessTokenBlacklist.contains(token)).willReturn(true);
+        mockMvc.perform(get("/api/me/applications").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("GLOBAL_401"));
+        verifyNoInteractions(teamApplicationService);
+    }
+
+    @Test
+    void 레디스_장애가_발생하면_컨트롤러를_호출하지_않고_503을_반환한다() throws Exception {
+        String token = accessToken("PARTICIPANT");
+        given(accessTokenBlacklist.contains(token)).willThrow(new CustomException(
+                ErrorResponseCode.AUTH_STORAGE_UNAVAILABLE));
+        mockMvc.perform(get("/api/me/applications").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("GLOBAL_503_AUTH"));
+        verifyNoInteractions(teamApplicationService);
     }
 
     private String accessToken(String role) {

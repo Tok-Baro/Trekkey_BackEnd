@@ -1,5 +1,6 @@
 package com.api.trekkey.domain.credential.integration;
 
+import com.api.trekkey.global.security.jwt.AccessTokenBlacklist;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -69,6 +70,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -105,6 +107,9 @@ import org.web3j.crypto.Keys;
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @Import(SuiTestnetCredentialLifecycleIntegrationTest.IsolatedDatabase.class)
 class SuiTestnetCredentialLifecycleIntegrationTest {
+    @MockitoBean
+    private AccessTokenBlacklist accessTokenBlacklist;
+
     private static final String H2_URL = "jdbc:h2:mem:sui-testnet-e2e-" + UUID.randomUUID()
             + ";MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE;NON_KEYWORDS=USER";
     private static final ObjectMapper JSON = new ObjectMapper();

@@ -119,6 +119,12 @@ class JwtTokenProviderTest {
     }
 
     @Test
+    void 같은_사용자에게_발급한_액세스_토큰은_서로_다르다() {
+        assertThat(tokenProvider.createAccessToken(authentication))
+                .isNotEqualTo(tokenProvider.createAccessToken(authentication));
+    }
+
+    @Test
     @DisplayName("연속해서 발급한 refresh token은 고유한 jti로 서로 다른 값을 갖는다")
     void createRefreshToken_returnsUniqueTokens() {
         String first = tokenProvider.createRefreshToken(authentication);

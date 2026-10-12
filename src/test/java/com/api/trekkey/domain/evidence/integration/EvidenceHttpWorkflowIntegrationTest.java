@@ -13,6 +13,7 @@ import com.api.trekkey.domain.organization.repository.OrganizationRepository;
 import com.api.trekkey.domain.user.entity.*;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.global.security.AuthPrincipal;
+import com.api.trekkey.global.security.jwt.AccessTokenBlacklist;
 import com.api.trekkey.global.security.jwt.JwtTokenProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.file.*;
@@ -47,6 +48,9 @@ import org.springframework.util.MultiValueMap;
         "blockchain.anchoring.mode=DISABLED", "blockchain.anchoring.worker-enabled=false"
 })
 class EvidenceHttpWorkflowIntegrationTest {
+    @MockitoBean
+    private AccessTokenBlacklist accessTokenBlacklist;
+
     private static final Path UPLOAD_DIR = createUploadDirectory();
 
     @DynamicPropertySource

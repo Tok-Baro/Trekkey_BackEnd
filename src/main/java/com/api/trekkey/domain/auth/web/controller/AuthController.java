@@ -10,6 +10,7 @@ import com.api.trekkey.domain.invitation.web.dto.request.AdminSignUpReq;
 import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.web.dto.UserSignUpReq;
 import com.api.trekkey.global.response.SuccessResponse;
+import com.api.trekkey.global.security.jwt.JwtExtractor;
 import com.api.trekkey.global.swagger.ApiErrorCodeExamples;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/auth")
 public class AuthController {
     private final AuthService authService;
+    private final JwtExtractor jwtExtractor;
     private final RefreshTokenCookieProvider refreshTokenCookieProvider;
 
     @PostMapping("/signup")
@@ -82,7 +84,7 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<SuccessResponse<?>> logout(HttpServletRequest request) {
         String refreshToken = refreshTokenCookieProvider.extract(request);
-        authService.logout(refreshToken);
+        authService.logout(jwtExtractor.extractAccessToken(request), refreshToken);
 
         return ResponseEntity
                 .status(HttpStatus.OK)

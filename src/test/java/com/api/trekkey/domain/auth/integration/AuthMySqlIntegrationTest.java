@@ -157,13 +157,13 @@ class AuthMySqlIntegrationTest {
 
     @Test
     @DisplayName("한 로그인 family를 로그아웃해도 다른 로그인 family는 갱신할 수 있다")
-    void logout_revokesOnlyCurrentLoginFamily() {
+    void 로그아웃하면_현재_로그인_패밀리만_폐기하고_다른_패밀리는_갱신할_수_있다() {
         AuthResult firstLogin = signIn();
         AuthResult secondLogin = signIn();
         String firstFamilyId = tokenStateByRawToken(firstLogin.refreshToken()).familyId();
         String secondFamilyId = tokenStateByRawToken(secondLogin.refreshToken()).familyId();
 
-        authService.logout(firstLogin.refreshToken());
+        authService.logout(null, firstLogin.refreshToken());
 
         assertThat(firstFamilyId).isNotEqualTo(secondFamilyId);
         assertThat(familyStates(firstFamilyId)).isNotEmpty().allMatch(TokenState::revoked);

@@ -37,6 +37,8 @@ import com.api.trekkey.domain.user.exception.UserErrorResponseCode;
 import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.domain.user.web.dto.UserSignUpReq;
 import com.api.trekkey.global.exception.CustomException;
+import com.api.trekkey.global.response.code.ErrorResponseCode;
+import com.api.trekkey.global.security.jwt.AccessTokenBlacklist;
 import com.api.trekkey.global.security.jwt.JwtProperties;
 import com.api.trekkey.global.security.jwt.JwtTokenProvider;
 import com.api.trekkey.global.security.jwt.TokenDto;
@@ -81,6 +83,9 @@ class AuthServiceImplTest {
     @Mock
     private AdminAuditLogger adminAuditLogger;
 
+    @Mock
+    private AccessTokenBlacklist accessTokenBlacklist;
+
     private BCryptPasswordEncoder passwordEncoder;
     private AuthServiceImpl authService;
 
@@ -95,7 +100,8 @@ class AuthServiceImplTest {
                 jwtTokenProvider,
                 jwtProperties,
                 adminInvitationRepository,
-                adminAuditLogger
+                adminAuditLogger,
+                accessTokenBlacklist
         );
     }
 
@@ -331,33 +337,49 @@ class AuthServiceImplTest {
 
     @Test
     @DisplayName("로그아웃은 현재 refresh token의 family 전체를 폐기한다")
-    void logout_revokesRefreshTokenFamily() {
+    void 로그아웃하면_현재_리프레시_토큰의_패밀리_전체를_폐기한다() {
         User user = user(1L, UserStatus.ACTIVE, "encoded-password");
         RefreshToken saved = refreshToken(user, "family-id", "refresh", false, LocalDateTime.now().plusDays(1));
         given(refreshTokenRepository.findByTokenHash(sha256("refresh"))).willReturn(Optional.of(saved));
 
-        authService.logout("refresh");
+        authService.logout(null, "refresh");
 
         verify(refreshTokenRepository).revokeAllByFamilyId("family-id");
     }
 
     @Test
     @DisplayName("빈 refresh token으로 로그아웃해도 성공한다")
-    void logout_doesNothingWhenRefreshTokenIsBlank() {
-        authService.logout(" ");
+    void 빈_리프레시_토큰으로_로그아웃하면_리프레시_저장소를_조회하지_않는다() {
+        authService.logout(null, " ");
 
         verifyNoInteractions(refreshTokenRepository);
     }
 
     @Test
     @DisplayName("DB에 없는 refresh token으로 로그아웃해도 성공한다")
-    void logout_doesNothingWhenRefreshTokenIsNotStored() {
+    void 저장되지_않은_리프레시_토큰으로_로그아웃하면_패밀리를_폐기하지_않는다() {
         given(refreshTokenRepository.findByTokenHash(sha256("unknown")))
                 .willReturn(Optional.empty());
 
-        authService.logout("unknown");
+        authService.logout(null, "unknown");
 
         verify(refreshTokenRepository, never()).revokeAllByFamilyId(any());
+    }
+
+    @Test
+    void 리프레시_쿠키가_없어도_로그아웃하면_액세스_토큰을_폐기한다() {
+        authService.logout("access-token", null);
+        verify(accessTokenBlacklist).revoke("access-token");
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    @Test
+    void 블랙리스트_저장에_실패하면_리프레시_토큰_패밀리를_폐기하지_않는다() {
+        willThrow(new CustomException(ErrorResponseCode.AUTH_STORAGE_UNAVAILABLE))
+                .given(accessTokenBlacklist).revoke("access-token");
+        assertThatThrownBy(() -> authService.logout("access-token", "refresh"))
+                .isInstanceOf(CustomException.class);
+        verifyNoInteractions(refreshTokenRepository);
     }
 
     private UserSignUpReq signUpRequest(

@@ -25,6 +25,7 @@ import com.api.trekkey.domain.user.repository.UserRepository;
 import com.api.trekkey.domain.user.web.dto.UserSignUpReq;
 import com.api.trekkey.global.exception.CustomException;
 import com.api.trekkey.global.security.AuthPrincipal;
+import com.api.trekkey.global.security.jwt.AccessTokenBlacklist;
 import com.api.trekkey.global.security.jwt.JwtProperties;
 import com.api.trekkey.global.security.jwt.JwtTokenProvider;
 import com.api.trekkey.global.security.jwt.TokenDto;
@@ -61,6 +62,7 @@ public class AuthServiceImpl implements AuthService {
     private final JwtProperties jwtProperties;
     private final AdminInvitationRepository adminInvitationRepository;
     private final AdminAuditLogger adminAuditLogger;
+    private final AccessTokenBlacklist accessTokenBlacklist;
 
     @Override
     public void signUp(UserSignUpReq userSignUpReq) {
@@ -222,7 +224,9 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public void logout(String refreshToken) {
+    public void logout(String accessToken, String refreshToken) {
+        accessTokenBlacklist.revoke(accessToken);
+
         if (!StringUtils.hasText(refreshToken)) {
             return;
         }

@@ -15,6 +15,7 @@ import com.api.trekkey.global.security.AuthPrincipal;
 import com.api.trekkey.global.security.handler.JwtAccessDeniedHandler;
 import com.api.trekkey.global.security.handler.JwtAuthenticationEntryPoint;
 import com.api.trekkey.global.security.jwt.*;
+import com.api.trekkey.global.security.jwt.AccessTokenBlacklist;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +35,9 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import({SecurityConfig.class, JwtAuthenticationFilter.class, JwtExtractor.class, JwtTokenProvider.class,
         JwtAuthenticationEntryPoint.class, JwtAccessDeniedHandler.class})
 class EvidenceControllerSecurityTest {
+    @MockitoBean
+    private AccessTokenBlacklist accessTokenBlacklist;
+
     @Autowired MockMvc mockMvc;
     @Autowired JwtTokenProvider tokenProvider;
     @MockitoBean EvidenceSubmissionService submissionService;

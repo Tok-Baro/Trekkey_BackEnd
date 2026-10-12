@@ -13,6 +13,7 @@ public enum ErrorResponseCode implements BaseResponseCode {
     FORBIDDEN("GLOBAL_403", 403, "해당 요청에 대한 접근 권한이 없습니다."),
     NOT_FOUND_ENDPOINT("GLOBAL_404", 404, "존재하지 않는 엔드포인트입니다."),
     UNSUPPORTED_HTTP_METHOD("GLOBAL_405", 405, "지원하지 않는 HTTP 메서드입니다."),
+    AUTH_STORAGE_UNAVAILABLE("GLOBAL_503_AUTH", 503, "인증 저장소에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요."),
     SERVER_ERROR("GLOBAL_500", 500, "서버 내부에서 알 수 없는 에러가 발생했습니다.");
 
     private final String code;

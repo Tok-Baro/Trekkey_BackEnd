@@ -76,6 +76,7 @@ public class JwtTokenProvider implements InitializingBean {
         return Jwts.builder()
                 .subject(authentication.getName())
                 .claim(ID_KEY, principal.getId())
+                .id(UUID.randomUUID().toString())
                 .claim(AUTHORITIES_KEY, authorities)
                 .claim(TYPE_KEY, ACCESS_TOKEN_TYPE)
                 .issuedAt(new Date())

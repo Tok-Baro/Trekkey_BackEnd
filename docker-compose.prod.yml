@@ -28,6 +28,18 @@ services:
         max-size: 10m
         max-file: "5"
 
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   backend:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
     restart: unless-stopped
@@ -38,7 +50,11 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
       SPRING_PROFILES_ACTIVE: sui
       BLOCKCHAIN_PROVIDER: SUI
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
@@ -162,4 +178,5 @@ services:
         max-file: "3"
 
 volumes:
+  redis-data:
   mysql-data:

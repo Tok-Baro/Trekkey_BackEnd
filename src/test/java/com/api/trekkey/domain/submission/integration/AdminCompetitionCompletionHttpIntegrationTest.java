@@ -1,5 +1,6 @@
 package com.api.trekkey.domain.submission.integration;
 
+import com.api.trekkey.global.security.jwt.AccessTokenBlacklist;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -45,6 +46,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -64,6 +66,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 })
 @AutoConfigureMockMvc
 class AdminCompetitionCompletionHttpIntegrationTest {
+    @MockitoBean
+    private AccessTokenBlacklist accessTokenBlacklist;
+
     private static final byte[] PDF_BYTES = "%PDF-1.4\nSynthetic manual reception only\n%%EOF".getBytes(StandardCharsets.UTF_8);
     private static final Path UPLOADS = temporaryUploads();
     @DynamicPropertySource

@@ -45,7 +45,8 @@ final class ApiSecurityDocumentation {
             }
             if (method == HttpMethod.POST && path.equals("/api/auth/logout")) {
                 operation.setSecurity(List.of(new SecurityRequirement(), new SecurityRequirement().addList(REFRESH_COOKIE_SCHEME)));
-                describe(operation, "Access Token은 필요하지 않으며, HttpOnly `" + jwt.getRefreshCookieName()
+                describe(operation, "Access Token은 선택 사항이며 Authorization: Bearer 헤더로 전달하면 Redis 블랙리스트에 등록합니다. "
+                        + "해당 토큰은 만료까지 인증에 사용할 수 없습니다. HttpOnly `" + jwt.getRefreshCookieName()
                         + "` 쿠키는 선택 사항입니다. 쿠키가 있으면 해당 세션의 Refresh Token 묶음(family)을 폐기합니다. "
                         + "쿠키가 없어도 CSRF 검증을 통과하면 성공합니다. "
                         + "응답의 Set-Cookie로 쿠키를 삭제합니다(Path=/api/auth, Max-Age=0).");
