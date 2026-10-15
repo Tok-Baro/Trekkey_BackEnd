@@ -33,3 +33,14 @@
 3. Chrome을 직접 조작하길 원하면 사용자 PC에서 Claude를 실행 (Claude Desktop 앱 또는 `claude remote-control`)
 
 > 이 파일은 `claude/aws-billing-check-progress` 브랜치에 커밋·푸시함 (main에는 반영하지 않음, PR 없음).
+
+## 2026-10-15 — 데스크톱 소리가 갑자기 안 남
+
+### 결과: 직접 확인 못 함
+- 이 대화에는 사용자 PC를 보고 조작하는 도구(컴퓨터 사용)가 연결되어 있지 않아 원격 점검 불가
+- 자가 점검 순서 안내 (Windows): 출력 장치 선택 → 음소거·볼륨 믹서·케이블 → 재부팅/Windows Audio 서비스 재시작 → 사운드 문제 해결사 → 드라이버 롤백
+- macOS: 사운드 출력 장치 확인 → `sudo killall coreaudiod` → 재시동
+
+### 다음 단계
+- 어느 단계에서 막혔는지, 출력 장치 목록에 무엇이 보이는지(OS 포함) 알려주면 이어서 진단
+- 직접 점검을 원하면 Claude 데스크톱 앱에서 컴퓨터 사용을 켠 대화로 요청
