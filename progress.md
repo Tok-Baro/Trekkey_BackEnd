@@ -41,7 +41,15 @@
 - 자가 점검 순서 안내 (Windows): 출력 장치 선택 → 음소거·볼륨 믹서·케이블 → 재부팅/Windows Audio 서비스 재시작 → 사운드 문제 해결사 → 드라이버 롤백
 - macOS: 사운드 출력 장치 확인 → `sudo killall coreaudiod` → 재시동
 
+### 진단 (사용자가 붙여 준 PowerShell 출력, Windows)
+- 재생 장치는 두 개: `PAQ2710W(NVIDIA High Definition Audio)`(그래픽카드 HDMI/DP로 연결된 모니터), `Steam Streaming Speakers`(Steam 원격 플레이용 가상 장치)
+- Realtek은 마이크만 잡히고 스피커 출력은 목록에 없음
+- 유력 원인: 기본 출력이 Steam Streaming Speakers로 바뀌어 소리가 가상 장치로 나감
+- `Restart-Service Audiosrv` 실패는 관리자 권한 없이 실행했기 때문 (소리 문제와는 별개)
+
 ### 다음 단계
-- 어느 단계에서 막혔는지, 출력 장치 목록에 무엇이 보이는지(OS 포함) 알려주면 이어서 진단
+- `control mmsys.cpl` → 재생 탭에서 PAQ2710W를 기본 장치로 설정하고, Steam Streaming Speakers는 사용 안 함으로 바꾸기
+- 스피커를 본체 뒤 단자(Realtek)에 꽂아 쓰는 경우: 케이블과 숨겨진(사용 안 함/연결 끊김) 장치 확인
+- 결과를 알려주면 이어서 진단
 - 이 세션의 터미널은 클라우드 VM(Ubuntu, 사운드 장치 없음)이라 사용자 PC에 명령을 실행할 수 없음
 - 직접 점검을 원하면 해당 PC에서 Claude를 실행: PC 터미널에서 Claude Code(`claude`) 실행, 또는 Claude 데스크톱 앱에서 컴퓨터 사용 켜기
